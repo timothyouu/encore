@@ -7,7 +7,7 @@ analysis/.venv/bin/python -m unittest discover -s analysis/tests -v
 analysis/.venv/bin/python -m unittest discover -s acceptance -v
 node --experimental-strip-types --test acceptance/paper-contract.test.mjs
 node --experimental-strip-types scripts/sync-passages.mjs --check
-if ! git diff --quiet -- g2; then
+if ! git diff --quiet "${ENCORE_BOUNDARY_BASE:-origin/main}" -- g2; then
   echo 'Glasses ownership boundary changed; review required.' >&2
   exit 1
 fi

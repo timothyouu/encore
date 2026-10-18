@@ -45,7 +45,7 @@ All four acceptance units accepted: spec, local persistence/retry, server retent
 - No live Gemini or real microphone calls were made; storage tests use synthetic WAV and stubbed responses. Existing analysis unit tests ran.
 - Expiry removes Encore-held artifacts; an already-delivered third-party copy that ignores abort may outlive our store. No external-provider deletion claim.
 - Multiple simultaneously active tabs are not a cross-device/synchronization product; this demo assumes one active client writer. Browser local data may be cleared or evicted.
-- Windows mobile Sentry work is separate from this WSL runtime and has not been merged here. Do not copy this whole checkout over that work.
+- This historical storage-only run preceded Sentry integration. The combined shipping verification is recorded in `shipping-verification.md`; the original source worktrees remain preserved.
 - Longer playback, accounts, cloud backup and Supabase provisioning remain future explicit scope.
 
 Measurement: normalized account allowance baseline 37% used in the 10080-minute Codex window at approximately 06:31 UTC on October 18. Completion at 06:42:13 UTC: 43% used in the same window/reset boundary, an observed +6 percentage points over approximately 11 minutes of measured execution. Account-wide counters include other chats and cannot be attributed precisely to this task; no speed/cost improvement claim.

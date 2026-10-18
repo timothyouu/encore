@@ -42,7 +42,7 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 
 ## 2. Quiet Tech design rules
 
-1. **Quiet while playing:** retain a small recording indicator and hide coaching. Show reference sheet music only when the player enables it in Settings; otherwise hide notation. The initial setting is OPEN pending hardware validation.
+1. **Minimal while playing:** while playing, hide coaching and feedback. Show only the selected passage's static sheet music (when enabled from the G2 system menu) and a small recording indicator; with sheet music off, show only the recording indicator.
 2. **One useful cue:** prioritize a single supported issue after each phrase
 3. **Show only meaningful changes:** selection, recording, processing, and feedback states must be distinguishable
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
@@ -108,11 +108,11 @@ Search applies only to the prepared library in v1.
 
 ### App Settings — agreed design
 
-The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.design/file/01M56HHCC29GHEHZ2V9FPV5FTR/p-1-0). These are intended app behaviors, not implemented or hardware-verified features.
+The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.design/file/01M56HHCC29GHEHZ2V9FPV5FTR/p-1-0). The phone stores these preferences locally. Applying them to G2 remains a proposed integration that requires the glasses owner's agreement; the current G2 runtime uses its system contextual menu for Hide/Show sheet music. Phone settings do not send device commands or override that menu.
 
 | Control | Behavior |
 |---|---|
-| Show sheet music on glasses | Toggle reference sheet music for the selected passage on G2 during recording. When off, show only the recording indicator. This is prepared notation, not live transcription or coaching. |
+| Show sheet music on glasses | Store the requested reference-sheet-music preference locally for a future agreed device integration. When off, show only the recording indicator. This is prepared notation, not live transcription or coaching. |
 | Sheet music size | Choose **Standard** or **Large** for the displayed notes and staff. “Score” means sheet music; use the clearer label **Sheet music size** in the app. Large increases notation size and may show less of the passage at once; it does not change pitch, tempo, or grading. |
 | Note names | Toggle pitch labels such as C4, D4, and E4 beneath the displayed notes. This affects reference notation only, not analysis. |
 
@@ -129,14 +129,13 @@ The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.de
 | Disconnected | Phone explains reconnect | Connected → Selection |
 | Selection | Song/passage selection prompt; phone shows Library | Select passage → Ready |
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
-| Recording | Small recording icon; static reference sheet music when enabled in Settings, using the chosen size and note-name preference; no coaching | Tap → Analyzing; confirmed cancel → Selection |
+| Recording | Small recording icon; plus static sheet music for the selected passage when sheet music is shown | Tap → Analyzing; double tap → discard → Ready |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
 | Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
 | Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
 | Recoverable error | Brief reason and Play again option | Play again → Selection |
-| Settings | Settings list; v1 contains one item, **Sheet music while playing: On/Off** | Tap → toggle the selected item; double tap → return to the state Settings was opened from |
 
-**Settings** is opened with a long press from any non-recording state (Disconnected excepted). PROPOSED: long press is ignored during Recording and Analyzing so capture is never interrupted or covered by a menu; change the toggle before starting or after results. Closing Settings returns to the exact prior state and view without starting capture or changing the selected passage.
+**Sheet music setting:** there is no app Settings screen on G2. The glasses OS draws a contextual menu on tap then hold, and Encore registers one item in it: **Hide sheet music** when shown, **Show sheet music** when hidden (verb labels, because the OS menu keeps no item state). Selecting it toggles the setting and re-declares the current page so the label updates; the player stays on the same state and view, with no capture started and no passage change. Recording and Analyzing omit the item, so the setting never changes mid-capture; change it before starting or after results.
 
 Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
@@ -144,12 +143,13 @@ Detailed History navigation is on the phone. When a saved result is mirrored on 
 
 - Single tap: start from Ready; stop and analyze from Recording
 - Swipe down: next feedback/guide page; swipe up: previous page
-- Double tap: go back one level; at root use the platform's exit behavior; in Settings, close Settings
-- Long press (tap and hold): open Settings from any non-recording state; in Settings, single tap toggles the selected option
-- Proposed cancellation behavior to validate: during recording, double tap asks to cancel; it must never silently submit a partial attempt
+- Double tap: go back one level; at root use the platform's exit behavior
+- Tap then hold: OS contextual menu (system-drawn); Encore adds only the sheet-music item
+- During recording, double tap discards the take immediately and returns to Ready (a dimmed `2× discard` hint says so); a discarded take is never saved as completed, counted or submitted
 - Voice commands are optional later enhancements; do not block v1 on speech recognition
+- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review `▼ guide`
 
-Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; open Settings on the start event, ignore the matching release, and verify on hardware that a long press never also registers as a single tap (which could start or stop a recording). Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
+Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; Encore assigns no action to them, but drops any tap that arrives during or just after a hold, and hardware tests must verify that opening the system menu never also registers as a single tap (which could start or stop a recording). Opening and closing the system menu deliver foreground enter/exit events; they must not trigger a redraw or state change. Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
 
 ### Sheet music while playing
 
@@ -306,7 +306,7 @@ Basic Pitch produces candidate note events. Ordinary code aligns these to the re
 - Suppress firm judgments if audio is clipped, missing, too noisy, or ambiguously aligned
 - No observation of fingering, posture, hand tension, or technique can be claimed from pitch data alone
 
-Gemini receives the same normalized WAV used by Basic Pitch, detected notes and confidence scores, the passage, validated findings, attempt history needed for comparison, and the permitted output schema. The coaching service must actually retrieve/attach the audio in the selected Gemini API's supported form; a URL string in a prompt alone does not establish audio delivery. Exact model audio support and request encoding remain OPEN to verify. It summarizes performance, chooses one priority cue and a bounded practice suggestion, and returns evidence-linked mistake data for the deterministic renderer. Audio context does not authorize invented measurements or overriding uncertain alignment with confident claims. If coaching fails, show the deterministic finding with a plain fallback instruction. If analysis is uncertain, show “I couldn't hear that clearly. Try again” rather than a grade.
+Gemini receives the same normalized WAV used by Basic Pitch, detected notes and confidence scores, the passage, validated findings, attempt history needed for comparison, and the permitted output schema. The coaching service must actually retrieve/attach the audio in the selected Gemini API's supported form; a URL string in a prompt alone does not establish audio delivery. The combined implementation verifies inline WAV encoding through the Strands adapter and one live Gemini 3.5 Flash-Lite synthetic request; real acoustic and physical-device validation remains open. It summarizes performance, chooses one priority cue and a bounded practice suggestion, and returns evidence-linked mistake data for the deterministic renderer. Audio context does not authorize invented measurements or overriding uncertain alignment with confident claims. If coaching fails, show the deterministic finding with a plain fallback instruction. If analysis is uncertain, show “I couldn't hear that clearly. Try again” rather than a grade.
 
 The chosen visualization must correspond to the same evidence-backed finding as the cue. The renderer uses the finding kind and validated reference/detected note IDs to select and populate the appropriate deterministic diagram; it must not return a generic visual unrelated to the student's mistake or infer unsupported technique errors. If no suitable visualization is supported, return `kind: 'none'` and show the text cue only.
 
@@ -357,7 +357,7 @@ Acceptance: verify migration and restart recovery; unavailable/quota/corrupt sto
 
 ### Sentry: proposed two-product plan
 
-**Implementation scope:** the current checkout contains the phone client and G2 scaffold, but no Python analysis or TypeScript coaching service. Opt-in phone instrumentation is implemented with `@sentry/browser` and verified locally; configuration, verification evidence and remaining work are documented in `mobile/docs/sentry.md` and `mobile/docs/sentry-verification.md`. The current phone transport uploads browser-encoded audio to analysis and sends JSON to coaching. It does not yet implement the normalized-WAV/two-audio-consumer architecture above. Client request timings cannot separate network time from server inference; server-side spans remain future work. Live synthetic Sentry ingestion is verified, including a linked error and root/child trace; actual microphone/service execution and physical G2 instrumentation remain unverified.
+**Implementation scope:** this checkout includes the phone client, local TypeScript coaching service, Python Basic Pitch service, and the separately owned G2 runtime. Phone Sentry instrumentation covers recorder stop, WAV normalization, artifact upload/validation, analysis/coaching request and validation, persistence, and rendering. Client request timings include network and server work; backend spans and distributed propagation remain future work. Prior synthetic Sentry ingestion is verified, including a linked error and root/child trace. Combined-code local verification is recorded in `docs/shipping-verification.md`; physical phone/G2 instrumentation remains unverified.
 
 **Target:** use **Error Monitoring** and **Tracing** to answer two practical questions: why did an attempt fail, and why did feedback take so long? Timothy reports that the Sentry challenge requires two services. Treat these as the proposed pair, subject to confirmation that the organizer counts them as two qualifying products. The public tracks page did not expose readable challenge details during research on October 17, 2026. The phone implementation and synthetic ingestion are verified; the full backend design below remains proposed.
 
@@ -444,12 +444,12 @@ Devin and other coding agents work within assigned modules and branches. Their h
 ### Phase 2: Complete one real loop
 
 - [ ] Phone selects a passage; G2 preview matches its version
-- [ ] Tap starts capture; the recording icon remains, with reference sheet music only when enabled in Settings; no coaching appears during capture
+- [ ] Tap starts capture; the recording icon remains, with reference sheet music only when enabled in the G2 system menu; no coaching appears during capture
 - [ ] Library gear button → Settings → Library works without starting capture or changing recording counts
-- [ ] Sheet music toggle controls G2 notation; Standard/Large changes notation size, and Note names controls pitch labels without changing passage data or analysis
+- [ ] Phone settings persist locally without device writes; future G2 application of size/note-name preferences requires an agreed glasses-owner contract
 - [ ] Verify both sheet-music visibility states, both sizes, note names on/off, and disconnected yellow status on the phone; validate notation legibility and static passage fit on physical G2
-- [ ] Long press opens Settings from Selection, Ready, Review, Guide, and error states; tapping toggles sheet music; double tap returns to the prior state unchanged
-- [ ] Long press during Recording/Analyzing does not open Settings, stop capture, or register as a tap
+- [ ] Tap then hold opens the system menu from Selection, Ready, Review, Guide, and error states with Hide/Show sheet music; selecting it toggles the setting and returns to the same state unchanged
+- [ ] During Recording/Analyzing the menu offers no sheet-music item, and opening the menu never stops capture or registers as a tap
 - [ ] The sheet-music setting persists across app restarts and does not affect recording counts or analysis
 - [ ] Tap stops capture and sends exactly one attempt
 - [ ] Stop/save produces a valid WAV with actual sample-rate normalization; source and normalized metadata match decoded audio

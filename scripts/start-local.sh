@@ -8,7 +8,8 @@ if [[ "${1:-}" == "--fallback" ]]; then
 fi
 export ENCORE_COACH_HOST=127.0.0.1
 export ENCORE_COACH_PORT=8788
-export ENCORE_ALLOWED_ORIGIN=http://localhost:5176
+mobile_port=${ENCORE_MOBILE_PORT:-5176}
+export ENCORE_ALLOWED_ORIGIN="http://localhost:$mobile_port"
 export ENCORE_ANALYSIS_URL=http://127.0.0.1:8002/v1/analyze
 mkdir -p .run
 pids=()
@@ -18,7 +19,7 @@ analysis/.venv/bin/python -m uvicorn analysis.service:app --host 127.0.0.1 --por
 pids+=("$!")
 (cd server && exec node --import tsx src/main.ts) >.run/server.log 2>&1 &
 pids+=("$!")
-(cd mobile && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5176 --strictPort) >.run/mobile.log 2>&1 &
+(cd mobile && exec node node_modules/vite/bin/vite.js --host 127.0.0.1 --port "$mobile_port" --strictPort) >.run/mobile.log 2>&1 &
 pids+=("$!")
-echo 'Encore: http://localhost:5176. Local logs: .run/. Ctrl-C stops this launcher.'
+echo "Encore: http://localhost:$mobile_port. Local logs: .run/. Ctrl-C stops this launcher."
 wait -n "${pids[@]}"
