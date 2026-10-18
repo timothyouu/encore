@@ -19,11 +19,15 @@ Then either:
 npm test
 ```
 
-Node's built-in test runner on the TypeScript sources (no extra dependencies; relative imports carry `.ts` so Node can resolve them). `tests/fakes.mjs` stands in for the Even bridge, so screens, input, recording, upload and the glasses queue run without hardware. Staff drawing is covered through `staffLayout()`, the canvas-free layout step.
+Node's built-in test runner on the TypeScript sources (no extra dependencies; relative imports carry `.ts` so Node can resolve them). `tests/fakes.mjs` stands in for the Even bridge, so screens, input, recording, the G2 capture source, the phone↔glasses controller and the glasses queue run without hardware. Staff drawing is covered through `staffLayout()`, the canvas-free layout step.
 
-## Uploads
+## Phone and glasses together
 
-Set the **Upload URL** on the phone screen (saved in Even app storage). Each take is POSTed as `multipart/form-data`: `audio` (WAV) and `metadata` (JSON: attempt ID, passage ID/version, timestamps, format, duration, measured byte rate, `captureSource: "g2"`). The server must send CORS headers, and the packaged app needs its domain in `app.json` under a `network` permission. For simulator testing, `VITE_ENCORE_UPLOAD_URL=<url> npm run dev` presets the URL when none is saved.
+This page hosts the phone UI from `../mobile/` (`startPhoneApp`) and mirrors its session on the glasses; see [`../glasses-integration/CONTRACT.md`](../glasses-integration/CONTRACT.md). The phone's `SessionStore` is the only source of truth: phone buttons and glasses gestures make the same session calls, and `src/controller.ts` redraws the glasses from it.
+
+To record from the glasses, open **Connection settings** on the phone, choose **G2 microphone**, and enter the analysis and coaching endpoints. Each take is POSTed to the analysis endpoint as `multipart/form-data`: `audio` (WAV) and `metadata` (JSON: attempt ID, passage ID/version, tempo, `captureSource: "g2"`, `encoding: "pcm_s16le"`, sample rate, channels, duration, measured byte rate, chunk count); the findings then go to the coaching endpoint. Services must send CORS headers, and the packaged app needs their domains in `app.json` under a `network` permission. **Demo** needs no services and labels its results Demo on both screens.
+
+Glasses diagnostics are in the collapsed **Glasses debug** panel under the phone UI; it opens by itself on any error.
 
 ## Pack for distribution
 
@@ -37,15 +41,17 @@ Produces an `.ehpk` file.
 
 | File | Purpose |
 |---|---|
-| `src/main.ts` | Boots the bridge, routes normalized input to the current screen. |
+| `src/main.ts` | Mounts the phone UI, boots the bridge, routes normalized input to the controller. |
+| `src/controller.ts` | Phone session state → glasses screen; glasses gestures → session calls (CONTRACT.md state map). |
+| `src/g2capture.ts` | The G2 mic as the phone session's capture source: mic on, one `g2` attempt, WAV → analysis → coaching; discard, interrupt, 30s cap. |
+| `src/feedback.ts` | Glasses wording for a result, from the phone's shared finding helpers. |
 | `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
 | `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `menuItem`; drops duplicates and any tap that belongs to a long press. |
 | `src/settings.ts` | Display settings (spec §5), saved in Even app storage, and the sheet-music system-menu item. |
 | `src/layout.ts` | Shared geometry from the Paper mockups; right-aligned text via `@evenrealities/pretext`. |
 | `../shared/passages.ts` | The six approved seed passages and authored fingerings (spec §7), shared with the phone Guide. |
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
-| `src/recorder.ts` / `src/wav.ts` | One capture per attempt ID; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
-| `src/upload.ts` / `src/phone.ts` | Multipart upload (`audio` + `metadata`) to the Upload URL set on the phone screen. |
+| `src/recorder.ts` / `src/wav.ts` | One mic capture at a time; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
 | `src/screens/` | One file per glasses state (spec §4). |
@@ -54,8 +60,11 @@ Produces an `.ehpk` file.
 
 | Mockup | State | Status |
 |---|---|---|
-| 01 | Selection | Native list (5 rows), tap to open, double tap to exit; no hints |
+| 01 | Selection | Native list (5 rows), tap to open, double tap to exit; no hints. Shown while the phone is on Library or History |
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
-| 03 | Recording | Tap ● starts the G2 mic. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and uploads, `2× discard` throws the take away; 30s cap |
-| (04) | Saving | Interim until Analyzing: uploads the take; saved → tap → selection; couldn't save → tap or double tap → back to Ready |
+| 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
+| 04 | Analyzing | Short status; no input, no menu |
+| 05 | Review | Where, what happened, one cue (coaching cue when it cites this finding); `▼ guide` when there is a correction; tap → Selection. Text only for now |
+| 06 | Guide | The correction and any authored finger; swipe up → Review; tap → Selection. Text only for now |
+| — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |

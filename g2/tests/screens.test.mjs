@@ -2,13 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PASSAGES } from '../src/passages.ts'
 import { readyScreen } from '../src/screens/ready.ts'
-import { savingScreen } from '../src/screens/saving.ts'
+import { analyzingScreen, errorScreen, guideScreen, reviewScreen } from '../src/screens/results.ts'
 import { selectionScreen } from '../src/screens/selection.ts'
 import { fakeGlasses, mount, settle, textByName } from './fakes.mjs'
 
 const LITTLE_ECHO = PASSAGES.find(passage => passage.id === 'P02')
 const tiles = async () => ({ left: new Uint8Array([1]), right: new Uint8Array([2]), hasClef: true })
-const micStates = bridge => bridge.callsTo('audioControl').map(call => call.isOpen)
 
 // ── 01 · Select passage ────────────────────────────────────────────────
 
@@ -35,20 +34,33 @@ test('selection: list click opens that passage; double tap asks to exit; plain t
 })
 
 // ── 02 · Ready / 03 · Recording ────────────────────────────────────────
+// Ready is a view: taps ask the phone session to act, and the session's
+// answer arrives through setRecording. The mic lives in g2capture.ts.
 
-function ready({ sheetMusic = true, renderTiles = tiles, micOk = true } = {}) {
-  const { glasses, bridge } = fakeGlasses({ micOk })
-  const takes = []
-  let backs = 0
+function ready({ sheetMusic = true, renderTiles = tiles } = {}) {
+  const { glasses, bridge } = fakeGlasses()
+  const calls = []
   const screen = readyScreen({
     passage: LITTLE_ECHO,
     sheetMusic: () => sheetMusic,
-    onTake: take => takes.push(take),
-    onBack: () => backs++,
+    onStart: () => calls.push('start'),
+    onStop: () => calls.push('stop'),
+    onDiscard: () => calls.push('discard'),
+    onBack: () => calls.push('back'),
     renderTiles,
   })
   const ctx = mount(screen, glasses)
-  return { screen, ctx, bridge, takes, backs: () => backs }
+  return { screen, ctx, bridge, calls }
+}
+
+// Tap on the glasses, then the session confirms the take started.
+async function recording(options) {
+  const setup = ready(options)
+  await settle()
+  setup.screen.onInput({ kind: 'tap' })
+  setup.screen.setRecording(true)
+  await settle()
+  return setup
 }
 
 test('ready: title, tempo, focus, staff images and only the record hint (dimmed)', async () => {
@@ -68,12 +80,15 @@ test('ready: title, tempo, focus, staff images and only the record hint (dimmed)
   assert.equal(screen.allowsMenu, true)
 })
 
-test('ready: double tap goes back without touching the mic', async () => {
-  const { screen, bridge, backs } = ready()
-  screen.onInput({ kind: 'doubleTap' })
-  await settle()
-  assert.equal(backs(), 1)
-  assert.deepEqual(micStates(bridge), [])
+test('ready: tap asks to start once; double tap goes back', async () => {
+  const { screen, calls } = ready()
+  screen.onInput({ kind: 'tap' })
+  screen.onInput({ kind: 'tap' }) // while starting
+  screen.onInput({ kind: 'doubleTap' }) // while starting
+  assert.deepEqual(calls, ['start'])
+  const other = ready()
+  other.screen.onInput({ kind: 'doubleTap' })
+  assert.deepEqual(other.calls, ['back'])
 })
 
 test('recording (sheet music on): text swaps in place, staff stays, no rebuild or image send', async () => {
@@ -81,6 +96,7 @@ test('recording (sheet music on): text swaps in place, staff stays, no rebuild o
   await settle()
   const imagesBefore = bridge.callsTo('updateImageRawData').length
   screen.onInput({ kind: 'tap' })
+  screen.setRecording(true)
   await settle()
 
   assert.equal(ctx.redraws, 0)
@@ -93,16 +109,12 @@ test('recording (sheet music on): text swaps in place, staff stays, no rebuild o
   assert.equal(shown.rec, '■')
   assert.equal(shown.hintL, 'tap  ■')
   assert.equal(shown.hintR, '2×  discard')
-  assert.deepEqual(micStates(bridge), [true])
   assert.equal(screen.name, 'recording')
   assert.equal(screen.allowsMenu, false)
 })
 
 test('recording (sheet music off): rebuilds to just ■ and the hints, with no images', async () => {
-  const { screen, ctx, bridge } = ready({ sheetMusic: false })
-  await settle()
-  screen.onInput({ kind: 'tap' })
-  await settle()
+  const { ctx, bridge } = await recording({ sheetMusic: false })
   assert.equal(ctx.redraws, 1)
   const [page] = bridge.callsTo('rebuildPageContainer')
   assert.equal(page.imageObject?.length ?? 0, 0)
@@ -112,27 +124,29 @@ test('recording (sheet music off): rebuilds to just ■ and the hints, with no i
   )
 })
 
-test('recording: tap stops and hands over exactly one take for this passage', async () => {
-  const { screen, bridge, takes } = ready()
-  screen.onInput({ kind: 'tap' })
+test('recording started on the phone switches the glasses view too', async () => {
+  const { screen, bridge, calls } = ready({ sheetMusic: true })
   await settle()
-  screen.onInput({ kind: 'tap' })
-  screen.onInput({ kind: 'tap' }) // a duplicate stop while stopping
+  screen.setRecording(true)
   await settle()
-  assert.equal(takes.length, 1)
-  assert.equal(takes[0].passageId, 'P02')
-  assert.deepEqual(micStates(bridge), [true, false])
+  assert.equal(textByName(bridge).rec, '■')
+  assert.equal(screen.name, 'recording')
+  assert.deepEqual(calls, [])
 })
 
-test('recording: double tap discards and restores Ready in place, with no take', async () => {
-  const { screen, ctx, bridge, takes } = ready({ sheetMusic: true })
-  await settle()
+test('recording: tap asks to stop exactly once', async () => {
+  const { screen, calls } = await recording()
   screen.onInput({ kind: 'tap' })
-  await settle()
+  screen.onInput({ kind: 'tap' }) // a duplicate stop while stopping
+  assert.deepEqual(calls, ['start', 'stop'])
+})
+
+test('recording: double tap asks to discard; Ready returns in place', async () => {
+  const { screen, ctx, bridge, calls } = await recording({ sheetMusic: true })
   screen.onInput({ kind: 'doubleTap' })
+  screen.setRecording(false)
   await settle()
-  assert.equal(takes.length, 0)
-  assert.deepEqual(micStates(bridge), [true, false])
+  assert.deepEqual(calls, ['start', 'discard'])
   assert.equal(ctx.redraws, 0)
   const shown = textByName(bridge)
   assert.equal(shown.titleL, 'Little Echo')
@@ -141,15 +155,23 @@ test('recording: double tap discards and restores Ready in place, with no take',
   assert.equal(screen.allowsMenu, true)
 })
 
-test('recording (sheet music off): discard rebuilds Ready and resends the staff', async () => {
-  const { screen, ctx, bridge } = ready({ sheetMusic: false })
-  await settle()
-  screen.onInput({ kind: 'tap' })
-  await settle()
+test('recording (sheet music off): back to Ready rebuilds and resends the staff', async () => {
+  const { screen, ctx, bridge } = await recording({ sheetMusic: false })
   screen.onInput({ kind: 'doubleTap' })
+  screen.setRecording(false)
   await settle()
   assert.equal(ctx.redraws, 2)
   assert.equal(bridge.callsTo('updateImageRawData').length, 4)
+})
+
+test('a start that never records returns to Ready', async () => {
+  const { screen, bridge } = ready()
+  await settle()
+  screen.onInput({ kind: 'tap' })
+  screen.setRecording(false) // e.g. the mic did not start
+  await settle()
+  assert.equal(screen.name, 'ready')
+  assert.equal(textByName(bridge).hintL, 'tap  ●')
 })
 
 test('no staff image is sent once recording has started', async () => {
@@ -163,98 +185,61 @@ test('no staff image is sent once recording has started', async () => {
   assert.equal(bridge.callsTo('updateImageRawData').length, 0)
 })
 
-test('taps while the mic is starting are ignored (no second start, no instant stop)', async () => {
-  const { screen, bridge, takes } = ready()
-  screen.onInput({ kind: 'tap' })
-  screen.onInput({ kind: 'tap' })
-  screen.onInput({ kind: 'doubleTap' })
-  await settle()
-  assert.deepEqual(micStates(bridge), [true])
-  assert.equal(takes.length, 0)
-  assert.equal(screen.name, 'recording')
-})
+// ── 04 · Analyzing / 05 · Review / 06 · Guide / error ──────────────────
 
-test('a mic that fails to start returns to Ready', async () => {
-  const { screen, bridge, takes } = ready({ micOk: false })
-  await settle()
-  screen.onInput({ kind: 'tap' })
-  await settle()
-  assert.equal(screen.name, 'ready')
-  assert.equal(textByName(bridge).hintL, 'tap  ●')
-  assert.equal(takes.length, 0)
-})
+const VIEW = { title: 'Little Echo', tag: '', review: 'Beat 3 · Note mismatch\nExpected G4 · Heard G#4\nPlay G4 on beat 3.', guide: 'Play G4 on beat 3.' }
 
-test('a take stops by itself at 30s', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] })
-  const { screen, takes } = ready()
-  screen.onInput({ kind: 'tap' })
-  await settle()
-  t.mock.timers.tick(30000)
-  await settle()
-  assert.equal(takes.length, 1)
-})
-
-test('closing the app mid-take discards it and turns the mic off', async () => {
-  const { screen, bridge, takes } = ready()
-  screen.onInput({ kind: 'tap' })
-  await settle()
-  screen.dispose()
-  await settle()
-  assert.deepEqual(micStates(bridge), [true, false])
-  assert.equal(takes.length, 0)
-})
-
-// ── Saving (interim 04) ────────────────────────────────────────────────
-
-function saving(result) {
+async function shownBody(screen) {
   const { glasses, bridge } = fakeGlasses()
-  const events = []
-  let resolveUpload
-  const screen = savingScreen({
-    take: { durationSec: 2.4 },
-    upload: () => new Promise(resolve => (resolveUpload = () => resolve(result))),
-    onSaved: () => events.push('saved'),
-    onFailed: () => events.push('failed'),
-  })
-  const ctx = mount(screen, glasses)
-  return { screen, ctx, bridge, events, finish: () => resolveUpload() }
+  mount(screen, glasses)
+  await settle()
+  return textByName(bridge)
 }
 
-test('saving: shows progress, ignores input until the upload settles, and blocks the menu', async () => {
-  const { screen, bridge, events } = saving({ ok: true })
-  await settle()
-  assert.equal(textByName(bridge).message, 'Saving take…')
+test('analyzing: a short status with no input and no menu', async () => {
+  const screen = analyzingScreen({ title: 'Little Echo', tag: 'Demo' })
+  const shown = await shownBody(screen)
+  assert.equal(shown.body, 'Analyzing…')
+  assert.equal(shown.titleR, 'Demo')
   assert.equal(screen.allowsMenu, false)
   screen.onInput({ kind: 'tap' })
+})
+
+test('review: finding and cue, ▼ guide hint, swipe down to Guide, tap is Play again', async () => {
+  const events = []
+  const screen = reviewScreen({ view: VIEW, onGuide: () => events.push('guide'), onPlayAgain: () => events.push('again') })
+  const shown = await shownBody(screen)
+  assert.equal(shown.body, VIEW.review)
+  assert.equal(shown.hintR, '▼ guide')
+  screen.onInput({ kind: 'swipeDown' })
+  screen.onInput({ kind: 'swipeUp' })
+  screen.onInput({ kind: 'tap' })
   screen.onInput({ kind: 'doubleTap' })
+  assert.deepEqual(events, ['guide', 'again', 'again'])
+})
+
+test('review without a correction offers no guide', async () => {
+  const events = []
+  const screen = reviewScreen({ view: { ...VIEW, guide: null }, onGuide: () => events.push('guide'), onPlayAgain: () => {} })
+  assert.equal((await shownBody(screen)).hintR, undefined)
+  screen.onInput({ kind: 'swipeDown' })
   assert.deepEqual(events, [])
 })
 
-test('saving: success says so, then tap continues to selection', async () => {
-  const { screen, bridge, events, finish } = saving({ ok: true })
-  finish()
-  await settle()
-  assert.equal(textByName(bridge).message, 'Take saved · 2.4s')
-  screen.onInput({ kind: 'doubleTap' })
+test('guide: the correction; swipe up back to Review; tap is Play again', async () => {
+  const events = []
+  const screen = guideScreen({ view: VIEW, onReview: () => events.push('review'), onPlayAgain: () => events.push('again') })
+  assert.equal((await shownBody(screen)).body, VIEW.guide)
+  screen.onInput({ kind: 'swipeUp' })
   screen.onInput({ kind: 'tap' })
-  assert.deepEqual(events, ['saved'])
+  assert.deepEqual(events, ['review', 'again'])
 })
 
-test('saving: failure gives the plain reason, then tap or double tap goes back to Ready', async () => {
-  for (const kind of ['tap', 'doubleTap']) {
-    const { screen, bridge, events, finish } = saving({ ok: false, reason: "Can't reach the server." })
-    finish()
-    await settle()
-    assert.equal(textByName(bridge).message, "Couldn't save the take.\nCan't reach the server.")
-    screen.onInput({ kind })
-    assert.deepEqual(events, ['failed'], kind)
-  }
-})
-
-test('saving: a result arriving after the player left does not redraw', async () => {
-  const { ctx, bridge, finish } = saving({ ok: true })
-  ctx.active = false
-  finish()
-  await settle()
-  assert.equal(bridge.callsTo('textContainerUpgrade').length, 0)
+test('error: a plain reason, never a musical claim; tap or double tap is Play again', async () => {
+  const events = []
+  const screen = errorScreen({ title: 'Little Echo', message: "Can't reach the server.", onPlayAgain: () => events.push('again') })
+  assert.equal((await shownBody(screen)).body, "Couldn't finish this take.\nCan't reach the server.")
+  screen.onInput({ kind: 'tap' })
+  screen.onInput({ kind: 'doubleTap' })
+  assert.deepEqual(events, ['again', 'again'])
 })

@@ -12,7 +12,7 @@
         -webkit-text-size-adjust: 100%;
         overscroll-behavior: none;
       }
-      /* Glasses-side diagnostics (src/status.ts, src/phone.ts), below the phone UI. */
+      /* Glasses-side diagnostics (src/status.ts), below the phone UI. */
       #debug {
         max-width: 390px;
         margin: 0 auto 24px;
@@ -25,34 +25,6 @@
         display: flex;
         align-items: center;
         cursor: pointer;
-      }
-      #settings label {
-        display: block;
-        margin-bottom: 6px;
-        font-size: 13px;
-      }
-      #settings .row {
-        display: flex;
-        gap: 8px;
-      }
-      #settings input {
-        flex: 1;
-        min-width: 0;
-        padding: 10px 12px;
-        border: 1px solid #D8D2C7;
-        border-radius: 10px;
-        background: #F6F2EA;
-        color: #171714;
-        font: inherit;
-      }
-      #settings button {
-        padding: 10px 16px;
-        border: 0;
-        border-radius: 10px;
-        background: #171714;
-        color: #F6F2EA;
-        font: inherit;
-        font-weight: 600;
       }
       #log {
         margin: 12px 0 0;
@@ -67,7 +39,6 @@
     <div id="app">Loading Encore… (if this never changes, the script did not load)</div>
     <details id="debug">
       <summary>Glasses debug</summary>
-      <div id="settings"></div>
       <pre id="log"></pre>
     </details>
     <script type="module" src="/src/main.ts"></script>

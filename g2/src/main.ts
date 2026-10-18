@@ -1,96 +1,62 @@
 import { status } from './status.ts'
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { startPhoneApp } from '../../mobile/src/app.ts'
+import { startController } from './controller.ts'
+import { G2Capture } from './g2capture.ts'
 import { Glasses } from './glasses.ts'
 import { filterInputs, toInput } from './input.ts'
-import { PASSAGES, type Passage } from './passages.ts'
-import { mountUploadSettings } from './phone.ts'
-import { Recorder, type Take } from './recorder.ts'
-import { readyScreen } from './screens/ready.ts'
-import { savingScreen } from './screens/saving.ts'
-import type { Screen } from './screens/screen.ts'
-import { selectionScreen } from './screens/selection.ts'
+import { Recorder } from './recorder.ts'
 import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings.ts'
-import { loadUploadUrl, uploadTake } from './upload.ts'
-import { startPhoneApp } from '../../mobile/src/app.ts'
 
-// The phone UI (mobile/) renders in this same WebView. It mounts before the
-// bridge so the phone is usable even if the glasses never connect. Glasses
-// side effects stay in g2/; the phone app only renders phone DOM.
-function mountPhoneUi() {
-  const root = document.getElementById('app')
-  if (!root) return status('phone UI root #app is missing', 'error')
-  const app = startPhoneApp(root, { storage: window.localStorage })
-  window.addEventListener('pagehide', () => app.dispose(), { once: true })
-}
-
+// One page for phone and glasses (glasses-integration/CONTRACT.md). The phone
+// UI from mobile/ renders phone DOM only and owns the session; everything
+// that touches the glasses (bridge, pages, gestures, mic) is in g2/.
 async function main() {
-  mountPhoneUi()
+  const root = document.getElementById('app')
+  if (!root) throw new Error('phone UI root #app is missing')
+
+  let glasses: Glasses | null = null
+  // The bridge being ready is not proof the glasses are connected (spec §9).
+  const app = startPhoneApp(root, {
+    storage: window.localStorage,
+    hostSource: { id: 'g2', create: (store, endpoints, onChange) => new G2Capture(store, endpoints, onChange, () => glasses) },
+    deviceStatus: () => (glasses ? 'Even bridge ready · glasses connection unverified' : null),
+  })
+  window.addEventListener('pagehide', () => app.dispose(), { once: true })
+
   status('script loaded; waiting for Even bridge…')
   const slowBridge = setTimeout(() => status('still waiting for the Even bridge after 5s', 'error'), 5000)
-  const glasses = new Glasses(await waitForEvenAppBridge())
+  const bridged = new Glasses(await waitForEvenAppBridge())
   clearTimeout(slowBridge)
   status('bridge ready')
 
-  let current: Screen
   // Read before the first page: every page declares the menu label from it.
-  let settings = await loadSettings(glasses)
-  let uploadUrl = await loadUploadUrl(glasses)
-  mountUploadSettings(glasses, uploadUrl, url => (uploadUrl = url))
+  let settings = await loadSettings(bridged)
+  glasses = bridged
+  app.refresh()
 
-  function show(screen: Screen) {
-    current = screen
-    status(`screen → ${screen.name}`)
-    const menuObject = screen.allowsMenu === false ? undefined : sheetMusicMenu(settings)
-    // Failures are already reported by the glasses queue.
-    glasses.showPage({ ...screen.page(), menuObject }).catch(() => {})
-    screen.enter?.({ glasses, isActive: () => current === screen, redraw: () => show(screen) })
-  }
-
-  function showSelection() {
-    show(
-      selectionScreen({
-        passages: PASSAGES,
-        onOpen: showReady,
-        onExit: () => glasses.requestExit(),
-      }),
-    )
-  }
-
-  function showReady(passage: Passage) {
-    show(
-      readyScreen({
-        passage,
-        sheetMusic: () => settings.showSheetMusicWhilePlaying,
-        onTake: take => showSaving(passage, take),
-        onBack: showSelection,
-      }),
-    )
-  }
-
-  // Until Analyzing (04) exists, a finished take is uploaded, then the player
-  // continues to selection (spec §4); if it wasn't saved, back to Ready.
-  function showSaving(passage: Passage, take: Take) {
-    show(
-      savingScreen({
-        take,
-        upload: () => uploadTake(uploadUrl, take),
-        onSaved: showSelection,
-        onFailed: () => showReady(passage),
-      }),
-    )
-  }
+  const controller = startController({
+    glasses: bridged,
+    store: app.store,
+    actions: app,
+    sheetMusic: () => settings.showSheetMusicWhilePlaying,
+    menu: screen => (screen.allowsMenu === false ? undefined : sheetMusicMenu(settings)),
+    onExit: () => bridged.requestExit(),
+  })
 
   function toggleSheetMusic() {
     settings = { ...settings, showSheetMusicWhilePlaying: !settings.showSheetMusicWhilePlaying }
-    saveSettings(glasses, settings)
+    saveSettings(bridged, settings)
     status(`sheet music while playing: ${settings.showSheetMusicWhilePlaying ? 'on' : 'off'}`)
     // Re-declare the page so the menu label flips (Hide ↔ Show).
-    show(current)
+    controller.redraw()
   }
 
   const handleInput = filterInputs(input => {
     if (input.kind === 'exit') {
-      current.dispose?.()
+      // A take in progress is kept as interrupted, never as completed.
+      controller.dispose()
+      app.dispose()
       unsubscribe()
       return
     }
@@ -98,20 +64,18 @@ async function main() {
     // is still on the glasses, so there is nothing to redraw.
     if (input.kind === 'foreground') return
     if (input.kind === 'menuItem') {
-      if (input.itemID === SHEET_MUSIC_MENU_ITEM && current.allowsMenu !== false) toggleSheetMusic()
+      if (input.itemID === SHEET_MUSIC_MENU_ITEM && controller.current?.allowsMenu !== false) toggleSheetMusic()
       return
     }
-    current.onInput(input)
+    controller.onInput(input)
   })
 
-  const unsubscribe = glasses.bridge.onEvenHubEvent(event => {
+  const unsubscribe = bridged.bridge.onEvenHubEvent(event => {
     // Audio frames skip input handling; the active recorder (if any) keeps them.
     if (event.audioEvent?.audioPcm) return Recorder.feed(event.audioEvent.audioPcm)
     const input = toInput(event)
     if (input) handleInput(input)
   })
-
-  showSelection()
 }
 
 main().catch(error => status(`startup failed: ${String(error)}`, 'error'))

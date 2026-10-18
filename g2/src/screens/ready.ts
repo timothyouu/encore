@@ -2,7 +2,6 @@ import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { Page } from '../glasses.ts'
 import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, rightText, splitRow, text } from '../layout.ts'
 import type { Passage } from '../passages.ts'
-import { Recorder, type Take } from '../recorder.ts'
 import { STAFF_H, TILE_W, renderStaffTiles, type StaffTiles } from '../staff.ts'
 import { status } from '../status.ts'
 import type { Screen, ScreenContext } from './screen.ts'
@@ -21,18 +20,26 @@ const REC = { id: 6, name: 'rec' }
 const RECORD_HINT = 'tap  ●'
 const STOP_HINT = 'tap  ■'
 const DISCARD_HINT = '2×  discard'
-// Spec §8: bound clip duration. Seed passages last 8 beats (≤ 8s at 60 bpm).
-const MAX_TAKE_MS = 30000
 
+// 'starting' and 'stopping' wait for the phone session to confirm, so taps
+// in between never start a second take or stop one instantly.
 type Phase = 'ready' | 'starting' | 'recording' | 'stopping'
 
 type ReadyOptions = {
   passage: Passage
   sheetMusic(): boolean
-  onTake(take: Take): void
+  // Taps ask the phone session to act; it answers through setRecording.
+  onStart(): void
+  onStop(): void
+  onDiscard(): void
   onBack(): void
   // Canvas rendering by default; tests pass a stand-in.
   renderTiles?: (passage: Passage) => Promise<StaffTiles>
+}
+
+export type ReadyScreen = Screen & {
+  // The session's capture state, whether started here or on the phone.
+  setRecording(recording: boolean): void
 }
 
 function staffTile(container: { id: number; name: string }, x: number) {
@@ -50,19 +57,20 @@ function staffTile(container: { id: number; name: string }, x: number) {
 // Recording is the Ready page with its text swapped in place: the staff images
 // stay on the glasses and nothing is sent over BLE once capture starts
 // (spec §4). With sheet music off, Recording rebuilds to a page with just ■.
+// The microphone itself belongs to the capture source (g2capture.ts).
 export function readyScreen({
   passage,
   sheetMusic,
-  onTake,
+  onStart,
+  onStop,
+  onDiscard,
   onBack,
   renderTiles = renderStaffTiles,
-}: ReadyOptions): Screen {
+}: ReadyOptions): ReadyScreen {
   let phase: Phase = 'ready'
   // True when the recording view is drawn over the Ready page.
   let inPlace = false
-  let recorder: Recorder | null = null
   let context: ScreenContext | null = null
-  let autoStop: ReturnType<typeof setTimeout> | undefined
 
   const readyPage = (): Page => ({
     textObject: [
@@ -92,6 +100,8 @@ export function readyScreen({
   }
 
   function showRecordingView() {
+    // Not drawn yet: page() already reflects the phase.
+    if (!context) return
     inPlace = sheetMusic()
     if (!inPlace) return context?.redraw()
     swapText([
@@ -105,8 +115,6 @@ export function readyScreen({
   }
 
   function showReadyView() {
-    phase = 'ready'
-    recorder = null
     if (!inPlace) return context?.redraw()
     swapText([
       [TITLE_L, passage.title],
@@ -116,38 +124,6 @@ export function readyScreen({
       [HINT_L, RECORD_HINT],
       [HINT_R, ''],
     ])
-  }
-
-  async function startRecording() {
-    phase = 'starting'
-    showRecordingView()
-    try {
-      recorder = await Recorder.start(context!.glasses, passage)
-      phase = 'recording'
-      autoStop = setTimeout(() => {
-        status(`take reached ${MAX_TAKE_MS / 1000}s; stopping`)
-        stopRecording()
-      }, MAX_TAKE_MS)
-    } catch (error) {
-      status(`could not start recording: ${String(error)}`, 'error')
-      showReadyView()
-    }
-  }
-
-  async function stopRecording() {
-    if (phase !== 'recording' || !recorder) return
-    phase = 'stopping'
-    clearTimeout(autoStop)
-    const take = await recorder.stop()
-    if (take) onTake(take)
-  }
-
-  async function discardRecording() {
-    if (phase !== 'recording' || !recorder) return
-    phase = 'stopping'
-    clearTimeout(autoStop)
-    await recorder.discard()
-    showReadyView()
   }
 
   return {
@@ -175,24 +151,36 @@ export function readyScreen({
         .catch(error => status(`staff render failed: ${String(error)}`, 'error'))
     },
 
-    onInput(input) {
-      if (phase === 'ready') {
-        if (input.kind === 'tap') startRecording()
-        else if (input.kind === 'doubleTap') onBack()
-      } else if (phase === 'recording') {
-        if (input.kind === 'tap') stopRecording()
-        else if (input.kind === 'doubleTap') discardRecording()
+    setRecording(recording) {
+      if (recording) {
+        // Started on the phone: switch the view now. Started here: already shown.
+        const shown = phase === 'starting'
+        phase = 'recording'
+        if (!shown) showRecordingView()
+      } else if (phase !== 'ready') {
+        // Mic failed, take discarded, or canceled on the phone.
+        phase = 'ready'
+        showReadyView()
       }
-      // 'starting' / 'stopping': ignore input until the mic has settled.
     },
 
-    dispose() {
-      // App closing or glasses gone mid-take: an interrupted capture is never kept.
-      clearTimeout(autoStop)
-      if (recorder && phase === 'recording') {
-        status('capture interrupted', 'error')
-        recorder.discard()
+    onInput(input) {
+      if (phase === 'ready') {
+        if (input.kind === 'tap') {
+          phase = 'starting'
+          showRecordingView()
+          onStart()
+        } else if (input.kind === 'doubleTap') onBack()
+      } else if (phase === 'recording') {
+        if (input.kind === 'tap') {
+          phase = 'stopping'
+          onStop()
+        } else if (input.kind === 'doubleTap') {
+          phase = 'stopping'
+          onDiscard()
+        }
       }
+      // 'starting' / 'stopping': ignore input until the session has settled.
     },
   }
 }
