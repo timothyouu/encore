@@ -2,7 +2,7 @@ import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { CoachingResult } from '../../../shared/contracts.ts'
 import type { VisualCard } from '../../../shared/visual-contract.ts'
 import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, padToWidth, rightText, text } from '../layout.ts'
-import { ART_H, ART_W, renderCardArt, renderReplayFrame, replaySteps, type ReplayStep } from '../review/art.ts'
+import { ART_H, ART_W, MAX_REVEAL_STEPS, renderCardArt, renderReplayFrame, replaySteps, type ReplayStep } from '../review/art.ts'
 import { CUE_WIDTH, cardViews, type CardView } from '../review/model.ts'
 import { status } from '../status.ts'
 import type { Screen, ScreenContext } from './screen.ts'
@@ -19,9 +19,12 @@ const REPLAY = { id: 7, name: 'replay' }
 const ART_Y = 44
 const COLUMN_X = 300
 const LEGEND_BRIGHTNESS = 3
-const NEXT_HINT = '▼  next'
 const REPLAY_HINT = 'tap  replay'
-// Each replay frame stays up at least this long, even on a fast link.
+// The bottom-right box holds the next hint or one progress dot per replay frame.
+const DOTS_ROOM = '●'.repeat(2 * MAX_REVEAL_STEPS + 1)
+const NEXT_HINT = padToWidth('▼  next', DOTS_ROOM)
+// A frame that ends a replay phase stays up at least this long (a reveal
+// step half as long), even on a fast link.
 const FRAME_DWELL_MS = 2000
 
 type ReviewOptions = {
@@ -44,9 +47,10 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // plan: art on the left (keys, staff, beat ruler, duration bars or mic), the
 // ●/× legend and cue on the right. Swipe down/up moves between cards; every
 // card shares one layout, so changing card is text updates plus one image.
-// Tap replays the card: its keyframes (what was played, then the fix) are
-// sent one after another at Bluetooth pace, then it settles on the static
-// picture. Swiping or leaving cancels a replay.
+// Tap replays the card: its keyframes (what was played, revealed in order,
+// then the fix) are sent one after another at Bluetooth pace, ending on the
+// fix. Swiping away and back shows the comparison again. Swiping or leaving
+// cancels a replay.
 export function reviewScreen({
   coaching,
   views = cardViews(coaching),
@@ -72,7 +76,7 @@ export function reviewScreen({
   }
   const nextHint = (i: number) => (i < views.length - 1 ? NEXT_HINT : '')
   const replayHint = (i: number) => (steps(i).length ? REPLAY_HINT : '')
-  const dots = (done: number, total: number) => padToWidth('●'.repeat(done) + '○'.repeat(total - done), NEXT_HINT)
+  const dots = (done: number, total: number) => padToWidth('●'.repeat(done) + '○'.repeat(total - done), DOTS_ROOM)
 
   function texts(view: CardView, i: number): [{ id: number; name: string }, string][] {
     return [
@@ -115,22 +119,22 @@ export function reviewScreen({
     replaying = true
     const mine = ++generation
     const current = () => ctx.isActive() && generation === mine
-    const total = plan.length + 1
+    const total = plan.length
 
     try {
       for (const [n, step] of plan.entries()) {
         if (!current()) return
         const started = Date.now()
+        await ctx.glasses.updateImage(ART, await renderFrame(card, step), current)
+        // Text lands instantly and images lag over BLE, so the caption follows the picture.
         ctx.glasses.updateText(REPLAY, step.caption, current)
         ctx.glasses.updateText(NEXT, dots(n + 1, total), current)
-        await ctx.glasses.updateImage(ART, await renderFrame(card, step), current)
-        const remaining = frameDwellMs - (Date.now() - started)
+        const dwell = step.hold === 'end' ? frameDwellMs : frameDwellMs / 2
+        const remaining = dwell - (Date.now() - started)
         if (remaining > 0) await wait(remaining)
       }
       if (!current()) return
-      // Settle on the static card and restore the hints.
-      ctx.glasses.updateText(NEXT, dots(total, total), current)
-      await sendStatic(i, current)
+      // Stay on the fix and restore the hints.
       ctx.glasses.updateText(REPLAY, replayHint(i) || ' ', current)
       ctx.glasses.updateText(NEXT, nextHint(i) || ' ', current)
     } catch (error) {
@@ -155,7 +159,7 @@ export function reviewScreen({
           text({ ...CUE, x: COLUMN_X, y: 124, width: CUE_WIDTH, height: 84, content: first.cue, capture: true }),
           // Bottom row: replay hint (then the frame caption) left, next hint (then progress dots) right.
           text({ ...REPLAY, x: MARGIN_X, y: HINT_Y, width: 260, content: replayHint(0), brightness: HINT_BRIGHTNESS }),
-          rightText({ ...NEXT, y: HINT_Y, content: nextHint(0), sizeFor: NEXT_HINT, brightness: HINT_BRIGHTNESS }),
+          rightText({ ...NEXT, y: HINT_Y, content: nextHint(0), sizeFor: DOTS_ROOM, brightness: HINT_BRIGHTNESS }),
         ],
         imageObject: [
           new ImageContainerProperty({ xPosition: 0, yPosition: ART_Y, width: ART_W, height: ART_H, containerID: ART.id, containerName: ART.name }),

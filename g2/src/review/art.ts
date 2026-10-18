@@ -160,7 +160,11 @@ function ledgers(ctx: CanvasRenderingContext2D, x: number, midi: number) {
 // only what is written (or the fix), and settle on both together.
 export type Layer = 'both' | 'played' | 'written'
 
-function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both') {
+const byOnset = (a: VisualNote, b: VisualNote) => a.onsetBeat - b.onsetBeat
+
+// `reveal` limits a played/written layer to its first notes in time order, so
+// replays can bring them in one at a time.
+function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both', reveal = Infinity) {
   const beatX = windowX(card)
   const flaggedSides = flaggedNotes(card)
   const refIds = new Set(flaggedSides.expected.map(note => note.id))
@@ -196,23 +200,33 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   }
 
   if (layer === 'played') {
-    // Everything that was heard, as ×; a missed note leaves an empty dashed slot.
-    for (const note of card.detected.notes) {
+    // What was heard, as ×, in the order it sounded. A missed note leaves an
+    // empty dashed slot once the reveal has passed its beat.
+    const heard = [...card.detected.notes].sort(byOnset).slice(0, reveal)
+    for (const note of heard) {
       const nx = x(note.onsetBeat)
       ledgers(ctx, nx, note.midiPitch)
       cross(ctx, nx, staffY(note.midiPitch) + 0.75)
     }
     if (card.kind === 'missing_note' && card.variant === 'missing') {
-      for (const note of flaggedSides.expected) dashedSlot(ctx, x(note.onsetBeat))
+      const reached = reveal >= card.detected.notes.length ? Infinity : heard.at(-1)?.onsetBeat ?? -Infinity
+      for (const note of flaggedSides.expected) if (note.onsetBeat <= reached) dashedSlot(ctx, x(note.onsetBeat))
     }
     return
   }
 
-  // Expected: solid notes, with names underneath; a missing one sits in a dashed slot.
-  for (const note of card.expected.notes) {
+  // Expected: solid notes, with names underneath; a missing one sits in a dashed
+  // slot (shown before its note drops in, while the written notes are revealed).
+  const writtenInOrder = [...card.expected.notes].sort(byOnset)
+  for (const [order, note] of writtenInOrder.entries()) {
+    const missingSlot = card.kind === 'missing_note' && refIds.has(note.id)
+    if (order >= reveal) {
+      if (missingSlot) dashedSlot(ctx, x(note.onsetBeat, note.id))
+      continue
+    }
     const nx = x(note.onsetBeat, note.id)
     const ny = staffY(note.midiPitch)
-    const missing = card.kind === 'missing_note' && refIds.has(note.id)
+    const missing = missingSlot
     ledgers(ctx, nx, note.midiPitch)
     notehead(ctx, nx, ny, note.durationBeats >= 2)
     if (note.durationBeats < 4) {
@@ -459,32 +473,56 @@ async function paint(draw: (ctx: CanvasRenderingContext2D) => void): Promise<Uin
   return toPng(element)
 }
 
-export type ReplayStep = { caption: string; layer: Layer; art: 'staff' | 'ruler' | 'duration' }
+export type ReplayStep = {
+  caption: string
+  layer: Layer
+  art: 'staff' | 'ruler' | 'duration' | 'keys'
+  // Staff frames: how many notes of the layer are shown so far.
+  reveal?: number
+  // 'step' frames are part of a reveal; 'end' frames close a phase and stay longer.
+  hold: 'step' | 'end'
+}
 
-// Replay keyframes before a card settles back on its static picture (the
-// Paper "replay 1 / 2" frames): what was played, then the fix. Unclear audio
-// has nothing measured to replay.
+// At most this many reveal frames per phase, so long phrases stay short.
+export const MAX_REVEAL_STEPS = 4
+
+export function revealCounts(total: number) {
+  if (total <= 0) return [0]
+  const steps = Math.min(total, MAX_REVEAL_STEPS)
+  return Array.from({ length: steps }, (_, k) => Math.ceil(((k + 1) * total) / steps))
+}
+
+function revealPhase(caption: string, layer: Layer, total: number): ReplayStep[] {
+  const counts = revealCounts(total)
+  return counts.map((reveal, k) => ({ caption, layer, art: 'staff', reveal, hold: k === counts.length - 1 ? 'end' : 'step' }))
+}
+
+// Replay keyframes (the Paper "replay" frames): what was played, then the fix,
+// ending on the fix. Staff cards reveal notes one at a time in the order they
+// sounded, then the written notes the same way. Unclear audio has nothing
+// measured to replay.
 export function replaySteps(card: VisualCard): ReplayStep[] {
   switch (artKind(card)) {
     case 'keyboard':
       return [
-        { caption: 'what you played', layer: 'played', art: 'staff' },
-        { caption: 'the fix', layer: 'both', art: 'staff' },
+        { caption: 'what you played', layer: 'played', art: 'staff', hold: 'end' },
+        { caption: 'the fix', layer: 'both', art: 'staff', hold: 'end' },
+        { caption: 'on the keys', layer: 'both', art: 'keys', hold: 'end' },
       ]
     case 'ruler':
       return [
-        { caption: 'when you played', layer: 'played', art: 'ruler' },
-        { caption: 'onto the beat', layer: 'written', art: 'ruler' },
+        { caption: 'when you played', layer: 'played', art: 'ruler', hold: 'end' },
+        { caption: 'onto the beat', layer: 'written', art: 'ruler', hold: 'end' },
       ]
     case 'duration':
       return [
-        { caption: 'how long you held', layer: 'played', art: 'duration' },
-        { caption: 'full length', layer: 'written', art: 'duration' },
+        { caption: 'how long you held', layer: 'played', art: 'duration', hold: 'end' },
+        { caption: 'full length', layer: 'written', art: 'duration', hold: 'end' },
       ]
     case 'staff':
       return [
-        { caption: 'what you played', layer: 'played', art: 'staff' },
-        { caption: "what's written", layer: 'written', art: 'staff' },
+        ...revealPhase('what you played', 'played', card.detected.notes.length),
+        ...revealPhase("what's written", 'written', card.expected.notes.length),
       ]
     case 'mic':
       return []
@@ -495,7 +533,8 @@ export function renderReplayFrame(card: VisualCard, step: ReplayStep): Promise<U
   return paint(ctx => {
     if (step.art === 'ruler') drawRuler(ctx, card, step.layer)
     else if (step.art === 'duration') drawDuration(ctx, card, step.layer)
-    else drawStaffWindow(ctx, card, step.layer)
+    else if (step.art === 'keys') drawStatic(ctx, card)
+    else drawStaffWindow(ctx, card, step.layer, step.reveal)
   })
 }
 
