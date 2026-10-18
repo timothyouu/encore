@@ -18,6 +18,8 @@
 - WSL is the source of truth. Preserve the shared WAV artifact pipeline, temporary-audio retries, history persistence and telemetry when integrating phone or G2 feedback.
 - New server results carry validated v2 bar segments; retain explicit legacy v1 History support without inventing saved locations. Use shared segment calculation and feedback ordering for phone and G2.
 - Save all supported findings and let the phone scroll every mistake. Limit glasses feedback to the ten most important distinct mistakes: missing, extra, wrong pitch, onset timing, then duration; rank timing/duration by absolute deviation. Keep every selected finding/bar pair accessible. Anchor timing to the first reliably matched played note, preserving missed opening notes and the WAV clock. Review and Guide share one finding/bar selection; forward navigation is Review → Guide → next Review, with the reverse path on back navigation.
+- A clearly detected piano phrase may contain mostly wrong pitches. Use supported beat correspondence to report wrong/missing notes when exact pitches cannot anchor it; do not label that case unclear audio solely for a reference mismatch. Keep silence, weak evidence, capture faults and unresolved multiple-take ambiguity gated.
+- Glasses wrong-note Xs annotate the affected written notehead in the visible score; keep the bar underneath during review/replay. Show the clean written correction in Guide. Detected pitch/time remains available in the legend and keyboard detail.
 - Gemini selects only allowed finding/action/component IDs. Code constructs cue text, visual evidence and segment selection; do not move musical measurements or range calculation into model output.
 
 ## Build and verification
