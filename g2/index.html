@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
-    <title>Even Hub Minimal</title>
+    <title>Encore</title>
     <style>
       html, body {
         margin: 0;
@@ -17,19 +17,19 @@
         -webkit-text-size-adjust: 100%;
         overscroll-behavior: none;
       }
+      /* Startup/error trail written by src/status.ts. */
       #app {
-        display: flex;
         height: 100%;
-        align-items: center;
-        justify-content: center;
         padding: 24px;
         box-sizing: border-box;
-        text-align: center;
+        white-space: pre-wrap;
+        font: 12px/1.5 ui-monospace, Menlo, monospace;
+        overflow-y: auto;
       }
     </style>
   </head>
   <body>
-    <div id="app">Companion app is running. Check the glasses display.</div>
+    <div id="app">Loading Encore… (if this never changes, the script did not load)</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

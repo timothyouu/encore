@@ -1,0 +1,110 @@
+import {
+  CreateStartUpPageContainer,
+  RebuildPageContainer,
+  TextContainerProperty,
+  type EvenAppBridge,
+  type ImageContainerProperty,
+  type ListContainerProperty,
+} from '@evenrealities/even_hub_sdk'
+import { status } from './status'
+
+export type Page = {
+  textObject?: TextContainerProperty[]
+  listObject?: ListContainerProperty[]
+  imageObject?: ImageContainerProperty[]
+}
+
+const STARTUP_RESULT: Record<number, string> = {
+  0: 'success',
+  1: 'invalid',
+  2: 'oversize',
+  3: 'out of memory',
+}
+
+function errorPage(message: string) {
+  return {
+    containerTotalNum: 1,
+    textObject: [
+      new TextContainerProperty({
+        xPosition: 0,
+        yPosition: 0,
+        width: 576,
+        height: 288,
+        borderWidth: 0,
+        borderColor: 0,
+        paddingLength: 8,
+        containerID: 1,
+        containerName: 'error',
+        content: message,
+        isEventCapture: 1,
+      }),
+    ],
+  }
+}
+
+// A flaky BLE hop can hang a call for ~30s; cap each one so the queue keeps moving.
+const CALL_TIMEOUT_MS = 5000
+
+function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out`)), CALL_TIMEOUT_MS),
+    ),
+  ])
+}
+
+// Serializes every bridge call. Concurrent render/storage calls can drop the
+// connection, so nothing talks to the glasses except through this queue.
+export class Glasses {
+  private chain: Promise<unknown> = Promise.resolve()
+  private started = false
+
+  constructor(readonly bridge: EvenAppBridge) {}
+
+  enqueue<T>(label: string, call: () => Promise<T>): Promise<T> {
+    const run = this.chain.then(() => withTimeout(call(), label))
+    this.chain = run.catch(error => status(`${label}: ${String(error)}`, 'error'))
+    return run
+  }
+
+  // The first page must go through createStartUpPageContainer exactly once;
+  // every later layout change is a rebuild.
+  showPage(page: Page): Promise<void> {
+    const containerTotalNum =
+      (page.textObject?.length ?? 0) + (page.listObject?.length ?? 0) + (page.imageObject?.length ?? 0)
+
+    return this.enqueue('showPage', async () => {
+      if (!this.started) {
+        this.started = true
+        const result = await this.bridge.createStartUpPageContainer(
+          new CreateStartUpPageContainer({ containerTotalNum, ...page }),
+        )
+        status(`glasses: startup page → ${result} (${STARTUP_RESULT[result] ?? 'unknown'})`)
+        if (result === 0) return
+
+        // The glasses stay on the loading screen until a startup page succeeds,
+        // so try a bare text page that names the failure.
+        const fallback = await this.bridge.createStartUpPageContainer(
+          new CreateStartUpPageContainer(errorPage(`Encore could not draw this screen (code ${result}).`)),
+        )
+        status(`glasses: fallback page → ${fallback}`)
+        if (fallback === 0) return
+        // Both refused: a WebView reload keeps the glasses session alive, so the
+        // startup page may already exist. Fall through and rebuild instead.
+      }
+      const ok = await this.bridge.rebuildPageContainer(
+        new RebuildPageContainer({ containerTotalNum, ...page }),
+      )
+      if (!ok) {
+        status('glasses: rebuild page failed', 'error')
+        throw new Error('rebuildPageContainer failed')
+      }
+    })
+  }
+
+  // exitMode 1 shows the system confirmation dialog; cleanup happens on SYSTEM_EXIT_EVENT.
+  requestExit(): Promise<boolean> {
+    return this.enqueue('shutDown', () => this.bridge.shutDownPageContainer(1))
+  }
+}

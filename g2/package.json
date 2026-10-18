@@ -12,7 +12,8 @@
     "qr": "NODE_OPTIONS=--no-deprecation evenhub qr --url http://$(ipconfig getifaddr en0):5173"
   },
   "dependencies": {
-    "@evenrealities/even_hub_sdk": "^0.0.16"
+    "@evenrealities/even_hub_sdk": "^0.0.16",
+    "@evenrealities/pretext": "^0.1.4"
   },
   "devDependencies": {
     "@evenrealities/evenhub-cli": "^0.1.14",
