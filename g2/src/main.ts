@@ -17,9 +17,15 @@ async function main() {
 
   let glasses: Glasses | null = null
   // The bridge being ready is not proof the glasses are connected (spec §9).
-  const app = startPhoneApp(root, {
+  const app = await startPhoneApp(root, {
     storage: window.localStorage,
-    hostSource: { id: 'g2', create: (store, endpoints, onChange) => new G2Capture(store, endpoints, onChange, () => glasses) },
+    indexedDB: window.indexedDB,
+    sentry: {
+      VITE_SENTRY_ENABLED: import.meta.env.VITE_SENTRY_ENABLED,
+      VITE_SENTRY_DSN: import.meta.env.VITE_SENTRY_DSN,
+      VITE_SENTRY_ENVIRONMENT: import.meta.env.VITE_SENTRY_ENVIRONMENT,
+    },
+    hostSource: { id: 'g2', create: context => new G2Capture(context, () => glasses) },
     deviceStatus: () => (glasses ? 'Even bridge ready · glasses connection unverified' : null),
   })
   window.addEventListener('pagehide', () => app.dispose(), { once: true })

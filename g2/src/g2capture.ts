@@ -1,6 +1,5 @@
-import type { CaptureDriver } from '../../mobile/src/app.ts'
-import { submitAttempt, type CaptureEndpoints, type SubmissionStage } from '../../mobile/src/capture.ts'
-import type { AttemptRecord, SessionStore } from '../../mobile/src/session.ts'
+import type { CaptureDriver, HostSourceContext } from '../../mobile/src/app.ts'
+import type { SessionStore } from '../../mobile/src/session.ts'
 import type { Glasses } from './glasses.ts'
 import { PASSAGES } from './passages.ts'
 import { Recorder } from './recorder.ts'
@@ -9,12 +8,12 @@ import { status } from './status.ts'
 // Spec §8: bound clip duration. Seed passages last 8 beats (≤ 8s at 60 bpm).
 export const MAX_TAKE_MS = 30000
 
-type Stage = 'capture' | 'upload' | 'analysis' | 'coaching'
-
 // The G2 microphone as a recording source for the phone session (CONTRACT.md).
 // Phone buttons and glasses taps both arrive here through the phone app, so
 // there is one take at a time and one attempt record per take. The mic is
 // turned on before the attempt exists: a mic that never starts records nothing.
+// Finished takes go to the phone's own pipeline (normalize, upload, analyze,
+// coach, retry); this class only owns the device.
 export class G2Capture implements CaptureDriver {
   busy = false
   recording = false
@@ -22,21 +21,19 @@ export class G2Capture implements CaptureDriver {
 
   private recorder: Recorder | null = null
   private autoStop: ReturnType<typeof setTimeout> | undefined
-  private request: AbortController | null = null
-  private requestStage: SubmissionStage = 'upload'
   private activeAttemptId: string | null = null
   // Bumped by cancel/dispose so late mic or network results are ignored.
   private generation = 0
   private disposed = false
 
   private readonly store: SessionStore
-  private readonly endpoints: CaptureEndpoints
+  private readonly submit: HostSourceContext['submit']
   private readonly onChange: () => void
   private readonly glasses: () => Glasses | null
 
-  constructor(store: SessionStore, endpoints: CaptureEndpoints, onChange: () => void, glasses: () => Glasses | null) {
+  constructor({ store, submit, onChange }: HostSourceContext, glasses: () => Glasses | null) {
     this.store = store
-    this.endpoints = endpoints
+    this.submit = submit
     this.onChange = onChange
     this.glasses = glasses
   }
@@ -103,31 +100,15 @@ export class G2Capture implements CaptureDriver {
       const record = this.store.stop()
       if (!take || !record || record.attemptId !== this.activeAttemptId) return
       if (take.wav.length <= 44) {
-        this.fail(record, 'capture', 'No audio was recorded.')
+        this.error = 'No audio was recorded.'
+        this.store.fail(record.attemptId, 'capture', 'No audio was recorded.')
         return
       }
-      await submitAttempt(this.store, this.endpoints, record, {
-        blob: new Blob([take.wav], { type: 'audio/wav' }),
-        filename: `${record.attemptId}.wav`,
-        metadata: {
-          encoding: `pcm_s${take.format.bitsPerSample}le`,
-          sampleRateHz: take.format.sampleRate,
-          channelCount: take.format.channels,
-          durationMs: Math.round(take.durationSec * 1000),
-          measuredBytesPerSec: take.measuredBytesPerSec,
-          chunkCount: take.chunkCount,
-        },
-      }, {
-        isCurrent: () => generation === this.generation && !this.disposed,
-        track: (request, stage) => {
-          this.request = request
-          this.requestStage = stage
-        },
-        untrack: request => {
-          if (this.request === request) this.request = null
-        },
-        fail: (failed, stage, detail) => this.fail(failed, stage, detail),
-      })
+      // Busy ends here: processing state now belongs to the phone pipeline.
+      this.busy = false
+      this.activeAttemptId = null
+      this.onChange()
+      await this.submit(record, new Blob([take.wav], { type: 'audio/wav' }))
     } finally {
       if (generation === this.generation) {
         this.busy = false
@@ -138,18 +119,15 @@ export class G2Capture implements CaptureDriver {
   }
 
   // Phone Cancel or glasses discard: a take is never saved, counted or
-  // submitted; an analysis in flight is abandoned and marked as canceled.
+  // submitted. Canceling processing is the pipeline's job.
   cancel(): void {
     if (!this.busy && !this.recording) return
     this.generation += 1
     clearTimeout(this.autoStop)
-    this.request?.abort()
-    this.request = null
     const recorder = this.recorder
     this.recorder = null
     void recorder?.discard()
     if (this.store.state.screen === 'recording') this.store.cancel()
-    else if (this.activeAttemptId) this.store.fail(this.activeAttemptId, this.requestStage, 'Processing canceled.')
     this.recording = false
     this.busy = false
     this.activeAttemptId = null
@@ -172,11 +150,5 @@ export class G2Capture implements CaptureDriver {
       this.cancel()
     }
     this.disposed = true
-  }
-
-  private fail(record: AttemptRecord, stage: Stage, detail: string) {
-    this.error = detail
-    this.store.fail(record.attemptId, stage, detail)
-    this.onChange()
   }
 }

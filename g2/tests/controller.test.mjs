@@ -77,7 +77,8 @@ test('full loop from the glasses: record, stop, Review, Guide and back, Play aga
   await input('tap')
   assert.equal(store.state.screen, 'review')
   assert.equal(controller.current.name, 'review')
-  assert.match(textByName(bridge).body, /^Beat 3 · Note mismatch {2}\(1 of 3\)\nExpected E4 · Heard F4\n/)
+  // Same order as the phone (visual plan): the missing note comes first.
+  assert.equal(textByName(bridge).body, 'Beat 6 · Missing note  (1 of 3)\nExpected F4 · Not detected\nPlay F4 on beat 6.')
   assert.equal(textByName(bridge).titleR, 'Demo')
   await input('swipeDown')
   assert.equal(store.state.screen, 'guide')
@@ -164,7 +165,8 @@ test('moving between findings on the phone updates the glasses Review', async ()
   await input('tap')
   store.moveFinding(1)
   await settle()
-  assert.match(textByName(bridge).body, /^Beat 5 · Timing {2}\(2 of 3\)/)
+  // The coaching cue appears with the finding it cites.
+  assert.equal(textByName(bridge).body, 'Beat 3 · Note mismatch  (2 of 3)\nExpected E4 · Heard F4\nTry the highlighted key, then play the phrase again.')
 })
 
 test('double tap on Selection asks to exit', async () => {
