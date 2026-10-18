@@ -6,8 +6,8 @@ import { beatFraction, flaggedNotes, noteName } from './model.ts'
 
 // Static art for one mistake card: a 288×144 greyscale image (the largest a
 // G2 image container takes), drawn in the shared visual language of the Paper
-// "Mistake animations" page: solid = expected, × = what the mic heard (a
-// hollow notehead would read as a half note), a shaded band marks the beat in
+// "Mistake animations" page: solid = expected, × marks a wrong score note
+// in Review (or a detected event on other cards), a shaded band marks the beat in
 // question, and shape carries meaning, not colour.
 export const ART_W = 288
 export const ART_H = 144
@@ -17,6 +17,7 @@ export const ART_H = 144
 const INK = '#ffffff'
 const DIM = '#505050'
 const LINE = '#262626'
+const STAFF_LINE = '#606060'
 // One step above off: #080808 rounds down to level 0 and disappears.
 const BAND = '#141414'
 
@@ -153,14 +154,14 @@ function notehead(ctx: CanvasRenderingContext2D, x: number, y: number, hollow: b
 
 function ledgers(ctx: CanvasRenderingContext2D, x: number, midi: number) {
   const step = stepOf(midi)
-  ctx.fillStyle = LINE
+  ctx.fillStyle = STAFF_LINE
   for (let ledger = 0; ledger >= step; ledger -= 2) ctx.fillRect(x - 11, STAFF_BOTTOM - (ledger - 2) * HALF_SPACE, 22, 1.5)
   for (let ledger = 12; ledger <= step; ledger += 2) ctx.fillRect(x - 11, STAFF_BOTTOM - (ledger - 2) * HALF_SPACE, 22, 1.5)
 }
 
-// Which notes a picture shows: 'played' = only what was heard (×), 'written'
-// = only the music (a staff card's resting view and its replay's end), 'both'
-// = the two overlaid (the wrong-note fix frame).
+// Wrong-note pictures retain the score: played/both annotate its faulty note,
+// written shows the clean correction. Other cards reveal played events or
+// written notes according to the replay layer.
 export type Layer = 'both' | 'played' | 'written'
 
 const byOnset = (a: VisualNote, b: VisualNote) => a.onsetBeat - b.onsetBeat
@@ -174,23 +175,20 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   const detIds = new Set(flaggedSides.detected.map(note => note.id))
   const flagged: VisualNote[] = [...flaggedSides.expected, ...flaggedSides.detected]
 
-  // A wrong note played on the right beat would sit on top of the written one,
-  // a step away: spread them so the × (played) and solid note (written) read apart.
-  const played = flaggedSides.detected[0]
-  const written = flaggedSides.expected[0]
-  const sameBeat =
-    card.kind === 'wrong_note' && played && written && layer === 'both' && Math.abs(played.onsetBeat - written.onsetBeat) < 0.3
-  const shift = new Map<string, number>(sameBeat ? [[played.id, -16], [written.id, 16]] : [])
-  const x = (beat: number, id?: string) => beatX(beat) + (id ? shift.get(id) ?? 0 : 0)
+  // Wrong-note marks annotate the written score. Detected pitch/time stays
+  // in the legend and keyboard view; it must not move the mark off its note.
+  const annotateScore = card.kind === 'wrong_note' && flaggedSides.expected.length > 0
+  const x = (beat: number, _id?: string) => beatX(beat)
 
   // Focus band behind the beat(s) in question.
   ctx.fillStyle = BAND
-  const bandBeats = flagged.length ? flagged.map(note => note.onsetBeat) : [card.focus.startBeat]
-  const left = Math.min(...bandBeats.map(beatX)) - 16 - (sameBeat ? 16 : 0)
-  const right = Math.max(...bandBeats.map(beatX)) + 16 + (sameBeat ? 16 : 0)
+  const bandNotes = annotateScore ? flaggedSides.expected : flagged
+  const bandBeats = bandNotes.length ? bandNotes.map(note => note.onsetBeat) : [card.focus.startBeat]
+  const left = Math.min(...bandBeats.map(beatX)) - 16
+  const right = Math.max(...bandBeats.map(beatX)) + 16
   ctx.fillRect(left, 20, right - left, 100)
 
-  ctx.fillStyle = LINE
+  ctx.fillStyle = STAFF_LINE
   for (let line = 0; line < 5; line++) ctx.fillRect(16, STAFF_BOTTOM - 48 + line * 12, ART_W - 32, 1.5)
 
   // Bar labels for section cards.
@@ -202,7 +200,7 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
     label(ctx, segment.label, (from + to) / 2, 9, DIM, 10)
   }
 
-  if (layer === 'played') {
+  if (layer === 'played' && !annotateScore) {
     // What was heard, as ×, in the order it sounded. A missed note leaves an
     // empty dashed slot once the reveal has passed its beat.
     const heard = [...card.detected.notes].sort(byOnset).slice(0, reveal)
@@ -237,6 +235,7 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
       if (stepOf(note.midiPitch) < 6) ctx.fillRect(nx + 5.2, ny - 30, 2, 30)
       else ctx.fillRect(nx - 7.2, ny + 1, 2, 30)
     }
+    if (annotateScore && refIds.has(note.id) && layer !== 'written') scoreCross(ctx, nx, ny + 0.75)
     if (missing) dashedSlot(ctx, nx)
     const name = noteName(note.midiPitch)
     label(ctx, missing ? `[${name}]` : name, nx, 134, missing ? INK : DIM, 11)
@@ -244,17 +243,12 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   if (layer === 'written') return
 
   // Detected (only the unpaired notes): ×.
-  if (!(card.kind === 'missing_note' && card.variant === 'missing')) {
+  if (!annotateScore && !(card.kind === 'missing_note' && card.variant === 'missing')) {
     for (const note of card.detected.notes.filter(n => detIds.has(n.id))) {
       const nx = x(note.onsetBeat, note.id)
       ledgers(ctx, nx, note.midiPitch)
       cross(ctx, nx, staffY(note.midiPitch) + 0.75)
     }
-  }
-
-  // A wrong note: arrow from the × played to the solid note written.
-  if (sameBeat && played.midiPitch !== written.midiPitch) {
-    arrow(ctx, x(played.onsetBeat, played.id) + 7, staffY(played.midiPitch), x(written.onsetBeat, written.id) - 9, staffY(written.midiPitch))
   }
 }
 
@@ -264,23 +258,6 @@ function dashedSlot(ctx: CanvasRenderingContext2D, nx: number) {
   ctx.lineWidth = 1.5
   ctx.strokeRect(nx - 13, 26, 26, 86)
   ctx.setLineDash([])
-}
-
-function arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
-  const angle = Math.atan2(y2 - y1, x2 - x1)
-  ctx.strokeStyle = INK
-  ctx.fillStyle = INK
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  ctx.moveTo(x1, y1)
-  ctx.lineTo(x2 - 4 * Math.cos(angle), y2 - 4 * Math.sin(angle))
-  ctx.stroke()
-  ctx.beginPath()
-  ctx.moveTo(x2, y2)
-  ctx.lineTo(x2 - 6 * Math.cos(angle - 0.5), y2 - 6 * Math.sin(angle - 0.5))
-  ctx.lineTo(x2 - 6 * Math.cos(angle + 0.5), y2 - 6 * Math.sin(angle + 0.5))
-  ctx.closePath()
-  ctx.fill()
 }
 
 // ── Beat ruler (timing) ───────────────────────────────────────────────
@@ -358,7 +335,7 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer
   }
 }
 
-// × = what the mic heard, drawn where the note sounded.
+// × marks a detected event, or the affected written note in score review.
 export const CROSS_HALF = 6
 
 function cross(ctx: CanvasRenderingContext2D, cx: number, cy: number, color = INK) {
@@ -372,6 +349,22 @@ function cross(ctx: CanvasRenderingContext2D, cx: number, cy: number, color = IN
   ctx.lineTo(cx - CROSS_HALF, cy + CROSS_HALF)
   ctx.stroke()
   ctx.lineCap = 'butt'
+}
+
+// A black outline separates the X from the white notehead beneath it.
+function scoreCross(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
+  ctx.save()
+  ctx.strokeStyle = '#000000'
+  ctx.lineWidth = 5
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(cx - CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx + CROSS_HALF, cy + CROSS_HALF)
+  ctx.moveTo(cx + CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx - CROSS_HALF, cy + CROSS_HALF)
+  ctx.stroke()
+  cross(ctx, cx, cy)
+  ctx.restore()
 }
 
 // ── Duration bars ─────────────────────────────────────────────────────
@@ -544,8 +537,8 @@ export function replaySteps(card: VisualCard, hasKeyboardContext = false, within
   switch (artKind(card)) {
     case 'keyboard':
       steps = [
-        { caption: 'what you played', layer: 'played', art: 'staff', hold: 'end' },
-        { caption: 'the fix', layer: 'both', art: 'staff', hold: 'end' },
+        { caption: 'wrong note in the score', layer: 'played', art: 'staff', hold: 'end' },
+        { caption: 'the written correction', layer: 'written', art: 'staff', hold: 'end' },
         { caption: 'on the keys', layer: 'both', art: 'keys', hold: 'end' },
       ]
       break

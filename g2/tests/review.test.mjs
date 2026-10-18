@@ -235,7 +235,7 @@ test('review: double tap is play again', () => {
 
 test('every kind replays what was played, then the fix; unclear audio has nothing to replay', () => {
   const layers = name => replaySteps(card(name)).map(step => `${step.art}:${step.layer}`)
-  assert.deepEqual(layers('wrong_note-pitch'), ['staff:played', 'staff:both', 'keys:both'])
+  assert.deepEqual(layers('wrong_note-pitch'), ['staff:played', 'staff:written', 'keys:both'])
   assert.deepEqual(layers('missing_note-missing'), ['staff:played', 'staff:played', 'staff:written', 'staff:written', 'staff:written'])
   assert.deepEqual(layers('timing-early'), ['ruler:played', 'ruler:written'])
   assert.deepEqual(layers('duration-short'), ['duration:played', 'duration:written'])
