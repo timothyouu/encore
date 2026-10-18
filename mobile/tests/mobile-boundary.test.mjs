@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const mobile = fileURLToPath(new URL('..', import.meta.url));
 const sourceRoot = join(mobile, 'src');
+const sharedPassages = resolve(mobile, '../shared/passages.ts');
 const forbiddenApi = /@evenrealities|\b(?:waitForEvenAppBridge|EvenAppBridge|onEvenHubEvent|createStartUpPageContainer|rebuildPageContainer|shutDownPageContainer|textContainerUpgrade|graphicContainerUpgrade|updateImageRawData|flutter_inappwebview|ReactNativeWebView|messageHandlers|callHandler)\b|encore:connection/;
 
 function sourceFiles(directory) {
@@ -16,10 +17,11 @@ function sourceFiles(directory) {
   });
 }
 
-function assertPhoneOnlySource(content, path) {
+function assertPhoneOnlySource(content, path, visited = new Set()) {
   assert.doesNotMatch(content, forbiddenApi, relative(mobile, path));
   for (const match of content.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)['"]([^'"]+)['"]/g)) {
     const specifier = match[1];
+    assert.notEqual(path, sharedPassages, 'shared passage data must have no imports');
     assert.doesNotMatch(specifier, /(?:^|\/)g2(?:\/|$)|(?:^|\/)display(?:\.[jt]s)?$/i, `${relative(mobile, path)} imports ${specifier}`);
     if (!specifier.startsWith('.')) {
       assert.equal(path, join(mobile, 'vite.config.ts'), `${relative(mobile, path)} imports external package ${specifier}`);
@@ -28,8 +30,13 @@ function assertPhoneOnlySource(content, path) {
     }
     const target = resolve(dirname(path), specifier);
     const withinSource = relative(sourceRoot, target);
-    assert.ok(withinSource && withinSource !== '..' && !withinSource.startsWith(`..${sep}`), `${relative(mobile, path)} escapes src: ${specifier}`);
+    const isInSource = withinSource && withinSource !== '..' && !withinSource.startsWith(`..${sep}`);
+    assert.ok(isInSource || target === sharedPassages, `${relative(mobile, path)} escapes src: ${specifier}`);
     assert.ok(existsSync(target), `${relative(mobile, path)} imports a missing file: ${specifier}`);
+    if (target === sharedPassages && !visited.has(target)) {
+      visited.add(target);
+      assertPhoneOnlySource(readFileSync(target, 'utf8'), target, visited);
+    }
   }
 }
 
@@ -68,6 +75,15 @@ test('boundary rejects an SDK display adapter and native bridge routes', () => {
   ]) {
     assert.throws(() => assertPhoneOnlySource(source, path), { name: 'AssertionError' }, source);
   }
+});
+
+test('only the import-free authored passage module can cross the phone source boundary', () => {
+  const path = join(sourceRoot, 'fixture.ts');
+  assert.doesNotThrow(() => assertPhoneOnlySource("import { PASSAGES } from '../../shared/passages.ts';", path));
+  assert.throws(() => assertPhoneOnlySource("import { helper } from '../../shared/other.ts';", path), { name: 'AssertionError' });
+  assert.throws(() => assertPhoneOnlySource("import { helper } from '../../g2/src/passages.ts';", path), { name: 'AssertionError' });
+  assert.throws(() => assertPhoneOnlySource("import { helper } from '../mobile-peer.ts';", path), { name: 'AssertionError' });
+  assert.throws(() => assertPhoneOnlySource("import { helper } from '../g2/passages.ts';", sharedPassages), { name: 'AssertionError' });
 });
 
 test('mobile package and lock contain only phone build dependencies', () => {
