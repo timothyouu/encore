@@ -70,3 +70,7 @@ Scoring `1.4.0-demo` retains pitch-based alignment for recognizable passages. Wh
 Fallback findings are wrong/missing notes only. It preserves raw detector events but withholds extra-note, timing and duration accusations and timing-summary metrics for this less certain correspondence. A `rhythm_anchored_comparison` warning identifies the method. Confidence, duration and beat-window thresholds are provisional detector-event heuristics, not a piano/noise classifier or physical-device calibration. Missing opening notes cannot be uniquely inferred if pitch anchors are entirely absent; in that case the selected convention treats the first strong played attack as the entrance.
 
 The backend change works with the existing 0.1.2 client package. Saved earlier results retain their prior analysis; make a new recording to use updated scoring.
+
+## Event capacity
+
+Analysis and phone/server validation allow up to 500 detected events and 500 findings per take. Dense Basic Pitch output can exceed 128 events even for a short acoustic recording; it must not be translated into an upstream failure. Above the capacity, scoring returns bounded uncertainty with `too_many_note_events` or `too_many_findings` and withholds corrections. The client in package 0.1.3 already accepts this capacity, so the server-limit fix does not require a replacement package.

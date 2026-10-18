@@ -27,3 +27,11 @@ Build 0.1.3 from the committed release source using `cd g2 && npm run pack -- ht
 ## Remaining limits
 
 No new physical-display verification was performed after the X-placement fix; browser/canvas checks cannot establish G2 rendering. Rhythmic comparison thresholds remain provisional. Without any pitch anchors, a missing opening note cannot be located uniquely, so the first strong played attack defines the entrance. Spectral peaks can be harmonics and are diagnostics, not a replacement piano classifier. Earlier saved results keep their original analysis; a new recording uses current scoring.
+
+## Dense-analysis 502 follow-up
+
+A physical take returned 132 detected events from the analyzer with HTTP 200. The coaching server still limited detected events to 128, rejected the valid result and emitted HTTP 502 before coaching. Server validation now matches the existing phone limits of 500 detections and 500 findings. Scoring guards oversized detector output before alignment and oversized findings before emitting a result; it returns bounded uncertainty rather than an invalid contract.
+
+New regressions exercise upload → analysis → coaching for 132 and 500 events, rejection above 500, the existing phone acceptance boundary, and analyzer overflow. The authenticated device backend and analyzer were restarted with the existing token. Actual HTTPS upload/analysis/coaching checks returned 200; changing loopback ports remained accepted. The active device runtime has provider coaching disabled, so this failure was not Gemini quota exhaustion. A separate earlier 401 was observed at upload; latest successful coaching requests returned 200. The exact reported coaching-401 was not reproduced.
+
+Dense-output verification completed: all 429 automated tests, typechecks and production builds passed. Evidence: `/tmp/encore-dense-full-verification.log`. The private failed-take result was accepted through both server coaching construction and the phone SessionStore validation. Live HTTPS upload, analysis and coaching returned 200. Package 0.1.3 remains compatible with this backend-only follow-up.
