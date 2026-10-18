@@ -99,11 +99,15 @@ test('G2 fake-bridge take keeps one ID through 16k WAV, normalized HTTP receipt,
   assert.deepEqual(h.bridge.callsTo('audioControl').map(call => call.isOpen), [true, false]);
   const views = reviewData(h.store.records[0], PASSAGES[0]).views;
   assert.ok(views.length >= 2, 'fixture detector yields multiple bounded evidence cards');
+  const rendered = [];
   const controller = startController({ glasses: h.glasses, store: h.store,
     actions: { start: () => h.g2.start(), stop: () => h.g2.stop(), cancel: () => h.g2.cancel() },
     sheetMusic: () => true, menu: () => undefined, onExit() {},
     renderArt: async () => new Uint8Array([83]),
-    renderFrame: async (_card, step) => new Uint8Array([step.layer === 'played' ? 80 : 87]),
+    renderFrame: async (_card, step, context) => {
+      rendered.push({ step, context });
+      return new Uint8Array([step.art === 'context' ? 67 : step.layer === 'played' ? 80 : 87]);
+    },
     frameDwellMs: 0 });
   t.after(() => controller.dispose());
   await settle();
@@ -114,7 +118,11 @@ test('G2 fake-bridge take keeps one ID through 16k WAV, normalized HTTP receipt,
   controller.onInput({ kind: 'tap' });
   await settle();
   const frames = h.bridge.callsTo('updateImageRawData').slice(beforeReplay);
-  assert.equal(frames.length, replaySteps(views[0].card).length, 'duplicate tap must not replay twice');
+  assert.equal(frames.length, replaySteps(views[0].card).length + 1, 'one supplemental context frame; duplicate tap must not replay twice');
+  assert.equal(frames.filter(frame => frame.imageData[0] === 67).length, 1);
+  const contextFrame = rendered.find(frame => frame.step.art === 'context');
+  assert.ok(views[0].card.evidence.findingIds.includes(contextFrame?.context?.findingId), 'context belongs to this saved finding');
+  assert.deepEqual(rendered.at(-1).step, replaySteps(views[0].card).at(-1), 'latest final correction remains intact');
   assert.ok(frames.some(frame => frame.imageData[0] === 80));
   controller.onInput({ kind: 'swipeDown' });
   await settle();

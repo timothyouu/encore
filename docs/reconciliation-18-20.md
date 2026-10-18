@@ -75,3 +75,9 @@ Accepted change units: (1) shared finding/Sheet synchronization without replacin
 ## Final upstream refresh
 
 PR15 advanced during verification to `25e00a7` (main integration `24fa04c` plus PR19 ancestry). Astra compared the new source: the only missing user-visible improvement was readable processing-stage text and Demo provenance during processing. The coordinator preserved that mapping for initial and in-place updates; the independent shipping reconciliation suite passes 3/3 including all four labels and Demo behavior. The alternative independent phone/G2 paging remains intentionally superseded by synchronized finding selection. Gallery, neutral outcomes, latest primary artwork and replay were already covered.
+
+## Verification correction
+
+The first combined gate reached the shipping tests and failed the old duplicate-tap frame-count expectation: the newly authorized keyboard-context frame increased one replay by one frame. The worker left the locked acceptance file unchanged and reported the mismatch. The coordinator updated the verifier to require exactly one context frame, its saved finding ID, the unchanged final correction frame, and the original single-replay count plus one. No duplicate/stale assertion was removed. The corrected shipping suite passes 8/8; the complete gate is rerunning. This is one verification correction cycle after submission, not a product behavior failure.
+
+The latest PR15 ancestry (`25e00a7`) is locally reconciled in `d540b2c`. The resulting source tree is identical to the reviewed `342e3ea` tree: its unique processing labels were already ported, and the alternative Gallery/Review adaptation is covered by the retained shared implementation. No GitHub PR was merged by this task.
