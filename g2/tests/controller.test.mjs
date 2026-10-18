@@ -68,7 +68,7 @@ test('a passage picked on the phone opens Ready on the glasses', async () => {
   assert.equal(textByName(bridge).titleL, 'Open Windows')
 })
 
-test('full loop from the glasses: record, stop, Review, Guide and back, Play again', async () => {
+test('full loop from the glasses: record, stop, Review cards, Play again', async () => {
   const { store, controller, input, bridge } = setup()
   await input('listSelect', { index: 0 })
   await input('tap')
@@ -77,15 +77,14 @@ test('full loop from the glasses: record, stop, Review, Guide and back, Play aga
   await input('tap')
   assert.equal(store.state.screen, 'review')
   assert.equal(controller.current.name, 'review')
-  // Same order as the phone (visual plan): the missing note comes first.
-  assert.equal(textByName(bridge).body, 'Beat 6 · Missing note  (1 of 3)\nExpected F4 · Not detected\nPlay F4 on beat 6.')
-  assert.equal(textByName(bridge).titleR, 'Demo')
+  // Fixture results are labelled on the glasses too (spec §9).
+  assert.match(textByName(bridge).counter, /^DEMO/)
+  // No Guide state on G2: swipes page cards inside Review; tap is replay.
   await input('swipeDown')
-  assert.equal(store.state.screen, 'guide')
-  assert.equal(controller.current.name, 'guide')
-  await input('swipeUp')
-  assert.equal(store.state.screen, 'review')
   await input('tap')
+  assert.equal(store.state.screen, 'review')
+  assert.equal(controller.current.name, 'review')
+  await input('doubleTap')
   assert.equal(store.state.screen, 'library')
   assert.equal(controller.current.name, 'selection')
   assert.equal(store.count(), 1)
@@ -135,10 +134,38 @@ test('a processing error shows a plain reason; tap returns to Selection', async 
   assert.equal(controller.current.name, 'analyzing')
   store.fail(record.attemptId, 'upload', "Can't reach the server.")
   await settle()
-  assert.equal(controller.current.name, 'error')
-  assert.equal(textByName(bridge).body, "Couldn't finish this take.\nCan't reach the server.")
+  assert.equal(controller.current.name, 'problem')
+  assert.equal(textByName(bridge).reason, "Can't reach the server.")
   await input('tap')
   assert.equal(store.state.screen, 'library')
+})
+
+test('Analyzing shows the phone pipeline stage and updates it in place', async () => {
+  const { store, controller, bridge, pages } = setup()
+  store.selectPassage('P01')
+  const record = store.start('phone')
+  store.stop()
+  store.setProcessingStage(record.attemptId, 'upload')
+  await settle()
+  assert.equal(controller.current.name, 'analyzing')
+  assert.equal(textByName(bridge).stage, 'Uploading recording')
+  const before = pages()
+  store.setProcessingStage(record.attemptId, 'analysis')
+  await settle()
+  assert.equal(textByName(bridge).stage, 'Analyzing notes')
+  assert.equal(pages(), before)
+})
+
+test('unclear audio is a Review card, not an error', async () => {
+  const { store, controller, bridge } = setup()
+  store.selectPassage('P01')
+  const record = store.start('demo')
+  store.stop()
+  store.applyAnalysis(record.attemptId, fixtureAnalysis(record, 'uncertain'))
+  await settle()
+  assert.equal(store.state.screen, 'review')
+  assert.equal(controller.current.name, 'review')
+  assert.equal(textByName(bridge).title, 'Audio unclear')
 })
 
 test('browsing History on the phone leaves the glasses on Selection without redrawing', async () => {
@@ -158,15 +185,19 @@ test('a passage picked on the glasses while the phone shows History opens it', a
   assert.equal(store.state.passageId, 'P03')
 })
 
-test('moving between findings on the phone updates the glasses Review', async () => {
-  const { store, input, bridge } = setup()
+test("the phone's Guide, sheet and finding changes keep the glasses Review card", async () => {
+  const { store, input, pages, controller } = setup()
   await input('listSelect', { index: 0 })
   await input('tap')
   await input('tap')
+  const before = pages()
   store.moveFinding(1)
+  store.showGuide()
+  store.showSheet()
+  store.closeSheet()
   await settle()
-  // The coaching cue appears with the finding it cites.
-  assert.equal(textByName(bridge).body, 'Beat 3 · Note mismatch  (2 of 3)\nExpected E4 · Heard F4\nTry the highlighted key, then play the phrase again.')
+  assert.equal(pages(), before)
+  assert.equal(controller.current.name, 'review')
 })
 
 test('double tap on Selection asks to exit', async () => {

@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { PASSAGES } from '../src/passages.ts'
 import { readyScreen } from '../src/screens/ready.ts'
-import { analyzingScreen, errorScreen, guideScreen, reviewScreen } from '../src/screens/results.ts'
 import { selectionScreen } from '../src/screens/selection.ts'
 import { fakeGlasses, mount, settle, textByName } from './fakes.mjs'
 
@@ -183,63 +182,4 @@ test('no staff image is sent once recording has started', async () => {
   finishRender()
   await settle()
   assert.equal(bridge.callsTo('updateImageRawData').length, 0)
-})
-
-// ── 04 · Analyzing / 05 · Review / 06 · Guide / error ──────────────────
-
-const VIEW = { title: 'Little Echo', tag: '', review: 'Beat 3 · Note mismatch\nExpected G4 · Heard G#4\nPlay G4 on beat 3.', guide: 'Play G4 on beat 3.' }
-
-async function shownBody(screen) {
-  const { glasses, bridge } = fakeGlasses()
-  mount(screen, glasses)
-  await settle()
-  return textByName(bridge)
-}
-
-test('analyzing: a short status with no input and no menu', async () => {
-  const screen = analyzingScreen({ title: 'Little Echo', tag: 'Demo' })
-  const shown = await shownBody(screen)
-  assert.equal(shown.body, 'Analyzing…')
-  assert.equal(shown.titleR, 'Demo')
-  assert.equal(screen.allowsMenu, false)
-  screen.onInput({ kind: 'tap' })
-})
-
-test('review: finding and cue, ▼ guide hint, swipe down to Guide, tap is Play again', async () => {
-  const events = []
-  const screen = reviewScreen({ view: VIEW, onGuide: () => events.push('guide'), onPlayAgain: () => events.push('again') })
-  const shown = await shownBody(screen)
-  assert.equal(shown.body, VIEW.review)
-  assert.equal(shown.hintR, '▼ guide')
-  screen.onInput({ kind: 'swipeDown' })
-  screen.onInput({ kind: 'swipeUp' })
-  screen.onInput({ kind: 'tap' })
-  screen.onInput({ kind: 'doubleTap' })
-  assert.deepEqual(events, ['guide', 'again', 'again'])
-})
-
-test('review without a correction offers no guide', async () => {
-  const events = []
-  const screen = reviewScreen({ view: { ...VIEW, guide: null }, onGuide: () => events.push('guide'), onPlayAgain: () => {} })
-  assert.equal((await shownBody(screen)).hintR, undefined)
-  screen.onInput({ kind: 'swipeDown' })
-  assert.deepEqual(events, [])
-})
-
-test('guide: the correction; swipe up back to Review; tap is Play again', async () => {
-  const events = []
-  const screen = guideScreen({ view: VIEW, onReview: () => events.push('review'), onPlayAgain: () => events.push('again') })
-  assert.equal((await shownBody(screen)).body, VIEW.guide)
-  screen.onInput({ kind: 'swipeUp' })
-  screen.onInput({ kind: 'tap' })
-  assert.deepEqual(events, ['review', 'again'])
-})
-
-test('error: a plain reason, never a musical claim; tap or double tap is Play again', async () => {
-  const events = []
-  const screen = errorScreen({ title: 'Little Echo', message: "Can't reach the server.", onPlayAgain: () => events.push('again') })
-  assert.equal((await shownBody(screen)).body, "Couldn't finish this take.\nCan't reach the server.")
-  screen.onInput({ kind: 'tap' })
-  screen.onInput({ kind: 'doubleTap' })
-  assert.deepEqual(events, ['again', 'again'])
 })

@@ -45,12 +45,13 @@ g2/index.html (Even Hub WebView)
 | `library`, `history` | Selection | list select → `showLibrary()` if needed, then `selectPassage(id)`; double tap → exit |
 | `ready` | Ready | tap → host `start()`; double tap → `showLibrary()` |
 | `recording` | Recording (same page as Ready; text swapped in place) | tap → host `stop()`; double tap → discard: `cancel()` then `selectPassage(same id)` |
-| `processing` | Analyzing | none |
-| `review` | Review | swipe down → `showGuide()`; tap or double tap → `showLibrary()` |
-| `guide`, `sheet` | Guide | swipe up → `showReview()` (from `guide`); tap or double tap → `showLibrary()` |
-| `error` | Recoverable error | tap or double tap → `showLibrary()` |
+| `processing` | Analyzing (stage line follows `processingStage`, updated in place) | none |
+| `review`, `guide`, `sheet` | Review: one page per attempt showing the coaching visual-plan cards (no Guide state on G2, spec §4) | swipe down/up → next/previous card (inside the screen; the store is unchanged); tap → replay the card; double tap → `showLibrary()` |
+| `error` | Problem (upload, analysis or server failure; never a musical claim) | tap or double tap → `showLibrary()` |
 
-Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
+Unclear audio is a completed result without coaching; it shows as a single Review card, not as a Problem. Results from the Demo source carry a DEMO label on the glasses.
+
+Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state, passage or attempt changes; the phone's own Guide, sheet and finding carousel leave the glasses Review where it is (the glasses page their cards independently). Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
 
 ## Capture rules
 

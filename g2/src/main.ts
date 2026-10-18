@@ -2,10 +2,12 @@ import { status } from './status.ts'
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { startPhoneApp } from '../../mobile/src/app.ts'
 import { startController } from './controller.ts'
+import { demoRequested, demoReview } from './demo.ts'
 import { G2Capture } from './g2capture.ts'
 import { Glasses } from './glasses.ts'
 import { filterInputs, toInput } from './input.ts'
 import { Recorder } from './recorder.ts'
+import { reviewScreen } from './screens/review.ts'
 import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings.ts'
 
 // One page for phone and glasses (glasses-integration/CONTRACT.md). The phone
@@ -82,6 +84,13 @@ async function main() {
     const input = toInput(event)
     if (input) handleInput(input)
   })
+
+  // Dev-only gallery of the shared example cards (labelled DEMO); Play again
+  // returns to whatever the phone session shows.
+  if (demoRequested()) {
+    status('demo: example review cards (shared/visual-examples.json)')
+    controller.preview(reviewScreen({ ...demoReview(), demo: true, onPlayAgain: () => controller.resync() }))
+  }
 }
 
 main().catch(error => status(`startup failed: ${String(error)}`, 'error'))
