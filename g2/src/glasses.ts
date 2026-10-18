@@ -10,7 +10,7 @@ import {
   type ListContainerProperty,
   type MenuContainerProperty,
 } from '@evenrealities/even_hub_sdk'
-import { status } from './status'
+import { status } from './status.ts'
 
 export type Page = {
   textObject?: TextContainerProperty[]
@@ -53,12 +53,11 @@ function errorPage(message: string) {
 const CALL_TIMEOUT_MS = 5000
 
 function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out`)), CALL_TIMEOUT_MS),
-    ),
-  ])
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<T>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out`)), CALL_TIMEOUT_MS)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
 }
 
 // Serializes every bridge call. Concurrent render/storage calls can drop the
@@ -67,7 +66,11 @@ export class Glasses {
   private chain: Promise<unknown> = Promise.resolve()
   private started = false
 
-  constructor(readonly bridge: EvenAppBridge) {}
+  readonly bridge: EvenAppBridge
+
+  constructor(bridge: EvenAppBridge) {
+    this.bridge = bridge
+  }
 
   enqueue<T>(label: string, call: () => Promise<T>): Promise<T> {
     const run = this.chain.then(() => withTimeout(call(), label))

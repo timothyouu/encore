@@ -1,7 +1,7 @@
 import { ListContainerProperty, ListItemContainerProperty } from '@evenrealities/even_hub_sdk'
-import { HEADER_Y, MARGIN_X, SCREEN_W, text } from '../layout'
-import type { Passage } from '../passages'
-import type { Screen } from './screen'
+import { HEADER_Y, MARGIN_X, SCREEN_W, text } from '../layout.ts'
+import type { Passage } from '../passages.ts'
+import type { Screen } from './screen.ts'
 
 // Firmware list rows are a fixed 40px; with no hint row, five fit below the header.
 // Rows have 12px inner padding, so this lines item text up with the header at MARGIN_X.

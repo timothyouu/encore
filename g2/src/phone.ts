@@ -1,6 +1,6 @@
-import type { Glasses } from './glasses'
-import { status } from './status'
-import { isValidUploadUrl, saveUploadUrl } from './upload'
+import type { Glasses } from './glasses.ts'
+import { status } from './status.ts'
+import { isValidUploadUrl, saveUploadUrl } from './upload.ts'
 
 // Phone-side configuration for the glasses app: where finished takes are
 // uploaded. Saved in Even app storage so it survives restarts.

@@ -1,11 +1,11 @@
 import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
-import type { Page } from '../glasses'
-import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, rightText, splitRow, text } from '../layout'
-import type { Passage } from '../passages'
-import { Recorder, type Take } from '../recorder'
-import { STAFF_H, TILE_W, renderStaffTiles } from '../staff'
-import { status } from '../status'
-import type { Screen, ScreenContext } from './screen'
+import type { Page } from '../glasses.ts'
+import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, rightText, splitRow, text } from '../layout.ts'
+import type { Passage } from '../passages.ts'
+import { Recorder, type Take } from '../recorder.ts'
+import { STAFF_H, TILE_W, renderStaffTiles, type StaffTiles } from '../staff.ts'
+import { status } from '../status.ts'
+import type { Screen, ScreenContext } from './screen.ts'
 
 const STAFF_Y = 46
 const FOCUS_Y = 168
@@ -31,6 +31,8 @@ type ReadyOptions = {
   sheetMusic(): boolean
   onTake(take: Take): void
   onBack(): void
+  // Canvas rendering by default; tests pass a stand-in.
+  renderTiles?: (passage: Passage) => Promise<StaffTiles>
 }
 
 function staffTile(container: { id: number; name: string }, x: number) {
@@ -48,7 +50,13 @@ function staffTile(container: { id: number; name: string }, x: number) {
 // Recording is the Ready page with its text swapped in place: the staff images
 // stay on the glasses and nothing is sent over BLE once capture starts
 // (spec §4). With sheet music off, Recording rebuilds to a page with just ■.
-export function readyScreen({ passage, sheetMusic, onTake, onBack }: ReadyOptions): Screen {
+export function readyScreen({
+  passage,
+  sheetMusic,
+  onTake,
+  onBack,
+  renderTiles = renderStaffTiles,
+}: ReadyOptions): Screen {
   let phase: Phase = 'ready'
   // True when the recording view is drawn over the Ready page.
   let inPlace = false
@@ -156,7 +164,7 @@ export function readyScreen({ passage, sheetMusic, onTake, onBack }: ReadyOption
     enter(ctx) {
       context = ctx
       if (phase !== 'ready') return
-      renderStaffTiles(passage)
+      renderTiles(passage)
         .then(tiles => {
           if (!tiles.hasClef) status('treble clef font failed to load; staff drawn without it', 'error')
           // Never start an image send once recording has begun.
