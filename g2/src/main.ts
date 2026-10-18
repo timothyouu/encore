@@ -7,6 +7,7 @@ import { Glasses } from './glasses.ts'
 import { filterInputs, toInput } from './input.ts'
 import { Recorder } from './recorder.ts'
 import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings.ts'
+import { serviceForOrigin } from './service.ts'
 
 // One page for phone and glasses (glasses-integration/CONTRACT.md). The phone
 // UI from mobile/ renders phone DOM only and owns the session; everything
@@ -15,20 +16,35 @@ async function main() {
   const root = document.getElementById('app')
   if (!root) throw new Error('phone UI root #app is missing')
 
+  const service = serviceForOrigin(import.meta.env.VITE_ENCORE_API_ORIGIN)
+  let sessionToken = ''
+  const memory = new Map<string, string>()
+  const fallbackStorage = { getItem: (key: string): string | null => memory.get(key) ?? null,
+    setItem: (key: string, value: string): void => { memory.set(key, value) },
+    removeItem: (key: string): void => { memory.delete(key) } }
+  let storage: Storage | typeof fallbackStorage = fallbackStorage
+  let indexedDB: IDBFactory | undefined
+  try { storage = window.localStorage; status('WebView localStorage API exposed; persistence pending probe') }
+  catch { status('WebView local storage unavailable; using session memory', 'error') }
+  try { indexedDB = window.indexedDB; status(indexedDB ? 'WebView IndexedDB API exposed; persistence pending hydrate' : 'WebView IndexedDB API unavailable') }
+  catch { status('WebView IndexedDB unavailable', 'error') }
+  status(`build ${import.meta.env.VITE_ENCORE_BUILD_ID || 'development'} · WebView origin ${window.location.origin}`)
+  status(service ? `service ${service.origin}` : 'service not packaged; Demo only until configured')
   let glasses: Glasses | null = null
   // The bridge being ready is not proof the glasses are connected (spec §9).
   const app = await startPhoneApp(root, {
-    storage: window.localStorage,
-    indexedDB: window.indexedDB,
+    storage,
+    indexedDB,
     sentry: {
       VITE_SENTRY_ENABLED: import.meta.env.VITE_SENTRY_ENABLED,
       VITE_SENTRY_DSN: import.meta.env.VITE_SENTRY_DSN,
       VITE_SENTRY_ENVIRONMENT: import.meta.env.VITE_SENTRY_ENVIRONMENT,
     },
     hostSource: { id: 'g2', create: context => new G2Capture(context, () => glasses) },
+    service: service ? { ...service, getSessionToken: () => sessionToken, setSessionToken: token => { sessionToken = token } } : undefined,
     deviceStatus: () => (glasses ? 'Even bridge ready · glasses connection unverified' : null),
   })
-  window.addEventListener('pagehide', () => app.dispose(), { once: true })
+  window.addEventListener('pagehide', () => { sessionToken = ''; app.dispose() }, { once: true })
 
   status('script loaded; waiting for Even bridge…')
   const slowBridge = setTimeout(() => status('still waiting for the Even bridge after 5s', 'error'), 5000)

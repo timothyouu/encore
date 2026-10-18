@@ -33,6 +33,7 @@ function setup(options) {
   const { glasses, bridge } = fakeGlasses()
   const store = new SessionStore(memory())
   let exits = 0
+  const feedbackDiagrams = []
   const controller = startController({
     glasses,
     store,
@@ -41,13 +42,14 @@ function setup(options) {
     menu: () => undefined,
     onExit: () => exits++,
     renderTiles: tiles,
+    renderFeedbackTiles: async diagram => { feedbackDiagrams.push(diagram); return { left: new Uint8Array([3]), right: new Uint8Array([4]) } },
   })
   const input = async (kind, extra = {}) => {
     controller.onInput({ kind, ...extra })
     await settle()
   }
   const pages = () => bridge.callsTo('createStartUpPageContainer').length + bridge.callsTo('rebuildPageContainer').length
-  return { store, bridge, controller, input, pages, exits: () => exits }
+  return { store, bridge, controller, input, pages, feedbackDiagrams, exits: () => exits }
 }
 
 test('glasses start on Selection; picking a passage there opens it on the phone too', async () => {
@@ -69,7 +71,7 @@ test('a passage picked on the phone opens Ready on the glasses', async () => {
 })
 
 test('full loop from the glasses: record, stop, Review, Guide and back, Play again', async () => {
-  const { store, controller, input, bridge } = setup()
+  const { store, controller, input, bridge, feedbackDiagrams } = setup()
   await input('listSelect', { index: 0 })
   await input('tap')
   assert.equal(store.state.screen, 'recording')
@@ -79,10 +81,14 @@ test('full loop from the glasses: record, stop, Review, Guide and back, Play aga
   assert.equal(controller.current.name, 'review')
   // Same order as the phone (visual plan): the missing note comes first.
   assert.equal(textByName(bridge).body, 'Beat 6 · Missing note  (1 of 3)\nExpected F4 · Not detected\nPlay F4 on beat 6.')
-  assert.equal(textByName(bridge).titleR, 'Demo')
+  assert.equal(textByName(bridge).titleR, 'Demo · local cue')
   await input('swipeDown')
   assert.equal(store.state.screen, 'guide')
   assert.equal(controller.current.name, 'guide')
+  assert.deepEqual(bridge.callsTo('updateImageRawData').slice(-2).map(item => item.containerName), ['diagramL', 'diagramR'])
+  assert.equal(feedbackDiagrams[0].kind, 'keyboard')
+  assert.equal(feedbackDiagrams[0].expected.midiPitch, 65)
+  assert.equal(feedbackDiagrams[0].detected, undefined)
   await input('swipeUp')
   assert.equal(store.state.screen, 'review')
   await input('tap')

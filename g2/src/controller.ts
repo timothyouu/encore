@@ -1,6 +1,7 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
 import { resultView } from './feedback.ts'
+import { renderFeedbackTiles } from './feedback-visual.ts'
 import type { Glasses } from './glasses.ts'
 import type { Input } from './input.ts'
 import { PASSAGES } from './passages.ts'
@@ -23,6 +24,7 @@ type ControllerOptions = {
   menu(screen: Screen): MenuContainerProperty | undefined
   onExit(): void
   renderTiles?: (passage: (typeof PASSAGES)[number]) => Promise<StaffTiles>
+  renderFeedbackTiles?: typeof renderFeedbackTiles
 }
 
 // One glasses page per session state (CONTRACT.md state map). Ready and
@@ -48,7 +50,7 @@ function keyOf(state: SessionState): string {
 // Mirrors the phone session (mobile SessionStore) on the glasses and turns
 // glasses gestures into the same session calls the phone buttons make. The
 // store is the only source of truth; this file owns every glasses side effect.
-export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles }: ControllerOptions) {
+export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles, renderFeedbackTiles }: ControllerOptions) {
   let current: Screen | null = null
   let currentKey = ''
   // Set while a multi-step store change runs, so only its end state is drawn.
@@ -138,6 +140,7 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
                   store.showReview()
                 }),
               onPlayAgain,
+              renderTiles: renderFeedbackTiles,
             })
       }
       case 'error':

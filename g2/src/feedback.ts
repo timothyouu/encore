@@ -1,3 +1,5 @@
+import { resolveVisualPlan } from '../../mobile/src/paper-evidence.ts'
+import { diagramForCard, type Diagram } from './feedback-visual.ts'
 import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from '../../mobile/src/feedback.ts'
 import type { AttemptRecord } from '../../mobile/src/session.ts'
 import type { Passage } from './passages.ts'
@@ -12,10 +14,14 @@ export type ResultView = {
   review: string
   // Guide: the correction for that finding; null when there is nothing to correct.
   guide: string | null
+  diagram?: Diagram
 }
 
 export function resultView(record: AttemptRecord, passage: Passage, findingIndex: number): ResultView {
-  const tag = (record.captureSource ?? 'demo') === 'demo' ? 'Demo' : ''
+  const source = record.captureSource ?? 'demo'
+  const sourceTag = source === 'demo' ? 'Demo' : source === 'test' ? 'Test WAV' : source === 'g2' ? 'G2' : 'Phone'
+  const tag = record.coaching && record.coaching.coachingSource !== 'gemini'
+    ? `${sourceTag} · local cue` : sourceTag
   const base = { title: passage.title, tag }
   const analysis = record.analysis
   if (!analysis || analysis.status !== 'ok') {
@@ -36,9 +42,11 @@ export function resultView(record: AttemptRecord, passage: Passage, findingIndex
   const correction = correctionFor(finding, passage)
   const cue = record.coaching?.evidenceFindingIds.includes(finding.id) ? record.coaching.cue : correction
   const finger = referenceFor(finding, passage)?.suggestedFinger
+  const card = resolveVisualPlan(analysis, passage, record.coaching).cards.find(item => item.evidence.findingIds.includes(finding.id))
   return {
     ...base,
     review: `${where} · ${findingTitle(finding)}${count}\n${detailFor(finding, passage, record)}\n${cue}`,
     guide: `${correction}${finger ? `\nSuggested finger ${finger} (authored)` : ''}`,
+    diagram: card ? diagramForCard(card) : undefined,
   }
 }
