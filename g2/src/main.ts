@@ -1,79 +1,48 @@
-import {
-  waitForEvenAppBridge,
-  TextContainerProperty,
-  CreateStartUpPageContainer,
-  TextContainerUpgrade,
-  OsEventTypeList,
-} from '@evenrealities/even_hub_sdk'
+import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { Glasses } from './glasses'
+import { debounced, toInput } from './input'
+import { PASSAGES } from './passages'
+import { readyScreen } from './screens/ready'
+import type { Screen } from './screens/screen'
+import { selectionScreen } from './screens/selection'
 
-const bridge = await waitForEvenAppBridge()
+const glasses = new Glasses(await waitForEvenAppBridge())
 
-const mainText = new TextContainerProperty({
-  xPosition: 0,
-  yPosition: 0,
-  width: 576,
-  height: 288,
-  borderWidth: 0,
-  borderColor: 5,
-  paddingLength: 4,
-  containerID: 1,
-  containerName: 'main',
-  content: 'Hello from G2!\nTap to count · double-tap to exit.',
-  isEventCapture: 1,
-})
+let current: Screen
 
-const result = await bridge.createStartUpPageContainer(
-  new CreateStartUpPageContainer({
-    containerTotalNum: 1,
-    textObject: [mainText],
-  }),
-)
-
-console.log('Page created:', result === 0 ? 'success' : `failed (${result})`)
-
-// Reads the event type out of one envelope.
-//
-// CLICK_EVENT is 0, and protobuf omits zero-value fields on the wire, so a
-// single tap arrives as an envelope whose `eventType` is `undefined`. The
-// default has to be resolved INSIDE the envelope check. Writing
-// `event.sysEvent?.eventType ?? OsEventTypeList.CLICK_EVENT` instead would
-// read CLICK on events that carry no `sysEvent` at all, so every scroll,
-// exit and audio frame would fire the tap handler.
-function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeList | null {
-  if (!envelope) return null
-  return envelope.eventType ?? OsEventTypeList.CLICK_EVENT
+function show(screen: Screen) {
+  current = screen
+  console.log('[encore] screen →', screen.name)
+  // Failures are already logged by the glasses queue.
+  glasses.showPage(screen.page()).catch(() => {})
 }
 
-// Event routing, critical details:
-//   • Taps/double-taps/lifecycle come through `event.sysEvent`.
-//     Scroll gestures come through `event.textEvent`. Never mix them.
-//   • Double-tap → `shutDownPageContainer(1)` is a root-level check: it
-//     must fire no matter which envelope the event arrives in, so users
-//     can always exit the app.
-//   • Check DOUBLE_CLICK_EVENT before CLICK_EVENT.
-let taps = 0
-const unsubscribe = bridge.onEvenHubEvent(event => {
-  const sysType = eventTypeOf(event.sysEvent)
-  const textType = eventTypeOf(event.textEvent)
+function showSelection() {
+  show(
+    selectionScreen({
+      passages: PASSAGES,
+      onOpen: passage => show(readyScreen({ passage, onBack: showSelection })),
+      onExit: () => glasses.requestExit(),
+    }),
+  )
+}
 
-  if (sysType === OsEventTypeList.DOUBLE_CLICK_EVENT || textType === OsEventTypeList.DOUBLE_CLICK_EVENT) {
-    bridge.shutDownPageContainer(1)
-    return
-  }
-
-  if (sysType === OsEventTypeList.CLICK_EVENT || textType === OsEventTypeList.CLICK_EVENT) {
-    taps += 1
-    bridge.textContainerUpgrade(
-      new TextContainerUpgrade({
-        containerID: 1,
-        containerName: 'main',
-        content: `Taps: ${taps}\nTap to count · double-tap to exit.`,
-      }),
-    )
-    return
-  }
-
-  if (sysType === OsEventTypeList.SYSTEM_EXIT_EVENT || sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT) {
+const handleInput = debounced(input => {
+  if (input.kind === 'exit') {
     unsubscribe()
+    return
   }
+  // Returning from the background: redraw whatever screen we were on.
+  if (input.kind === 'foreground') {
+    show(current)
+    return
+  }
+  current.onInput(input)
 })
+
+const unsubscribe = glasses.bridge.onEvenHubEvent(event => {
+  const input = toInput(event)
+  if (input) handleInput(input)
+})
+
+showSelection()

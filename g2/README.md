@@ -1,6 +1,6 @@
-# minimal
+# Encore · G2 glasses app
 
-Bare Even Hub G2 starter. Vite + TypeScript + SDK + CLI + simulator, one text container that renders `Hello from G2!`.
+Glasses side of Encore (see `../spec.md`). Vite + TypeScript + Even Hub SDK, built screen by screen from the Paper mockups.
 
 ## Run
 
@@ -25,13 +25,16 @@ Produces an `.ehpk` file.
 
 | File | Purpose |
 |---|---|
-| `index.html` | WebView host. Viewport meta tag locks zoom; CSS kills iOS double-tap zoom + rubber-band scroll. |
-| `src/main.ts` | Creates a single full-canvas text container at app startup. |
-| `app.json` | Even Hub manifest. No permissions by default. |
-| `tsconfig.json` | Standard Vite vanilla-ts config. |
-| `vite.config.ts` | Dev server on port 5173, host binding for LAN QR access. |
+| `src/main.ts` | Boots the bridge, routes normalized input to the current screen. |
+| `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
+| `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect`; drops duplicate events. |
+| `src/layout.ts` | Shared geometry from the Paper mockups; right-aligned text via `@evenrealities/pretext`. |
+| `src/passages.ts` | The six approved seed passages (spec §7). |
+| `src/screens/` | One file per glasses state (spec §4). |
 
-## Next steps
+## Screens
 
-- Add containers, input handling, lifecycle events — see the `everything-evenhub` skill suite.
-- Pick another template if you need microphone/STT (`asr`), image display (`image`), or long-form reading (`text-heavy`).
+| Mockup | State | Status |
+|---|---|---|
+| 01 | Selection | Native list, tap to open, double tap to exit |
+| 02 | Ready | Placeholder (title + tempo, double tap back) |
