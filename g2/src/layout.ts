@@ -68,3 +68,12 @@ export function hintRow(firstId: number, hints: [string] | [string, string]) {
   if (right) row.push(rightText({ id: firstId + 1, name: 'hintR', y: HINT_Y, content: right, brightness: HINT_BRIGHTNESS }))
   return row
 }
+
+// In-place updates keep a box's width and the firmware only left-aligns, so a
+// shorter label in a right-aligned box is padded with leading spaces until it
+// ends where the box's sizing label ended.
+export function padToWidth(text: string, sizeFor: string) {
+  let padded = text
+  while (getTextWidth(` ${padded}`) <= getTextWidth(sizeFor)) padded = ` ${padded}`
+  return padded
+}

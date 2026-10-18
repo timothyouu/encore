@@ -56,9 +56,10 @@ Produces an `.ehpk` file.
 | `../shared/passages.ts` | The six approved seed passages and authored fingerings (spec §7), shared with the phone Guide. |
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/recorder.ts` / `src/wav.ts` | One mic capture at a time; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
-| `src/upload.ts` / `src/phone.ts` | Multipart upload (`audio` + `metadata`) to the Upload URL set on the phone screen. |
+| `src/review/` | Card model (header, legend, cue; pairing expected vs detected to find the faulty note) and 288×144 card art. |
+| `src/keyboard.ts` | Keyboard schematic for one finding as a 288×96 PNG (from #19). Not wired in: G2 has no Guide state since #16, and Review's card art draws its own keys. |
+| `src/demo.ts` | Dev-only `?demo=review` gallery of every card in `shared/visual-examples.json`, labelled DEMO. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
-| `src/keyboard.ts` | Draws a finding's keyboard schematic (expected vs heard keys, hold bars) as one 288×96 PNG. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
 | `src/screens/` | One file per glasses state (spec §4). |
 
@@ -69,8 +70,7 @@ Produces an `.ehpk` file.
 | 01 | Selection | Native list (5 rows), tap to open, double tap to exit; no hints. Shown while the phone is on Library or History |
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
-| 04 | Analyzing | Short status; no input, no menu |
-| 05 | Review | Where, what happened, one cue (coaching cue when it cites this finding); `▼ guide` when there is a correction; swipe up → previous finding's Guide; tap → Selection |
-| 06 | Guide | The correction and any authored finger, plus a keyboard schematic marking expected vs heard keys when the coaching visual supplies one; swipe up → Review; swipe down → next finding's Review; tap → Selection |
-| — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
+| 04 | Analyzing | `analyzingScreen(stage)`: "Listening back…" plus a dimmed line with the phone pipeline's stage (preparing, uploading, analyzing, coaching); no input, no menu |
+| 05 | Review | `reviewScreen({ coaching, onPlayAgain })`: one card per visual-plan card (art + ●/× legend + cue; × = what the mic heard), swipe between cards, tap → replay (what you played, then the fix, revealed note by note on staff cards; ends on the fix), double tap → Selection. Shown for the phone's review, guide and sheet states; unclear audio is a single card. Demo results are labelled DEMO. Dev gallery: open with `?demo=review` |
+| — | Recoverable error | `problemScreen({ reason, onPlayAgain })`: plain-words reason (upload, analysis or server failure), tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |
