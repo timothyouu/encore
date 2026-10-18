@@ -156,8 +156,9 @@ function ledgers(ctx: CanvasRenderingContext2D, x: number, midi: number) {
   for (let ledger = 12; ledger <= step; ledger += 2) ctx.fillRect(x - 11, STAFF_BOTTOM - (ledger - 2) * HALF_SPACE, 22, 1.5)
 }
 
-// Which notes a picture shows: replays first show only what was played, then
-// only what is written (or the fix), and settle on both together.
+// Which notes a picture shows: 'played' = only what was heard (×), 'written'
+// = only the music (a staff card's resting view and its replay's end), 'both'
+// = the two overlaid (the wrong-note fix frame).
 export type Layer = 'both' | 'played' | 'written'
 
 const byOnset = (a: VisualNote, b: VisualNote) => a.onsetBeat - b.onsetBeat
@@ -556,7 +557,10 @@ function drawStatic(ctx: CanvasRenderingContext2D, card: VisualCard) {
       drawMic(ctx)
       break
     case 'staff':
-      drawStaffWindow(ctx, card)
+      // At rest a staff card shows the written passage with the mistake's beat
+      // shaded (and a dashed slot for a missed note); the × marks for what was
+      // heard appear only in its replay.
+      drawStaffWindow(ctx, card, 'written')
       break
   }
 }
