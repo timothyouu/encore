@@ -35,7 +35,7 @@ export function readyScreen({ passage, onRecord, onBack }: ReadyOptions): Screen
 
     page: () => ({
       textObject: [
-        ...splitRow(1, 'title', HEADER_Y, passage.title, `${passage.bpm} bpm · RH`),
+        ...splitRow(1, 'title', HEADER_Y, passage.title, `${passage.tempoBpm} bpm · RH`),
         // Taps go to whichever container captures events; any one will do.
         text({ id: 3, name: 'focus', x: MARGIN_X, y: FOCUS_Y, width: 528, content: `Focus: ${passage.focus}`, capture: true }),
         ...splitRow(4, 'hint', HINT_Y, 'tap  ● record', '2× tap  back'),

@@ -1,4 +1,4 @@
-import type { Passage, PassageNote } from './passages'
+import type { Passage, ReferenceNote } from './passages'
 
 // Renders a passage as a one-line treble staff, matching the Paper mockup
 // (576×112), and splits it into two 288×112 PNG tiles: the widest image a
@@ -113,9 +113,9 @@ function drawClef(ctx: CanvasRenderingContext2D) {
   ctx.fillText(CLEF.glyph, CLEF.left + fitted.actualBoundingBoxLeft, CLEF.top + fitted.actualBoundingBoxAscent)
 }
 
-function drawNote(ctx: CanvasRenderingContext2D, note: PassageNote, g: Geometry) {
+function drawNote(ctx: CanvasRenderingContext2D, note: ReferenceNote, g: Geometry) {
   const x = xOfBeat(note.onsetBeat, g)
-  const step = stepOf(note.midi)
+  const step = stepOf(note.midiPitch)
   const y = yOfStep(step)
 
   // Ledger lines below (C4 and lower) or above (A5 and higher) the staff.
@@ -141,7 +141,7 @@ function drawNote(ctx: CanvasRenderingContext2D, note: PassageNote, g: Geometry)
     else ctx.fillRect(x - 7.2, y + 1, 2, 35)
   }
 
-  if (SHARP_PITCH_CLASSES.has(note.midi % 12)) {
+  if (SHARP_PITCH_CLASSES.has(note.midiPitch % 12)) {
     ctx.font = '600 18px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText('#', x - 16, y + 6)
