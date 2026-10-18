@@ -46,6 +46,7 @@ Produces an `.ehpk` file.
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/recorder.ts` / `src/wav.ts` | One capture per attempt ID; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
 | `src/upload.ts` / `src/phone.ts` | Multipart upload (`audio` + `metadata`) to the Upload URL set on the phone screen. |
+| `src/review/` | Card model (header, legend, cue; pairing expected vs detected to find the faulty note) and 288×144 card art. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
 | `src/screens/` | One file per glasses state (spec §4). |
@@ -58,4 +59,7 @@ Produces an `.ehpk` file.
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● starts the G2 mic. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and uploads, `2× discard` throws the take away; 30s cap |
 | (04) | Saving | Interim until Analyzing: uploads the take; saved → tap → selection; couldn't save → tap or double tap → back to Ready |
+| 04 | Analyzing | `analyzingScreen(stage)`: "Listening back…" plus a dimmed stage line; no input, no menu |
+| 05 | Review | `reviewScreen({ coaching, onPlayAgain })`: one card per visual-plan card (art + ●/○ legend + cue), swipe between cards, double tap → selection. Dev gallery: open with `?demo=review` |
+| — | Recoverable error | `problemScreen({ reason, onPlayAgain })`: plain-words reason, tap → selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |

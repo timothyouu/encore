@@ -1,11 +1,13 @@
 import { status } from './status.ts'
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
+import { demoRequested, demoReview } from './demo.ts'
 import { Glasses } from './glasses.ts'
 import { filterInputs, toInput } from './input.ts'
 import { PASSAGES, type Passage } from './passages.ts'
 import { mountUploadSettings } from './phone.ts'
 import { Recorder, type Take } from './recorder.ts'
 import { readyScreen } from './screens/ready.ts'
+import { reviewScreen } from './screens/review.ts'
 import { savingScreen } from './screens/saving.ts'
 import type { Screen } from './screens/screen.ts'
 import { selectionScreen } from './screens/selection.ts'
@@ -99,7 +101,12 @@ async function main() {
     if (input) handleInput(input)
   })
 
-  showSelection()
+  if (demoRequested()) {
+    status('demo: example review cards (shared/visual-examples.json)')
+    show(reviewScreen({ ...demoReview(), demo: true, onPlayAgain: showSelection }))
+  } else {
+    showSelection()
+  }
 }
 
 main().catch(error => status(`startup failed: ${String(error)}`, 'error'))
