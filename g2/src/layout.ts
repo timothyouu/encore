@@ -40,9 +40,11 @@ export function text({ id, name, x, y, width, height = TEXT_BOX_H, content, capt
   })
 }
 
-// The firmware only left-aligns, so right-aligned text is positioned by its measured width.
-export function rightText(options: Omit<TextOptions, 'x' | 'width'>) {
-  const width = Math.min(getTextWidth(options.content) + 4, SCREEN_W - 2 * MARGIN_X)
+// The firmware only left-aligns, so right-aligned text is positioned by its
+// measured width. In-place updates keep that width, so a box whose text will
+// change can be sized for its eventual label with `sizeFor`.
+export function rightText({ sizeFor, ...options }: Omit<TextOptions, 'x' | 'width'> & { sizeFor?: string }) {
+  const width = Math.min(getTextWidth(sizeFor ?? options.content) + 4, SCREEN_W - 2 * MARGIN_X)
   return text({ ...options, x: SCREEN_W - MARGIN_X - width, width })
 }
 
@@ -56,17 +58,13 @@ export function splitRow(firstId: number, prefix: string, y: number, left: strin
 
 // Gesture hints sit dimmed on the bottom row so content stays brightest.
 // Only shown where the action isn't obvious; first hint left, second right.
-const HINT_BRIGHTNESS = 2
+export const HINT_BRIGHTNESS = 2
 
 export function hintRow(firstId: number, hints: [string] | [string, string]) {
   const [left, right] = hints
   const row = [
     text({ id: firstId, name: 'hintL', x: MARGIN_X, y: HINT_Y, width: 260, content: left, brightness: HINT_BRIGHTNESS }),
   ]
-  if (right) {
-    const r = rightText({ id: firstId + 1, name: 'hintR', y: HINT_Y, content: right })
-    r.textColor = HINT_BRIGHTNESS
-    row.push(r)
-  }
+  if (right) row.push(rightText({ id: firstId + 1, name: 'hintR', y: HINT_Y, content: right, brightness: HINT_BRIGHTNESS }))
   return row
 }
