@@ -1,16 +1,45 @@
 import {
   CreateStartUpPageContainer,
   RebuildPageContainer,
+  TextContainerProperty,
   type EvenAppBridge,
   type ImageContainerProperty,
   type ListContainerProperty,
-  type TextContainerProperty,
 } from '@evenrealities/even_hub_sdk'
+import { status } from './status'
 
 export type Page = {
   textObject?: TextContainerProperty[]
   listObject?: ListContainerProperty[]
   imageObject?: ImageContainerProperty[]
+}
+
+const STARTUP_RESULT: Record<number, string> = {
+  0: 'success',
+  1: 'invalid',
+  2: 'oversize',
+  3: 'out of memory',
+}
+
+function errorPage(message: string) {
+  return {
+    containerTotalNum: 1,
+    textObject: [
+      new TextContainerProperty({
+        xPosition: 0,
+        yPosition: 0,
+        width: 576,
+        height: 288,
+        borderWidth: 0,
+        borderColor: 0,
+        paddingLength: 8,
+        containerID: 1,
+        containerName: 'error',
+        content: message,
+        isEventCapture: 1,
+      }),
+    ],
+  }
 }
 
 // A flaky BLE hop can hang a call for ~30s; cap each one so the queue keeps moving.
@@ -35,7 +64,7 @@ export class Glasses {
 
   enqueue<T>(label: string, call: () => Promise<T>): Promise<T> {
     const run = this.chain.then(() => withTimeout(call(), label))
-    this.chain = run.catch(error => console.error(`[encore] ${label}:`, String(error)))
+    this.chain = run.catch(error => status(`${label}: ${String(error)}`, 'error'))
     return run
   }
 
@@ -51,15 +80,26 @@ export class Glasses {
         const result = await this.bridge.createStartUpPageContainer(
           new CreateStartUpPageContainer({ containerTotalNum, ...page }),
         )
+        status(`glasses: startup page → ${result} (${STARTUP_RESULT[result] ?? 'unknown'})`)
         if (result === 0) return
-        // A WebView reload keeps the glasses session alive, so the startup
-        // page may already exist; fall through and rebuild instead.
-        console.warn(`[encore] createStartUpPageContainer returned ${result}; rebuilding`)
+
+        // The glasses stay on the loading screen until a startup page succeeds,
+        // so try a bare text page that names the failure.
+        const fallback = await this.bridge.createStartUpPageContainer(
+          new CreateStartUpPageContainer(errorPage(`Encore could not draw this screen (code ${result}).`)),
+        )
+        status(`glasses: fallback page → ${fallback}`)
+        if (fallback === 0) return
+        // Both refused: a WebView reload keeps the glasses session alive, so the
+        // startup page may already exist. Fall through and rebuild instead.
       }
       const ok = await this.bridge.rebuildPageContainer(
         new RebuildPageContainer({ containerTotalNum, ...page }),
       )
-      if (!ok) throw new Error('rebuildPageContainer failed')
+      if (!ok) {
+        status('glasses: rebuild page failed', 'error')
+        throw new Error('rebuildPageContainer failed')
+      }
     })
   }
 
