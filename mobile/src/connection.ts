@@ -1,6 +1,6 @@
 import type { SessionStore } from './session.ts';
 
-export type Connection = { mode: 'demo' | 'phone'; analysis: string; coaching: string };
+export type Connection = { mode: 'demo' | 'phone'; upload: string; analysis: string; coaching: string };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
 export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null): { message(value: string | null): void; dispose(): void } {
@@ -14,7 +14,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   const form = document.createElement('form');
   form.style.cssText = 'display:grid;gap:12px;';
   const explanation = document.createElement('p');
-  explanation.textContent = 'Demo works without a microphone. Phone recording sends audio to your configured analysis service; coaching receives the measured findings. Raw audio is not saved in History.';
+  explanation.textContent = 'Phone recording sends normalized WAV audio through upload, analysis, and coaching. Demo uses simulated results and is labeled separately. Raw audio is not saved in History.';
   form.append(explanation);
   const modeLabel = document.createElement('label');
   modeLabel.textContent = 'Recording source';
@@ -23,28 +23,30 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   for (const [value, label] of [['demo', 'Demo (simulated)'], ['phone', 'Phone microphone']]) {
     const option = document.createElement('option'); option.value = value; option.textContent = label; mode.append(option);
   }
+  mode.value = 'phone';
   modeLabel.append(mode); form.append(modeLabel);
   function field(label: string, placeholder: string): HTMLInputElement {
     const wrapper = document.createElement('label'); wrapper.textContent = label;
-    const input = document.createElement('input'); input.type = 'url'; input.placeholder = placeholder; input.setAttribute('aria-label', label); input.autocomplete = 'off';
+    const input = document.createElement('input'); input.type = 'text'; input.inputMode = 'url'; input.placeholder = placeholder; input.setAttribute('aria-label', label); input.autocomplete = 'off';
     wrapper.append(input); form.append(wrapper); return input;
   }
-  const analysis = field('Analysis endpoint', 'https://your-service/v1/analyze');
-  const coaching = field('Coaching endpoint', 'https://your-service/v1/coach');
+  const upload = field('Upload endpoint', '/api/recordings'); upload.value = '/api/recordings';
+  const analysis = field('Analysis endpoint', '/api/analyze'); analysis.value = '/api/analyze';
+  const coaching = field('Coaching endpoint', '/api/coach'); coaching.value = '/api/coach';
   const apply = document.createElement('button'); apply.type = 'submit'; apply.textContent = 'Apply connection'; form.append(apply);
-  for (const input of [mode, analysis, coaching, apply]) input.style.cssText = 'display:block;width:100%;min-height:44px;margin-top:4px;padding:10px;border:1px solid #D8D2C7;border-radius:10px;background:#F6F2EA;color:#171714;font:inherit;box-sizing:border-box;';
+  for (const input of [mode, upload, analysis, coaching, apply]) input.style.cssText = 'display:block;width:100%;min-height:44px;margin-top:4px;padding:10px;border:1px solid #D8D2C7;border-radius:10px;background:#F6F2EA;color:#171714;font:inherit;box-sizing:border-box;';
   const status = document.createElement('p'); status.setAttribute('role', 'status'); status.style.cssText = 'overflow-wrap:anywhere;';
   panel.append(form, status); root.after(panel);
   form.addEventListener('submit', event => {
     event.preventDefault();
     if (apply.disabled) return;
-    const error = change({ mode: mode.value === 'phone' ? 'phone' : 'demo', analysis: analysis.value.trim(), coaching: coaching.value.trim() });
+    const error = change({ mode: mode.value === 'phone' ? 'phone' : 'demo', upload: upload.value.trim(), analysis: analysis.value.trim(), coaching: coaching.value.trim() });
     status.textContent = error ?? 'Connection applied. Choose a passage to begin.';
     if (!error) panel.open = false;
   });
   const unsubscribe = store.subscribe(() => {
     apply.disabled = ['recording', 'processing'].includes(store.state.screen);
-    for (const input of [mode, analysis, coaching]) input.disabled = apply.disabled;
+    for (const input of [mode, upload, analysis, coaching]) input.disabled = apply.disabled;
   });
   return {
     message(value): void { status.textContent = value ?? ''; if (value) panel.open = true; },

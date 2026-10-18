@@ -1,0 +1,77 @@
+.paper-visualization {
+  width: min(100%, 576px);
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  background: #000;
+  color: #3cfa44;
+}
+.paper-visualization svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  font-family: Montserrat, system-ui, sans-serif;
+  text-rendering: geometricPrecision;
+}
+.paper-gallery {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 28px clamp(18px, 4vw, 56px);
+  background: #101512;
+  color: #eef5ee;
+  font: 15px/1.5 system-ui, sans-serif;
+}
+.paper-gallery * { box-sizing: border-box; }
+.paper-gallery h1 { margin: 0; font-size: clamp(26px, 3vw, 38px); line-height: 1.2; }
+.paper-gallery > p { margin: 8px 0 26px; color: #b9cabc; }
+.paper-gallery-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 390px) minmax(0, 1fr);
+  gap: clamp(20px, 4vw, 52px);
+  align-items: start;
+}
+.paper-gallery-controls { display: grid; gap: 16px; }
+.paper-gallery-controls label { display: grid; gap: 7px; font-weight: 600; }
+.paper-gallery-controls select,
+.paper-gallery-controls textarea,
+.paper-gallery-controls button {
+  width: 100%;
+  border: 1px solid #5c7860;
+  border-radius: 5px;
+  padding: 10px 12px;
+  background: #18231a;
+  color: #eef5ee;
+  font: inherit;
+}
+.paper-gallery-controls textarea {
+  min-height: 260px;
+  resize: vertical;
+  font: 12px/1.4 ui-monospace, monospace;
+}
+.paper-gallery-controls button {
+  cursor: pointer;
+  background: #3cfa44;
+  border-color: #3cfa44;
+  color: #001904;
+  font-weight: 700;
+}
+.paper-gallery-controls button:focus-visible,
+.paper-gallery-controls select:focus-visible,
+.paper-gallery-controls textarea:focus-visible,
+.paper-gallery-controls input:focus-visible { outline: 3px solid #9afca0; outline-offset: 3px; }
+.paper-gallery-controls .paper-gallery-motion { display: flex; align-items: center; gap: 8px; }
+.paper-gallery-status { min-height: 24px; margin: 0; color: #b9cabc; }
+.paper-gallery-status[data-state="error"] { color: #ffb8a9; }
+.paper-gallery-visual-host { width: min(100%, 576px); margin: 0 auto; }
+.paper-gallery-caption {
+  max-width: 576px;
+  margin: 14px auto;
+  color: #b9cabc;
+}
+@media (max-width: 850px) {
+  .paper-gallery-layout { grid-template-columns: 1fr; }
+  .paper-gallery-controls { max-width: 576px; margin: auto; width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .paper-visualization *, .paper-gallery * { animation: none !important; transition: none !important; }
+}
+

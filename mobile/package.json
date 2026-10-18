@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5174",
+    "dev": "vite --port 5176",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

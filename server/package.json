@@ -1,0 +1,9 @@
+{
+  "name": "encore-coaching-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {"dev": "tsx src/main.ts", "start": "node --import tsx src/main.ts", "typecheck": "tsc --noEmit", "test": "node --import tsx --test src/*.test.ts"},
+  "dependencies": {"@google/genai": "2.30.0", "@strands-agents/sdk": "1.21.0"},
+  "devDependencies": {"@types/node": "^22.0.0", "tsx": "^4.0.0", "typescript": "^5.0.0"}
+}

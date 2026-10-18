@@ -12,7 +12,7 @@ const store = new SessionStore({
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
 let scenario: Scenario = 'mistakes';
 let activeScenario: Scenario = 'mistakes';
-let mode: 'demo' | 'phone' = 'demo';
+let mode: 'demo' | 'phone' = 'phone';
 let phone: PhoneCapture | undefined;
 let captureLimit: ReturnType<typeof setTimeout> | undefined;
 const pending = new Set<ReturnType<typeof setTimeout>>();
@@ -50,10 +50,16 @@ function cancel(): void {
   clearTimeout(captureLimit);
   if (mode === 'phone') phone?.cancel(); else store.cancel();
 }
-const unmount = mountPhone(root, store, { start, stop, cancel, getMode: () => mode });
+const unmount = mountPhone(root, store, { start, stop, cancel,
+  retry: () => { void phone?.retry(); }, importWav: (blob: Blob) => { void phone?.processWavBlob(blob); },
+  canRetry: (attemptId: string) => phone?.canRetry(attemptId) ?? false,
+  getMode: () => mode });
 const connection = mountConnection(store, root, next => {
   if (phone?.busy || phone?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
-  if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter both complete HTTPS endpoints (or HTTP localhost). URLs cannot include passwords or fragments.';
+  if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter valid upload, analysis, and coaching endpoints. Use /api paths, HTTPS, or HTTP localhost.';
+  if (mode === 'phone' && next.mode === 'phone' && phone) {
+    return phone.updateEndpoints(next) ? null : 'Could not update the connection while recording is active.';
+  }
   phone?.dispose(); phone = undefined;
   mode = next.mode;
   if (mode === 'phone') phone = new PhoneCapture(store, next, () => {
@@ -68,6 +74,10 @@ permissionCancel.type = 'button'; permissionCancel.hidden = true; permissionCanc
 permissionCancel.style.cssText = 'margin:12px auto;min-height:44px;padding:12px 24px;border:1px solid #625F58;border-radius:24px;';
 permissionCancel.addEventListener('click', () => phone?.cancel());
 root.after(permissionCancel);
+phone = new PhoneCapture(store, { upload: '/api/recordings', analysis: '/api/analyze', coaching: '/api/coach' }, () => {
+  connection.message(phone?.error ?? (phone?.busy && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));
+  permissionCancel.hidden = !(phone?.busy && !phone.recording && store.state.screen === 'ready');
+});
 window.addEventListener('pagehide', () => {
   clearTimeout(captureLimit);
   for (const timer of pending) clearTimeout(timer);
