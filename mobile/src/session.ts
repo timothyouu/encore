@@ -1,9 +1,11 @@
+import { analysisSegmentsValid, calculateDisplaySegments } from '../../shared/segments.ts';
+import { feedbackEntries, type FeedbackEntry } from '../../shared/feedback.ts';
 import { groundedVisualPlan } from './paper-evidence.ts';
 import { passages, type Passage } from './passages.ts';
 import type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
 import type { PhonePersistence } from './storage.ts';
 import { beginTelemetrySpan, endTelemetrySpan, measureTelemetry, recordTelemetryFailure } from './telemetry.ts';
-export type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
+export type { AnalysisResult, CoachingResult, DetectedNote, Finding, DisplaySegment, FindingLocation } from '../../shared/contracts.ts';
 
 export type AttemptRecord = {
   attemptId: string; passageId: string; passageVersion: string; startedAt: string; completedAt: string | null;
@@ -55,7 +57,7 @@ function passageFor(record: AttemptRecord): Passage | undefined {
 function analysisValid(value: unknown, record: AttemptRecord): value is AnalysisResult {
   const passage = passageFor(record);
   if (!passage || !object(value)) return false;
-  if (value.schemaVersion !== '1' || value.attemptId !== record.attemptId ||
+  if (!['1', '2'].includes(String(value.schemaVersion)) || value.attemptId !== record.attemptId ||
       value.passageId !== record.passageId || value.passageVersion !== record.passageVersion ||
       !finite(value.attemptTempoBpm, 20, 300) || !STATUSES.has(String(value.status)) ||
       !string(value.detectorVersion, 80) || !string(value.scoringVersion, 80) ||
@@ -86,6 +88,7 @@ function analysisValid(value: unknown, record: AttemptRecord): value is Analysis
       (finding.kind !== 'missing_note' || finding.referenceNoteId !== undefined) &&
       (finding.kind !== 'extra_note' || finding.detectedNoteId !== undefined))) return false;
   if (!unique(findings.map((finding: Finding) => finding.id))) return false;
+  if (!analysisSegmentsValid(value as AnalysisResult, passage)) return false;
   if (value.status === 'ok' && (value.audioQuality.clipped || value.audioQuality.hasDropouts ||
       !value.alignment.reliable || value.alignment.offsetSec === null)) return false;
   if (value.status !== 'ok' && findings.length > 0) return false;
@@ -102,7 +105,16 @@ function coachingValid(value: unknown, record: AttemptRecord): value is Coaching
   const findingMap = new Map(record.analysis.findings.map((finding) => [finding.id, finding]));
   const referenceIds = new Set(passage.notes.map((note) => note.id));
   const visual = value.visual;
-  return value.schemaVersion === '1' && value.attemptId === record.attemptId &&
+  const segment = record.analysis.displaySegments?.find(candidate => candidate.id === value.primarySegmentId);
+  const segmentValid = value.schemaVersion === '1' ? value.primarySegmentId === undefined :
+    Array.isArray(record.analysis.displaySegments) && Array.isArray(value.evidenceFindingIds) &&
+    (value.primarySegmentId === null
+      ? value.evidenceFindingIds.every(id => {
+        const finding = findingMap.get(id);
+        return !!finding && finding.segmentIds?.length === 0;
+      })
+      : !!segment && value.evidenceFindingIds.some(id => segment.findingIds.includes(id)));
+  return value.schemaVersion === record.analysis.schemaVersion && segmentValid && value.attemptId === record.attemptId &&
     ['gemini', 'fallback', 'analysis_only'].includes(String(value.coachingSource)) &&
     (value.fallbackReason === undefined || ['missing_key', 'model_error', 'invalid_response', 'timeout'].includes(String(value.fallbackReason))) &&
     string(value.cue, 120) && !/[<>]/.test(value.cue) &&
@@ -245,6 +257,34 @@ export class SessionStore {
   private current(): AttemptRecord | undefined {
     return this.records.find((record) => record.attemptId === this.state.attemptId);
   }
+  entries(): FeedbackEntry[] {
+    const record = this.current();
+    const passage = record && passageFor(record);
+    return record?.analysis && passage ? feedbackEntries(record.analysis, passage, record.coaching) : [];
+  }
+  selectedEntry(): FeedbackEntry | undefined { return this.entries()[this.state.findingIndex]; }
+  selectEntry(index: number): void {
+    if (!['review', 'guide'].includes(this.state.screen) || !Number.isInteger(index) ||
+        index < 0 || index >= this.entries().length) return;
+    this.state = { ...this.state, screen: 'review', findingIndex: index };
+    this.emit();
+  }
+  // Review and Guide form a pair for each finding/bar; both directions keep that identity.
+  moveFeedback(delta: number): void {
+    if (!Number.isInteger(delta) || !['review', 'guide'].includes(this.state.screen)) return;
+    const count = this.entries().length;
+    if (!count) return;
+    const position = this.state.findingIndex * 2 + (this.state.screen === 'guide' ? 1 : 0);
+    const next = Math.max(0, Math.min(count * 2 - 1, position + delta));
+    if (position === next) return;
+    this.state = { ...this.state, findingIndex: Math.floor(next / 2), screen: next % 2 ? 'guide' : 'review' };
+    this.emit();
+  }
+  showSavedAnalysis(): void {
+    if (this.state.screen !== 'error' || this.current()?.analysis?.status !== 'ok') return;
+    this.state = { ...this.state, screen: 'review', findingIndex: 0 };
+    this.emit();
+  }
   selectPassage(id: string): void {
     if (this.state.screen !== 'library' || !passages.some((passage) => passage.id === id)) return;
     this.state = { ...this.state, screen: 'ready', passageId: id, attemptId: null, findingIndex: 0, historyOrigin: false };
@@ -324,7 +364,7 @@ export class SessionStore {
     this.emit();
   }
   showGuide(): void {
-    if (this.state.screen !== 'review' || !this.current()?.analysis) return;
+    if (this.state.screen !== 'review' || !this.selectedEntry()) return;
     this.state = { ...this.state, screen: 'guide' };
     this.emit();
   }
@@ -345,7 +385,7 @@ export class SessionStore {
   }
   moveFinding(delta: number): void {
     if (!Number.isInteger(delta) || !['review', 'guide', 'sheet'].includes(this.state.screen)) return;
-    const length = this.current()?.analysis?.findings.length ?? 0;
+    const length = this.entries().length;
     const next = Math.max(0, Math.min(Math.max(0, length - 1), this.state.findingIndex + delta));
     if (next === this.state.findingIndex) return;
     this.state = { ...this.state, findingIndex: next };
@@ -355,7 +395,7 @@ export class SessionStore {
     const record = this.records.find((item) => item.attemptId === attemptId);
     if (!record || record.captureStatus !== 'completed' || record.processingStatus !== 'processing' ||
         (record.analysis !== null && !replaceExisting) || !analysisValid(input, record)) return false;
-    record.analysis = input;
+    try { record.analysis = structuredClone(input); } catch { return false; }
     if (input.status === 'ok') {
       // Coaching remains pending. The deterministic analysis is already saved.
     } else if (input.status === 'error') {
@@ -376,7 +416,7 @@ export class SessionStore {
     const record = this.records.find((item) => item.attemptId === attemptId);
     if (!record || record.captureStatus !== 'completed' || record.processingStatus !== 'processing' ||
         record.coaching !== null || !coachingValid(input, record)) return false;
-    record.coaching = input;
+    try { record.coaching = structuredClone(input); } catch { return false; }
     record.processingStatus = 'result';
     this.processingStage = null;
     record.error = null;
@@ -422,7 +462,7 @@ export class SessionStore {
   }
 }
 
-export function fixtureAnalysis(record: AttemptRecord, scenario: 'mistakes' | 'clean' | 'uncertain' | 'error'): AnalysisResult {
+export function fixtureAnalysis(record: AttemptRecord, scenario: 'mistakes' | 'clean' | 'uncertain' | 'error', schemaVersion: '1' | '2' = '1'): AnalysisResult {
   const passage = passageFor(record);
   if (!passage) throw new Error('Unknown passage');
   const detectedNotes: DetectedNote[] = passage.notes.map((note, index) => ({
@@ -436,14 +476,17 @@ export function fixtureAnalysis(record: AttemptRecord, scenario: 'mistakes' | 'c
     { id: 'finding-2', kind: 'timing', referenceNoteId: passage.notes[4].id, detectedNoteId: 'detected-5', timingDeltaMs: 250 },
     { id: 'finding-3', kind: 'missing_note', referenceNoteId: passage.notes[5].id },
   ] : [];
+  const mapped = schemaVersion === '2' && scenario === 'mistakes'
+    ? calculateDisplaySegments(passage, findings, detectedNotes, passage.tempoBpm, { offsetSec: 0, reliable: true })
+    : { findings, displaySegments: [] };
   return {
-    schemaVersion: '1', attemptId: record.attemptId, passageId: record.passageId,
+    schemaVersion, ...(schemaVersion === '2' ? { displaySegments: mapped.displaySegments } : {}), attemptId: record.attemptId, passageId: record.passageId,
     passageVersion: record.passageVersion, attemptTempoBpm: passage.tempoBpm,
     status: scenario === 'uncertain' ? 'uncertain' : scenario === 'error' ? 'error' : 'ok',
     detectorVersion: 'demo-fixture-1', scoringVersion: 'demo-fixture-1',
     audioQuality: { clipped: false, hasDropouts: false, warnings: scenario === 'uncertain' ? ['Demo: unclear audio'] : [] },
     alignment: { offsetSec: scenario === 'uncertain' ? null : 0, reliable: scenario !== 'uncertain' },
-    detectedNotes: scenario === 'error' ? [] : detectedNotes, findings: scenario === 'error' ? [] : findings,
+    detectedNotes: scenario === 'error' ? [] : detectedNotes, findings: scenario === 'error' ? [] : mapped.findings,
     metrics: { matchedNotes: scenario === 'error' ? 0 : scenario === 'mistakes' ? passage.notes.length - 2 : passage.notes.length,
       expectedNotes: passage.notes.length, medianAbsTimingErrorMs: scenario === 'uncertain' || scenario === 'error' ? null : 0 },
   };
@@ -453,7 +496,9 @@ export function fixtureCoaching(record: AttemptRecord): CoachingResult {
   if (!passage) throw new Error('Unknown passage');
   const finding = record.analysis?.findings[0];
   return {
-    schemaVersion: '1', attemptId: record.attemptId,
+    schemaVersion: record.analysis?.schemaVersion ?? '1',
+    ...(record.analysis?.schemaVersion === '2' ? { primarySegmentId: record.analysis.displaySegments?.find(segment => segment.findingIds.includes(finding?.id ?? ''))?.id ?? null } : {}),
+    attemptId: record.attemptId,
     coachingSource: 'fallback', fallbackReason: 'missing_key',
     cue: finding ? 'Try the highlighted key, then play the phrase again.' : 'That phrase matches the reference. Keep practicing.',
     evidenceFindingIds: finding ? [finding.id] : [],

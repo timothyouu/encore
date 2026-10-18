@@ -4,12 +4,16 @@ import { WAVEFORM_BARS } from './audio-meter.ts';
 import { resolveVisualPlan } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
-import type { AttemptRecord, Finding, SessionStore } from './session.ts';
+import type { DisplaySegment } from '../../shared/contracts.ts';
+import type { FeedbackEntry } from '../../shared/feedback.ts';
+import { buildVisualPlan } from '../../shared/visual-plan.ts';
+import { clipVisualCard, notationWindow } from './segments.ts';
+import type { AttemptRecord, SessionStore } from './session.ts';
 import { markTelemetryErrorReported, measureTelemetry, recordTelemetryFailure } from './telemetry.ts';
 import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, type MistakeVisualization } from './visualization.ts';
 
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
-import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from './feedback.ts';
+import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor, segmentLabel, locationLabel } from './feedback.ts';
 
 type Mode = 'phone' | 'g2';
 type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
@@ -93,34 +97,36 @@ function svgText(x: number, y: number, value: string, className = ''): SVGTextEl
 }
 
 // This staff uses actual reference beats, pitches, durations, and unoccupied beats.
-function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number, preferences?: Readonly<DisplaySettings>): HTMLElement {
+function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number, preferences?: Readonly<DisplaySettings>, segment?: DisplaySegment | null): HTMLElement {
   const large = preferences?.sheetMusicSize === 'large';
   const showNames = preferences?.showNoteNames ?? false;
   const scale = large ? 1.25 : 1;
   const step = 48;
   const start = 48;
   const frame = node('div', `score-frame${large ? ' score-large' : ''}`);
-  const totalBeats = Math.max(8, ...passage.notes.map((note) => note.onsetBeat + note.durationBeats));
+  const { startBeat, endBeat, notes } = notationWindow(passage, segment);
+  const totalBeats = endBeat - startBeat;
   const width = Math.max(460, 54 + totalBeats * step);
   const occupied = new Set<number>();
-  for (const note of passage.notes) for (let beat = note.onsetBeat; beat < note.onsetBeat + note.durationBeats; beat += 1) occupied.add(beat);
-  const restBeats = Array.from({ length: Math.ceil(totalBeats) }, (_unused, beat) => beat).filter((beat) => !occupied.has(beat));
+  for (const note of notes) for (let beat = Math.floor(note.onsetBeat); beat < note.onsetBeat + note.durationBeats; beat += 1) occupied.add(beat);
+  const restBeats = Array.from({ length: Math.ceil(totalBeats) }, (_unused, beat) => beat + startBeat).filter((beat) => !occupied.has(beat));
   const restLabel = restBeats.length ? `; quarter rests on beat${restBeats.length === 1 ? '' : 's'} ${restBeats.map((beat) => beat + 1).join(', ')}` : '';
-  const svg = svgElement('svg', { viewBox: `0 0 ${width * scale} ${(showNames ? 158 : 144) * scale}`, role: 'img', 'aria-label': `Reference sheet music for ${passage.title}; ${passage.notes.map((note) => `${noteName(note.midiPitch)} at beat ${note.onsetBeat + 1} for ${note.durationBeats} beat${note.durationBeats === 1 ? '' : 's'}`).join(', ')}${restLabel}` });
+  const svg = svgElement('svg', { viewBox: `0 0 ${width * scale} ${(showNames ? 158 : 144) * scale}`, role: 'img', 'aria-label': `Reference sheet music for ${passage.title}${segment ? `; ${segmentLabel(segment)}` : ''}; ${notes.map((note) => `${noteName(note.midiPitch)} at beat ${note.onsetBeat + 1} for ${note.durationBeats} beat${note.durationBeats === 1 ? '' : 's'}`).join(', ')}${restLabel}` });
   const canvas = large ? svgElement('g', { transform: 'scale(1.25)' }) : svg;
   if (large) svg.append(canvas);
   if (extraBeat !== undefined && Number.isFinite(extraBeat)) {
-    const x = Math.max(start, Math.min(width - 24, start + extraBeat * step));
+    const x = Math.max(start, Math.min(width - 24, start + (extraBeat - startBeat) * step));
     canvas.append(svgElement('rect', { x: String(x - 18), y: '25', width: '36', height: '69', rx: '5', class: 'extra-beat-ring' }));
   }
   for (let line = 0; line < 5; line += 1) canvas.append(svgElement('line', { x1: '24', y1: String(36 + line * 10), x2: String(width - 20), y2: String(36 + line * 10), class: 'staff-line' }));
   canvas.append(svgText(3, 56, '𝄞', 'clef'));
-  for (let bar = passage.beatsPerBar; bar < totalBeats; bar += passage.beatsPerBar) {
-    const x = start + bar * step - 16;
+  for (let bar = passage.beatsPerBar; bar < endBeat; bar += passage.beatsPerBar) {
+    if (bar <= startBeat) continue;
+    const x = start + (bar - startBeat) * step - 16;
     canvas.append(svgElement('line', { x1: String(x), y1: '36', x2: String(x), y2: '76', class: 'bar-line' }));
   }
-  for (const note of passage.notes) {
-    const x = start + note.onsetBeat * step;
+  for (const note of notes) {
+    const x = start + (note.onsetBeat - startBeat) * step;
     const naturalOffset = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].indexOf(note.midiPitch % 12);
     const diatonic = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][naturalOffset];
     // E4 sits on the bottom staff line at y=76; C4 needs one ledger line at y=86.
@@ -133,9 +139,9 @@ function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number
     if (showNames) canvas.append(svgText(x, 120, noteName(note.midiPitch), 'score-note-name'));
     canvas.append(svgText(x - 5, showNames ? 146 : 128, String(note.onsetBeat + 1), 'beat-number'));
   }
-  for (let beat = 0; beat < totalBeats; beat += 1) {
+  for (let beat = startBeat; beat < endBeat; beat += 1) {
     if (occupied.has(beat)) continue;
-    const x = start + beat * step;
+    const x = start + (beat - startBeat) * step;
     canvas.append(svgElement('path', { d: `M ${x - 4} 39 l 8 9 -6 7 8 9 -8 8 c -4 4 -1 9 5 8`, class: 'quarter-rest' }));
     canvas.append(svgText(x - 5, showNames ? 146 : 128, String(beat + 1), 'beat-number'));
   }
@@ -204,7 +210,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let focusReturnSelector = '.recording-page .secondary-action';
   const mode = (): Mode => actions.getMode?.() ?? 'phone';
   const deviceStatus = (): string => actions.deviceStatus?.() ?? NO_DEVICE;
-  const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement => notation(passage, selected, extraBeat, settings.value);
+  const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number, segment?: DisplaySegment | null): HTMLElement => notation(passage, selected, extraBeat, settings.value, segment);
 
   function currentRecord(): AttemptRecord | undefined { return store.records.find((record) => record.attemptId === store.state.attemptId); }
   function currentPassage(): Passage | undefined { return passageOf(store.state.passageId) ?? passageOf(currentRecord()?.passageId ?? null); }
@@ -490,25 +496,38 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     return top;
   }
 
-  function carousel(findings: Finding[], passage: Passage, record: AttemptRecord): HTMLElement {
-    const wrap = node('div', 'finding-carousel');
-    const index = Math.min(store.state.findingIndex, findings.length - 1);
-    const label = add(node('div', 'carousel-center'), node('span', 'carousel-label', `Mistake ${index + 1} of ${findings.length}`));
-    const dots = node('div', 'carousel-dots');
-    for (let i = 0; i < findings.length; i += 1) {
-      const dot = node('span', i === index ? 'active' : ''); dot.setAttribute('aria-hidden', 'true'); dots.append(dot);
+  function barNavigation(entries: FeedbackEntry[], legacy: boolean): HTMLElement {
+    const nav = node('nav', 'segment-nav');
+    nav.setAttribute('aria-label', 'Affected bars');
+    if (legacy) return add(nav, node('p', 'fine-print', 'Legacy result · Full passage; bar locations were not saved.'));
+    const selected = store.selectedEntry()?.segment?.id ?? null;
+    const seen = new Set<string | null>();
+    for (const [index, entry] of entries.entries()) {
+      const id = entry.segment?.id ?? null;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const chip = control(segmentLabel(entry.segment), `segment-button${selected === id ? ' is-selected' : ''}`, () => store.selectEntry(index));
+      chip.setAttribute('aria-pressed', String(selected === id));
+      nav.append(chip);
     }
-    label.append(dots);
-    add(wrap, control('‹', 'circle-button', () => store.moveFinding(-1), index === 0), label, control('›', 'circle-button', () => store.moveFinding(1), index === findings.length - 1));
-    wrap.setAttribute('aria-label', `Finding ${index + 1} of ${findings.length} for ${passage.title}`);
+    return nav;
+  }
+
+  function carousel(entries: FeedbackEntry[], passage: Passage): HTMLElement {
+    const wrap = node('div', 'finding-carousel');
+    const index = Math.min(store.state.findingIndex, entries.length - 1);
+    const inGuide = store.state.screen === 'guide' || store.state.screen === 'sheet' && store.state.sheetOrigin === 'guide';
+    const label = add(node('div', 'carousel-center'), node('span', 'carousel-label', `${inGuide ? 'Guide' : 'Review'} ${index + 1} of ${entries.length}`));
+    add(wrap, control('‹', 'circle-button', () => store.moveFeedback(-1), index === 0 && !inGuide), label,
+      control('›', 'circle-button', () => store.moveFeedback(1), index === entries.length - 1 && inGuide));
+    wrap.setAttribute('aria-label', `Finding and bar ${index + 1} of ${entries.length} for ${passage.title}`);
     wrap.addEventListener('touchstart', (event) => { touchStart = event.changedTouches[0]?.clientX ?? null; }, { passive: true });
     wrap.addEventListener('touchend', (event) => {
       if (touchStart === null) return;
       const delta = (event.changedTouches[0]?.clientX ?? touchStart) - touchStart;
       touchStart = null;
-      if (Math.abs(delta) > 35) store.moveFinding(delta < 0 ? 1 : -1);
+      if (Math.abs(delta) > 35) store.moveFeedback(delta < 0 ? 1 : -1);
     }, { passive: true });
-    void record;
     return wrap;
   }
 
@@ -533,15 +552,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       add(page, node('div', 'message-card', message), node('p', 'subtle', 'No musical judgment was made from this recording.'), node('div', 'grow'), resultNav());
       return page;
     }
+    const entries = store.entries();
     const findings = orderedFindings(record, passage);
-    if (!findings.length) {
+    if (!entries.length) {
       add(page, node('div', 'clean-card', 'No supported mistakes found'), node('p', 'subtle', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched. This result is not a grade.`), score(passage), node('div', 'grow'), resultNav());
       return page;
     }
-    const finding = findings[Math.min(store.state.findingIndex, findings.length - 1)];
+    const { finding, segment } = entries[Math.min(store.state.findingIndex, entries.length - 1)];
     const reference = referenceFor(finding, passage);
-    const beat = findingBeat(finding, passage, record);
-    const beatLabel = Number.isFinite(beat) && beat < Number.MAX_SAFE_INTEGER ? `Beat ${Math.floor(beat) + 1}` : 'Outside reference';
+    const beatLabel = locationLabel(finding, segment, analysis.schemaVersion === '1');
     const issue = node('section', 'review-issue');
     add(issue, node('h2', '', `${findings.length} thing${findings.length === 1 ? '' : 's'} to revisit`), node('p', 'subtle', `${beatLabel} · ${findingTitle(finding)}`));
     const comparison = node('div', 'comparison-grid');
@@ -563,25 +582,27 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     }
     const metrics = node('div', 'metrics-card');
     add(metrics, node('strong', '', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched`), node('p', 'subtle', `${findings.filter((item) => item.kind === 'wrong_note').length} wrong · ${findings.filter((item) => item.kind === 'timing').length} timing · ${findings.filter((item) => item.kind === 'duration').length} hold · ${findings.filter((item) => item.kind === 'missing_note').length} missing · ${findings.filter((item) => item.kind === 'extra_note').length} extra`));
-    add(page, carousel(findings, passage, record), issue, comparison, metrics, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('View correction →', 'primary-action', () => store.showGuide()), resultNav());
+    add(page, barNavigation(entries, analysis.schemaVersion === '1'), carousel(entries, passage), issue, comparison, score(passage, segment || analysis.schemaVersion === '1' ? reference : undefined, finding.kind === 'extra_note' && segment ? findingBeat(finding, passage, record) : undefined, segment), metrics, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('View correction →', 'primary-action', () => store.showGuide()), resultNav());
     if (reference) issue.dataset.referenceNoteId = reference.id;
     return page;
   }
 
   function guide(passage: Passage, record: AttemptRecord): HTMLElement {
     const page = node('main', 'page guide-page');
-    const findings = orderedFindings(record, passage);
-    const finding = findings[Math.min(store.state.findingIndex, findings.length - 1)];
-    if (!finding) return review(passage, record);
+    const entries = store.entries();
+    const entry = store.selectedEntry();
+    if (!entry) return review(passage, record);
+    const { finding, segment } = entry;
     const reference = referenceFor(finding, passage);
     const coaching = record.coaching;
-    const cue = coaching?.evidenceFindingIds.includes(finding.id) ? coaching.cue : correctionFor(finding, passage);
-    const visual = resolveMistakeVisualization(record, passage, finding);
+    const cue = coaching?.evidenceFindingIds.includes(finding.id) && (!segment || coaching.primarySegmentId === segment.id || coaching.schemaVersion === '1') ? coaching.cue : correctionFor(finding, passage);
+    const visual = segment || record.analysis?.schemaVersion === '1' ? resolveMistakeVisualization(record, passage, finding) : null;
     const correction = node('div', 'correction-card', cue);
     const metadata = node('div', 'teaching-card');
     const fingerLabel = suggestedFingerLabel(reference);
     add(metadata, node('span', '', durationLabel(reference)), fingerLabel ? node('span', '', fingerLabel) : null);
-    const paperCard = record.analysis ? resolveVisualPlan(record.analysis, passage, coaching).cards.find(card => card.evidence.findingIds.includes(finding.id)) : undefined;
+    const selectedCard = record.analysis && (segment || record.analysis.schemaVersion === '1') ? buildVisualPlan({ ...record.analysis, findings: [finding] }, passage).cards.find(card => card.evidence.findingIds.includes(finding.id)) : undefined;
+    const paperCard = selectedCard && segment ? clipVisualCard(selectedCard, segment) : selectedCard;
     const paperView = paperCard ? mountPaperVisualization(paperCard) : null;
     if (paperView) paperViews.push(paperView);
     const sequence = paperView ? paperView.element : visual ? keyboard(visual) : node('p', 'subtle visual-unavailable', 'A supported key comparison is unavailable for this finding.');
@@ -594,7 +615,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       const bars = durationComparison(visual);
       if (bars) sequence.append(bars);
     }
-    add(page, control('‹ Back to review', 'back-link', () => store.showReview()), resultHeader(passage, record), carousel(findings, passage, record), heading('Your correction'), correction, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, sequence, replay, metadata, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('‹ Back to review', 'primary-action', () => store.showReview()), resultNav());
+    add(page, control('‹ Back to review', 'back-link', () => store.showReview()), resultHeader(passage, record), barNavigation(entries, record.analysis?.schemaVersion === '1'), carousel(entries, passage), heading('Your correction', locationLabel(finding, segment, record.analysis?.schemaVersion === '1')), correction, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, sequence, replay, metadata, score(passage, segment || record.analysis?.schemaVersion === '1' ? reference : undefined, finding.kind === 'extra_note' && segment ? findingBeat(finding, passage, record) : undefined, segment), control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control(store.state.findingIndex < entries.length - 1 ? 'Next mistake →' : '‹ Back to review', 'primary-action', () => store.state.findingIndex < entries.length - 1 ? store.moveFeedback(1) : store.showReview()), resultNav());
     return page;
   }
 
@@ -623,7 +644,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       const first = findings[0];
       if (first) {
         const reference = referenceFor(first, passage);
-        add(page, node('p', 'subtle', 'Analysis was saved. Coaching could not finish, so this correction comes directly from the recorded finding.'), node('div', 'finding-card', `${findingTitle(first)} · ${detailFor(first, passage, record)}`), node('div', 'correction-card', correctionFor(first, passage)), score(passage, reference));
+        add(page, control('Review saved analysis →', 'outline-action', () => store.showSavedAnalysis()), node('p', 'subtle', 'Analysis was saved. Coaching could not finish, so this correction comes directly from the recorded finding.'), node('div', 'finding-card', `${findingTitle(first)} · ${detailFor(first, passage, record)}`), node('div', 'correction-card', correctionFor(first, passage)), score(passage, reference));
       } else add(page, node('p', 'subtle', `${record.analysis.metrics.matchedNotes} of ${record.analysis.metrics.expectedNotes} reference notes matched. Coaching could not finish.`));
     } else page.append(node('p', 'subtle', record?.captureStatus === 'completed' ? 'This completed recording remains in your history. No musical judgment was made.' : 'This attempt did not count as a completed recording.'));
     add(page, node('div', 'grow'), record?.captureStatus === 'completed' && actions.retry && actions.canRetry?.(record.attemptId) ? control('Retry saved recording', 'outline-action', actions.retry) : null, control('Play again · Choose a passage', 'primary-action', playAgain), control('View past results', 'text-link', () => store.showHistory()));
@@ -633,11 +654,12 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   function sheet(passage: Passage, record?: AttemptRecord): HTMLElement {
     const page = node('main', 'page sheet-page');
     page.setAttribute('role', 'dialog'); page.setAttribute('aria-modal', 'true'); page.setAttribute('aria-label', 'Sheet music');
-    const findings = record ? orderedFindings(record, passage) : [];
-    const finding = findings[Math.min(store.state.findingIndex, findings.length - 1)];
+    const entry = store.selectedEntry();
+    const finding = entry?.finding;
+    const segment = entry?.segment ?? null;
     const reference = referenceFor(finding, passage);
-    const extraBeat = finding?.kind === 'extra_note' && record ? findingBeat(finding, passage, record) : undefined;
-    add(page, control('‹ Close sheet music', 'back-link', closeSheet), heading('Sheet music', passage.title), node('p', 'subtle', reference ? `${findingTitle(finding)} · ${noteName(reference.midiPitch)} · Beat ${reference.onsetBeat + 1}` : extraBeat !== undefined ? `Extra detected note near beat ${Math.floor(extraBeat) + 1}` : 'Reference phrase'), score(passage, reference, extraBeat), node('p', 'duration-caption', durationLabel(reference)), node('p', 'fine-print', reference ? 'The outlined note is the selected reference finding.' : 'The outlined beat marks the extra detected note; no reference note is prescribed there.'), node('div', 'grow'), control(`‹ Back to ${store.state.sheetOrigin}`, 'primary-action', closeSheet));
+    const extraBeat = finding?.kind === 'extra_note' && record && (segment || record.analysis?.schemaVersion === '1') ? findingBeat(finding, passage, record) : undefined;
+    add(page, control('‹ Close sheet music', 'back-link', closeSheet), heading('Sheet music', `${passage.title} · ${finding ? locationLabel(finding, segment, record?.analysis?.schemaVersion === '1') : 'Full passage'}`), node('p', 'subtle', reference && finding ? `${findingTitle(finding)} · ${noteName(reference.midiPitch)} · Beat ${reference.onsetBeat + 1}` : extraBeat !== undefined ? `Extra detected note near beat ${Math.floor(extraBeat) + 1}` : 'Reference phrase'), score(passage, segment || record?.analysis?.schemaVersion === '1' ? reference : undefined, extraBeat, segment), node('p', 'duration-caption', durationLabel(reference)), node('p', 'fine-print', reference && (segment || record?.analysis?.schemaVersion === '1') ? 'The outlined note is the selected reference finding.' : extraBeat !== undefined ? 'The outlined beat marks the extra detected note; no reference note is prescribed there.' : 'No reliable bar location was saved for this finding.'), node('div', 'grow'), control(`‹ Back to ${store.state.sheetOrigin}`, 'primary-action', closeSheet));
     return page;
   }
 
@@ -738,7 +760,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       return;
     }
     if ((event.key === 'ArrowLeft' || event.key === 'ArrowRight') && (store.state.screen === 'review' || store.state.screen === 'guide')) {
-      event.preventDefault(); store.moveFinding(event.key === 'ArrowRight' ? 1 : -1);
+      event.preventDefault(); store.moveFeedback(event.key === 'ArrowRight' ? 1 : -1);
     }
   }
 

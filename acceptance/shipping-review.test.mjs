@@ -42,12 +42,15 @@ test('uncertain completed attempt shows neutral Review without replay or a new a
   assert.equal(h.actions(), 0);
 });
 
-test('leaving a Review card drops a late replay frame and keeps History read-only', async t => {
+test('leaving a Guide drops a late replay frame and keeps History read-only', async t => {
   const { store, record } = result('mistakes');
   let releaseFrame;
   const pendingFrame = new Promise(resolve => { releaseFrame = resolve; });
   const h = controllerFor(t, store, { renderFrame: () => pendingFrame });
   await settle();
+  h.controller.onInput({ kind: 'tap' });
+  await settle();
+  assert.equal(store.state.screen, 'guide');
   const initialImages = h.bridge.callsTo('updateImageRawData').length;
   h.controller.onInput({ kind: 'tap' });
   h.controller.onInput({ kind: 'swipeDown' });

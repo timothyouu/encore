@@ -23,7 +23,7 @@ function setup(t) {
   return { store, record, controller, bridge, actions: () => actions };
 }
 
-test('G2 paging closes a phone sheet and synchronizes the finding without rebuilding Review', async t => {
+test('G2 paired paging closes a phone sheet and synchronizes the next Review', async t => {
   const h = setup(t);
   await settle();
   h.store.showGuide();
@@ -36,8 +36,8 @@ test('G2 paging closes a phone sheet and synchronizes the finding without rebuil
   await settle();
   assert.equal(h.store.state.screen, 'review');
   assert.equal(h.store.state.findingIndex, 1);
-  assert.equal(h.controller.current, review);
-  assert.equal(h.bridge.callsTo('rebuildPageContainer').length, rebuilds);
+  assert.notEqual(h.controller.current, review);
+  assert.ok(h.bridge.callsTo('rebuildPageContainer').length > rebuilds, 'new Review phase is declared after leaving Guide/sheet');
   h.controller.onInput({ kind: 'swipeUp' });
   await settle();
   assert.equal(h.store.state.findingIndex, 0);
