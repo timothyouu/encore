@@ -1,8 +1,11 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
+import { orderedFindings } from '../../mobile/src/feedback.ts'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
+import { resolveMistakeVisualization, type MistakeVisualization } from '../../mobile/src/visualization.ts'
 import { resultView } from './feedback.ts'
 import type { Glasses } from './glasses.ts'
 import type { Input } from './input.ts'
+import { renderKeyboard, visualLegend } from './keyboard.ts'
 import { PASSAGES } from './passages.ts'
 import { readyScreen, type ReadyScreen } from './screens/ready.ts'
 import { analyzingScreen, errorScreen, guideScreen, reviewScreen } from './screens/results.ts'
@@ -23,6 +26,8 @@ type ControllerOptions = {
   menu(screen: Screen): MenuContainerProperty | undefined
   onExit(): void
   renderTiles?: (passage: (typeof PASSAGES)[number]) => Promise<StaffTiles>
+  // Canvas rendering by default; tests pass a stand-in.
+  renderKeys?: (visual: MistakeVisualization) => Promise<Uint8Array | null>
 }
 
 // One glasses page per session state (CONTRACT.md state map). Ready and
@@ -48,7 +53,7 @@ function keyOf(state: SessionState): string {
 // Mirrors the phone session (mobile SessionStore) on the glasses and turns
 // glasses gestures into the same session calls the phone buttons make. The
 // store is the only source of truth; this file owns every glasses side effect.
-export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles }: ControllerOptions) {
+export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles, renderKeys = renderKeyboard }: ControllerOptions) {
   let current: Screen | null = null
   let currentKey = ''
   // Set while a multi-step store change runs, so only its end state is drawn.
@@ -128,17 +133,44 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
         const view = resultView(record, passage, state.findingIndex)
         const onPlayAgain = playAgain
         const which = state.screen === 'sheet' ? state.sheetOrigin : state.screen
-        return which === 'review'
-          ? reviewScreen({ view, onGuide: () => store.showGuide(), onPlayAgain })
-          : guideScreen({
-              view,
-              onReview: () =>
-                batch(() => {
-                  store.closeSheet()
-                  store.showReview()
-                }),
-              onPlayAgain,
-            })
+        // While the phone shows its sheet overlay the glasses keep showing the
+        // origin screen; a paging gesture first closes the sheet so both
+        // surfaces land on the same state.
+        if (which === 'review') {
+          return reviewScreen({
+            view,
+            onGuide: () =>
+              batch(() => {
+                store.closeSheet()
+                store.showGuide()
+              }),
+            onPrev: () =>
+              batch(() => {
+                store.closeSheet()
+                store.moveFinding(-1)
+                store.showGuide()
+              }),
+            onPlayAgain,
+          })
+        }
+        const finding = orderedFindings(record, passage)[view.index]
+        const mistake = finding ? resolveMistakeVisualization(record, passage, finding) : null
+        return guideScreen({
+          view,
+          onReview: () =>
+            batch(() => {
+              store.closeSheet()
+              store.showReview()
+            }),
+          onNext: () =>
+            batch(() => {
+              store.closeSheet()
+              store.moveFinding(1)
+              store.showReview()
+            }),
+          onPlayAgain,
+          visual: mistake ? { legend: visualLegend(mistake), render: () => renderKeys(mistake) } : undefined,
+        })
       }
       case 'error':
         return errorScreen({

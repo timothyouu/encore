@@ -46,11 +46,11 @@ g2/index.html (Even Hub WebView)
 | `ready` | Ready | tap → host `start()`; double tap → `showLibrary()` |
 | `recording` | Recording (same page as Ready; text swapped in place) | tap → host `stop()`; double tap → discard: `cancel()` then `selectPassage(same id)` |
 | `processing` | Analyzing | none |
-| `review` | Review | swipe down → `showGuide()`; tap or double tap → `showLibrary()` |
-| `guide`, `sheet` | Guide | swipe up → `showReview()` (from `guide`); tap or double tap → `showLibrary()` |
+| `review` | Review | swipe down → `showGuide()`; swipe up → previous finding's Guide (`moveFinding(-1)` then `showGuide()`); tap or double tap → `showLibrary()` |
+| `guide`, `sheet` | Guide | swipe up → `showReview()` (from `guide`); swipe down → next finding's Review (`moveFinding(1)` then `showReview()`); tap or double tap → `showLibrary()` |
 | `error` | Recoverable error | tap or double tap → `showLibrary()` |
 
-Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
+Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state, passage, attempt, or finding index changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture. Review and Guide form one feedback sequence (`spec.md` §4: swipe down is the next page, up the previous), so swipes also page between findings. While the phone's sheet overlay is open, the glasses keep showing the origin screen; a paging gesture closes the sheet first so both surfaces stay consistent.
 
 ## Capture rules
 

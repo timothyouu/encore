@@ -41,6 +41,7 @@ function setup(options) {
     menu: () => undefined,
     onExit: () => exits++,
     renderTiles: tiles,
+    renderKeys: async () => new Uint8Array([7]),
   })
   const input = async (kind, extra = {}) => {
     controller.onInput({ kind, ...extra })
@@ -156,6 +157,58 @@ test('a passage picked on the glasses while the phone shows History opens it', a
   await input('listSelect', { index: 2 })
   assert.equal(store.state.screen, 'ready')
   assert.equal(store.state.passageId, 'P03')
+})
+
+test('swipes page through the findings: Guide of one, Review of the next', async () => {
+  const { store, input } = setup()
+  await input('listSelect', { index: 0 })
+  await input('tap')
+  await input('tap')
+  assert.equal(store.state.screen, 'review')
+  assert.equal(store.state.findingIndex, 0)
+  await input('swipeDown') // → Guide of finding 1
+  assert.equal(store.state.screen, 'guide')
+  assert.equal(store.state.findingIndex, 0)
+  await input('swipeDown') // → Review of finding 2
+  assert.equal(store.state.screen, 'review')
+  assert.equal(store.state.findingIndex, 1)
+  await input('swipeDown') // → Guide of finding 2
+  assert.equal(store.state.screen, 'guide')
+  assert.equal(store.state.findingIndex, 1)
+  await input('swipeUp') // back → Review of finding 2
+  assert.equal(store.state.screen, 'review')
+  assert.equal(store.state.findingIndex, 1)
+  await input('swipeUp') // previous page → Guide of finding 1
+  assert.equal(store.state.screen, 'guide')
+  assert.equal(store.state.findingIndex, 0)
+})
+
+test('swipe down on the last finding\'s Guide does not leave the result', async () => {
+  const { store, input } = setup()
+  await input('listSelect', { index: 0 })
+  await input('tap')
+  await input('tap')
+  store.moveFinding(1)
+  store.moveFinding(1) // third of three
+  await settle()
+  assert.equal(store.state.findingIndex, 2)
+  await input('swipeDown') // → Guide of finding 3
+  assert.equal(store.state.screen, 'guide')
+  await input('swipeDown') // nothing after it
+  assert.equal(store.state.screen, 'guide')
+  assert.equal(store.state.findingIndex, 2)
+})
+
+test('a swipe down while the phone sheet is open closes it into Guide', async () => {
+  const { store, input } = setup()
+  await input('listSelect', { index: 0 })
+  await input('tap')
+  await input('tap')
+  store.showSheet()
+  await settle()
+  assert.equal(store.state.screen, 'sheet')
+  await input('swipeDown')
+  assert.equal(store.state.screen, 'guide')
 })
 
 test('moving between findings on the phone updates the glasses Review', async () => {
