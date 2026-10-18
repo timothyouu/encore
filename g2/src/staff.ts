@@ -37,9 +37,9 @@ function loadClefFont(): Promise<boolean> {
 
 // Diatonic step relative to C4 (= 0); sharps sit on the natural below.
 const PITCH_CLASS_STEP = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6]
-const SHARP_PITCH_CLASSES = new Set([1, 3, 6, 8, 10])
+export const SHARP_PITCH_CLASSES = new Set([1, 3, 6, 8, 10])
 
-function stepOf(midi: number) {
+export function stepOf(midi: number) {
   const octave = Math.floor(midi / 12) - 1
   return (octave - 4) * 7 + PITCH_CLASS_STEP[midi % 12]
 }
@@ -209,7 +209,7 @@ function drawPassage(ctx: CanvasRenderingContext2D, layout: StaffLayout) {
   for (const x of layout.restXs) drawQuarterRest(ctx, x)
 }
 
-function canvas(width: number, height: number) {
+export function canvas(width: number, height: number) {
   const element = document.createElement('canvas')
   element.width = width
   element.height = height
@@ -218,7 +218,7 @@ function canvas(width: number, height: number) {
   return { element, ctx }
 }
 
-function toPng(element: HTMLCanvasElement): Promise<Uint8Array> {
+export function toPng(element: HTMLCanvasElement): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     element.toBlob(blob => {
       if (!blob) return reject(new Error('canvas toBlob failed'))
