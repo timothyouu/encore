@@ -60,6 +60,6 @@ Produces an `.ehpk` file.
 | 03 | Recording | Tap ● starts the G2 mic. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and uploads, `2× discard` throws the take away; 30s cap |
 | (04) | Saving | Interim until Analyzing: uploads the take; saved → tap → selection; couldn't save → tap or double tap → back to Ready |
 | 04 | Analyzing | `analyzingScreen(stage)`: "Listening back…" plus a dimmed stage line; no input, no menu |
-| 05 | Review | `reviewScreen({ coaching, onPlayAgain })`: one card per visual-plan card (art + ●/○ legend + cue), swipe between cards, double tap → selection. Dev gallery: open with `?demo=review` |
+| 05 | Review | `reviewScreen({ coaching, onPlayAgain })`: one card per visual-plan card (art + ●/○ legend + cue), swipe between cards, tap → replay (what you played, then the fix, then back to the card), double tap → selection. Dev gallery: open with `?demo=review` |
 | — | Recoverable error | `problemScreen({ reason, onPlayAgain })`: plain-words reason, tap → selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |

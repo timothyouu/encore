@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import examples from '../../shared/visual-examples.json' with { type: 'json' }
 import { demoReview } from '../src/demo.ts'
-import { artKind, keyFor, keyboardKeys } from '../src/review/art.ts'
+import { artKind, keyFor, keyboardKeys, replaySteps } from '../src/review/art.ts'
 import { cardViews, noteName, unmatched, viewsForCards } from '../src/review/model.ts'
 import { analyzingScreen } from '../src/screens/analyzing.ts'
 import { problemScreen } from '../src/screens/problem.ts'
@@ -145,12 +145,22 @@ test('the keyboard shows at least an octave and both keys, sharps on black keys'
 
 // ── Review screen ─────────────────────────────────────────────────────
 
-const pngs = async c => new Uint8Array([c.id.length])
+// Stand-in pictures: 'S' = a card's static art, 'P'/'W' = a replay frame's layer.
+const pngs = async () => new Uint8Array([83])
+const framePngs = async (_card, step) => new Uint8Array([step.layer === 'played' ? 80 : 87])
+const sentArt = bridge => bridge.callsTo('updateImageRawData').map(u => String.fromCharCode(u.imageData[0]))
 
 function review(cards, options = {}) {
   const { glasses, bridge } = fakeGlasses()
   let playAgain = 0
-  const screen = reviewScreen({ coaching: coaching(cards), onPlayAgain: () => playAgain++, renderArt: pngs, ...options })
+  const screen = reviewScreen({
+    coaching: coaching(cards),
+    onPlayAgain: () => playAgain++,
+    renderArt: pngs,
+    renderFrame: framePngs,
+    frameDwellMs: 0,
+    ...options,
+  })
   const ctx = mount(screen, glasses)
   return { screen, ctx, bridge, playAgain: () => playAgain }
 }
@@ -203,12 +213,83 @@ test('review: fast swipes only send the card that is still on screen', async () 
   assert.deepEqual(titles, ['Beat 6 · late'])
 })
 
-test('review: double tap is play again; tap does nothing yet (replay comes next)', () => {
+test('review: double tap is play again', () => {
   const { screen, playAgain } = review(twoCards())
-  screen.onInput({ kind: 'tap' })
-  assert.equal(playAgain(), 0)
   screen.onInput({ kind: 'doubleTap' })
   assert.equal(playAgain(), 1)
+})
+
+// ── Replay ────────────────────────────────────────────────────────────
+
+test('every kind replays what was played, then the fix; unclear audio has nothing to replay', () => {
+  const layers = name => replaySteps(card(name)).map(step => `${step.art}:${step.layer}`)
+  assert.deepEqual(layers('wrong_note-pitch'), ['staff:played', 'staff:both'])
+  assert.deepEqual(layers('missing_note-missing'), ['staff:played', 'staff:written'])
+  assert.deepEqual(layers('timing-early'), ['ruler:played', 'ruler:written'])
+  assert.deepEqual(layers('duration-short'), ['duration:played', 'duration:written'])
+  assert.deepEqual(layers('unclear_audio-noisy'), [])
+  for (const { name } of examples.examples) {
+    for (const step of replaySteps(card(name))) assert.ok(step.caption, name)
+  }
+})
+
+test('replay: tap sends the frames in order, then settles on the static card and restores the hints', async () => {
+  const { screen, bridge } = review([card('missing_note-missing')])
+  await settle()
+  assert.equal(textByName(bridge).replay, 'tap  replay')
+  screen.onInput({ kind: 'tap' })
+  await settle(60)
+
+  assert.deepEqual(sentArt(bridge), ['S', 'P', 'W', 'S'])
+  const captions = bridge.callsTo('textContainerUpgrade').filter(u => u.containerName === 'replay').map(u => u.content)
+  assert.deepEqual(captions, ['what you played', "what's written", 'tap  replay'])
+  const progress = bridge.callsTo('textContainerUpgrade').filter(u => u.containerName === 'next').map(u => u.content.trim())
+  assert.deepEqual(progress, ['●○○', '●●○', '●●●', ''])
+})
+
+test('replay: a second tap while replaying does not start another', async () => {
+  const { screen, bridge } = review([card('timing-late')])
+  await settle()
+  screen.onInput({ kind: 'tap' })
+  screen.onInput({ kind: 'tap' })
+  await settle(200)
+  assert.deepEqual(sentArt(bridge), ['S', 'P', 'W', 'S'])
+})
+
+test('replay: swiping away cancels the rest of the replay', async () => {
+  const { screen, bridge } = review(twoCards())
+  await settle()
+  screen.onInput({ kind: 'tap' })
+  screen.onInput({ kind: 'swipeDown' })
+  await settle(60)
+  // Card 1's frames never go out; card 2 gets its static art.
+  assert.deepEqual(sentArt(bridge), ['S', 'S'])
+  assert.equal(textByName(bridge).title, 'Beat 6 · late')
+  assert.equal(textByName(bridge).replay, 'tap  replay')
+})
+
+test('replay: unclear audio shows no replay hint and tap does nothing', async () => {
+  const { screen, bridge } = review([card('unclear_audio-quiet')])
+  await settle()
+  assert.equal(textByName(bridge).replay.trim(), '')
+  screen.onInput({ kind: 'tap' })
+  await settle(60)
+  assert.deepEqual(sentArt(bridge), ['S'])
+})
+
+test('replay: frames wait at least the dwell time each', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] })
+  const { screen, bridge } = review([card('duration-short')], { frameDwellMs: 700 })
+  await settle()
+  screen.onInput({ kind: 'tap' })
+  await settle()
+  assert.deepEqual(sentArt(bridge), ['S', 'P'])
+  t.mock.timers.tick(700)
+  await settle()
+  assert.deepEqual(sentArt(bridge), ['S', 'P', 'W'])
+  t.mock.timers.tick(700)
+  await settle()
+  assert.deepEqual(sentArt(bridge), ['S', 'P', 'W', 'S'])
 })
 
 test('review: fixture results carry a DEMO label', async () => {
