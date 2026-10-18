@@ -2,7 +2,6 @@ import { SessionStore, fixtureAnalysis, fixtureCoaching } from './session.ts';
 import { mountPhone } from './phone.ts';
 import { PhoneCapture, validateEndpoints } from './capture.ts';
 import { mountConnection } from './connection.ts';
-import { connectDisplay } from './display.ts';
 import { DisplaySettingsStore } from './settings.ts';
 
 const root = document.querySelector<HTMLElement>('#app');
@@ -55,8 +54,7 @@ function cancel(): void {
   clearTimeout(captureLimit);
   if (mode === 'phone') phone?.cancel(); else store.cancel();
 }
-const display = connectDisplay(store, { start, stop, cancel, getMode: () => mode }, { settings, canOpenSettings: () => !phone?.busy });
-const unmount = mountPhone(root, store, { start, stop, cancel, exit: () => { void display.exit(); }, getMode: () => mode, isBusy: () => Boolean(phone?.busy) }, settings);
+const unmount = mountPhone(root, store, { start, stop, cancel, getMode: () => mode, isBusy: () => Boolean(phone?.busy) }, settings);
 const connection = mountConnection(store, root, next => {
   if (phone?.busy || phone?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
   if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter both complete HTTPS endpoints (or HTTP localhost). URLs cannot include passwords or fragments.';
@@ -80,5 +78,5 @@ window.addEventListener('pagehide', () => {
   clearTimeout(captureLimit);
   for (const timer of pending) clearTimeout(timer);
   store.interrupt();
-  unsubscribeSettings(); phone?.dispose(); display.dispose(); connection.dispose(); unmount();
+  unsubscribeSettings(); phone?.dispose(); connection.dispose(); unmount();
 }, { once: true });

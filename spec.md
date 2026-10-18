@@ -303,6 +303,14 @@ Demo-first is agreed: no real accounts in v1. Use a demo session; proposed histo
 
 ## 9. Ownership and coding-agent boundaries
 
+### Current checkout boundary (mandatory)
+
+The current directories are `mobile/` (Timothy's phone UI) and `g2/` (the teammate's glasses workstream). The suggested module paths below describe future architecture, not permission to cross this boundary.
+
+**Mobile-only work must have no glasses side effects, even when the calling function lives in `mobile/`.** Mobile code renders phone DOM/SVG only; it must not import the Even Hub SDK or glasses implementation, create/update/rebuild/shut down display containers, transmit text/images to glasses, or register glasses gesture handlers. The mobile display adapter was removed because it violated this boundary. Do not restore it behind an optional flag or copy it into the teammate's directory as part of mobile work.
+
+The complete-product architecture and G2 states above remain intended integration requirements owned by the glasses workstream. Phone Settings may describe/store preferences, but applying them to G2 requires an explicitly authorized, owner-reviewed integration contract. Until then, describe device integration as unavailable and do not claim Settings affect physical glasses. See `AGENTS.md` for the durable coding rule and run the mobile boundary tests before accepting mobile changes.
+
 | Workstream | Human owner | Suggested module boundary |
 |---|---|---|
 | Phone UI and session flow | Timothy | `apps/phone/` |

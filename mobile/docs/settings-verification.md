@@ -1,5 +1,11 @@
 # Paper settings update verification
 
+## Current merge reconciliation
+
+The sections below describe historical pre-reconciliation implementation evidence. The final PR removes the mobile display adapter, score-image renderer, and associated glasses tests to preserve main's ownership boundary. Their historical tests are not part of the final phone suite. Future integration is documented separately in `glasses-integration/README.md`; `g2/` remains unchanged. Settings clearly states preferences are phone-local and not applied to glasses.
+
+Final combined verification: 98/98 mobile tests pass (session, capture, Settings, and mobile-boundary), strict TypeScript/Vite build passes, and staged diff whitespace check passes. Existing boundary tests were retained unchanged. Browser verification covers Settings toggles/return, Library, preview, demo recording, processing, results, and History. Real hardware and service capture remain deferred.
+
 Outcome: implement the latest G2 Mobile App Paper gears, Settings artboard and recording layout within `mobile/`. Branch: `codex/mobile-settings`, based on main `af94bc3`. No `g2/` files changed.
 
 ## Implementation

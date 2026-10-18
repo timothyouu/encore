@@ -13,3 +13,7 @@ Verifier: existing tests are locked. Coordinator owns new settings tests; worker
 Loop budget: five focused correction rounds or 45 minutes. Same failure twice without progress triggers diagnosis and report rather than a third identical retry. Continue independent work around any external hardware blocker. Stop when all local acceptance criteria pass; disclose untested hardware and live services. No recurring automation or deployments.
 
 Append each submitted verification/correction outcome to docs/settings-verification.md. Initial baseline: 81 tests passing. Account usage start 15% weekly window, reset 1792881562; measurement start 2026-10-18 05:04:09 UTC. Counters are account-wide, not task-attributed.
+
+## Final scope correction
+
+User authorized separating deferred device integration while preserving the mobile-only boundary. Acceptance unit 3 now covers local phone preferences and previews only; actual device application is deferred in ../glasses-integration/README.md. All glasses transport/image code and its tests were removed from mobile. Final verification is 98 passing combined mobile tests plus strict build and browser flow; earlier 128-test results describe the superseded implementation.

@@ -2,7 +2,7 @@
 
 Trigger: this supervised implementation request. No recurring automation.
 
-Scope: g2 phone UI, session state, integration controller and associated documentation in this isolated codex/mobile-ui worktree. Preserve the original checkout and G2 capture ownership.
+Scope: `mobile/` phone UI, session state, phone capture controller and associated documentation. No glasses rendering, transport, gesture handling, SDK imports, or edits under `g2/`. File location does not authorize device side effects. Repository `AGENTS.md` and spec section 9 govern this boundary.
 
 Acceptance units (fixed):
 1. Paper-derived mobile library, preview, quiet capture, result carousel, correction and notation screens.

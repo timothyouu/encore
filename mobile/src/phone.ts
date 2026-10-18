@@ -4,7 +4,7 @@ import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; exit: () => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -186,9 +186,6 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let query = '';
   let scenario: Scenario = 'mistakes';
   let cancelOpen = false;
-  let connection = 'G2 integration not connected';
-  let connected = false;
-  let sheetStatus: { status: 'ready' | 'unavailable' | 'preparing' | 'off'; message?: string } | null = null;
   let settingsLayer: HTMLElement | null = null;
   let settingsScrollY = 0;
   let timer: number | undefined;
@@ -229,9 +226,9 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   function glassesIcon(): SVGSVGElement {
     const svg = svgElement('svg', { width: '20', height: '17', viewBox: '0 0 26 22', 'aria-hidden': 'true' });
     svg.append(
-      svgElement('path', { d: 'M2 10L4 5H7M24 10L22 5H19M11 11C12 9.5 14 9.5 15 11', fill: 'none', stroke: connected ? '#287453' : '#625F58', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
-      svgElement('rect', { x: '2', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: connected ? '#287453' : '#625F58', 'stroke-width': '1.8' }),
-      svgElement('rect', { x: '15', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: connected ? '#287453' : '#625F58', 'stroke-width': '1.8' }),
+      svgElement('path', { d: 'M2 10L4 5H7M24 10L22 5H19M11 11C12 9.5 14 9.5 15 11', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+      svgElement('rect', { x: '2', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8' }),
+      svgElement('rect', { x: '15', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8' }),
     );
     return svg;
   }
@@ -272,7 +269,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     add(bar, back, node('div', 'wordmark', 'encore'), gear);
     const body = node('div', 'settings-body');
     const intro = node('section', 'settings-intro');
-    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', connected ? 'G2 glasses connected' : 'G2 glasses not connected'));
+    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
     add(intro, node('h1', '', 'Settings'), status);
     body.append(intro);
     const value = settings.value;
@@ -306,12 +303,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       warning.setAttribute('role', 'status');
       body.append(warning);
     }
-    if (sheetStatus && sheetStatus.status !== 'off') {
-      const label = sheetStatus.message ?? (sheetStatus.status === 'ready' ? 'Sheet music is ready on G2.' : sheetStatus.status === 'preparing' ? 'Preparing sheet music for G2.' : 'Sheet music is unavailable on G2.');
-      const statusMessage = node('p', 'settings-sheet-status', label);
-      statusMessage.setAttribute('role', 'status');
-      body.append(statusMessage);
-    }
+    body.append(node('p', 'settings-sheet-status', 'Preferences are saved on this phone only. Applying them to glasses will be available with device integration.'));
     return add(page, bar, body);
   }
 
@@ -397,7 +389,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'), node('p', 'connection-status', connection));
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const selector = node('label', 'scenario-label', 'Demo result');
     if (mode() === 'demo') {
       const select = node('select'); select.setAttribute('aria-label', 'Demo result scenario');
@@ -420,7 +412,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page recording-page');
     const core = node('section', 'recording-core');
     const source = record?.captureSource ?? mode();
-    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', connected ? 'G2 glasses connected' : 'G2 glasses not connected'));
+    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
     connectionBadge.setAttribute('role', 'status');
     page.append(connectionBadge);
     const dot = node('span', 'recording-dot'); dot.setAttribute('aria-hidden', 'true');
@@ -671,37 +663,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     }
   }
 
-  function onConnection(event: Event): void {
-    const detail: unknown = (event as CustomEvent<unknown>).detail;
-    if (detail && typeof detail === 'object' && 'connected' in detail && typeof detail.connected === 'boolean') {
-      connected = detail.connected;
-      connection = connected ? 'G2 connected' : 'G2 integration not connected';
-      render();
-      if (settings.isOpen) syncSettingsLayer();
-    }
-  }
-
-  function onSheetStatus(event: Event): void {
-    const detail: unknown = (event as CustomEvent<unknown>).detail;
-    if (!detail || typeof detail !== 'object' || !('status' in detail)) return;
-    if (detail.status !== 'ready' && detail.status !== 'unavailable' && detail.status !== 'preparing' && detail.status !== 'off') return;
-    sheetStatus = { status: detail.status, message: 'message' in detail && typeof detail.message === 'string' ? detail.message : undefined };
-    if (settings.isOpen) syncSettingsLayer();
-  }
-
   const unsubscribe = store.subscribe(render);
   const unsubscribeSettings = settings.subscribe(syncSettingsLayer);
   root.addEventListener('keydown', onKeyDown);
-  root.addEventListener('encore:connection', onConnection);
-  root.addEventListener('encore:sheet-status', onSheetStatus);
   root.addEventListener('encore:mode-change', render);
   render();
   return () => {
     unsubscribe();
     unsubscribeSettings();
     root.removeEventListener('keydown', onKeyDown);
-    root.removeEventListener('encore:connection', onConnection);
-    root.removeEventListener('encore:sheet-status', onSheetStatus);
     root.removeEventListener('encore:mode-change', render);
     if (timer !== undefined) window.clearInterval(timer);
     root.replaceChildren();

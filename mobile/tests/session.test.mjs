@@ -342,6 +342,24 @@ test('saved completed history survives reload', () => {
   assert.equal(restored.records[0].attemptId, record.attemptId);
   assert.equal(restored.records[0].coaching.cue, record.coaching.cue);
 });
+test('new captures reject G2 while older G2 history remains readable', () => {
+  const storage = memory();
+  const store = new SessionStore(storage);
+  ready(store);
+  assert.equal(store.start('g2'), null);
+  assert.equal(store.state.screen, 'ready');
+  const record = store.start('phone');
+  assert.ok(record);
+  assert.equal(record.captureSource, 'phone');
+  store.stop();
+
+  const saved = JSON.parse(storage.value());
+  saved.records[0].captureSource = 'g2';
+  storage.setItem('encore.attempts.v1', JSON.stringify(saved));
+  const restored = new SessionStore(storage);
+  assert.equal(restored.records[0].captureSource, 'g2');
+  assert.equal(restored.count(), 1);
+});
 test('restored active recording is marked interrupted and excluded', () => {
   const storage = memory();
   const store = new SessionStore(storage);
