@@ -64,18 +64,18 @@ test('headers name the beat a player counts and the kind of mistake', () => {
   assert.equal(view('section_repeat_skip-repeated').header, 'Beats 5–8 · repeated bar')
 })
 
-test('legends: solid = expected, hollow = detected, named in words', () => {
-  assert.deepEqual(view('wrong_note-pitch').legend, ['● Expected  F4', '○ Detected  E4'])
-  assert.deepEqual(view('wrong_note-accidental').legend, ['● Expected  F#4', '○ Detected  F4'])
-  assert.deepEqual(view('missing_note-missing').legend, ['● Expected  F4', '○ Detected  —'])
-  assert.deepEqual(view('extra_note-extra').legend, ['● Expected  —', '○ Detected  G4'])
-  assert.deepEqual(view('missing_note-swapped_order').legend, ['● Expected  F4', '○ Detected  D4'])
-  assert.deepEqual(view('timing-early').legend, ['● Expected  on 6', '○ Detected  ¼ early'])
-  assert.deepEqual(view('timing-late').legend, ['● Expected  on 6', '○ Detected  ¼ late'])
+test('legends: solid note = expected, × = heard, named in words', () => {
+  assert.deepEqual(view('wrong_note-pitch').legend, ['● Expected  F4', '× Detected  E4'])
+  assert.deepEqual(view('wrong_note-accidental').legend, ['● Expected  F#4', '× Detected  F4'])
+  assert.deepEqual(view('missing_note-missing').legend, ['● Expected  F4', '× Detected  —'])
+  assert.deepEqual(view('extra_note-extra').legend, ['● Expected  —', '× Detected  G4'])
+  assert.deepEqual(view('missing_note-swapped_order').legend, ['● Expected  F4', '× Detected  D4'])
+  assert.deepEqual(view('timing-early').legend, ['● Expected  on 6', '× Detected  ¼ early'])
+  assert.deepEqual(view('timing-late').legend, ['● Expected  on 6', '× Detected  ¼ late'])
   assert.deepEqual(view('duration-short').legend, ['□ Expected  2 beats', '■ Detected  1 beat'])
   assert.deepEqual(view('duration-long').legend, ['□ Expected  1 beat', '■ Detected  1.5 beats'])
   assert.deepEqual(view('unclear_audio-quiet').legend, ['Expected  clear piano', 'Detected  very quiet'])
-  assert.deepEqual(view('section_repeat_skip-repeated').legend, ['● Expected  Bar A, Bar B', '○ Detected  Bar A twice'])
+  assert.deepEqual(view('section_repeat_skip-repeated').legend, ['● Expected  Bar A, Bar B', '× Detected  Bar A twice'])
   assert.deepEqual(view('recurring_trouble-recurring').legend, ['Flagged  3 of last 3 takes', 'Latest take  beat 6'])
 })
 

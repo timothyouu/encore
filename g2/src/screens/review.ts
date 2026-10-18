@@ -42,7 +42,7 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 // 05 · Review. One mistake card per screen from the coaching result's visual
 // plan: art on the left (keys, staff, beat ruler, duration bars or mic), the
-// ●/○ legend and cue on the right. Swipe down/up moves between cards; every
+// ●/× legend and cue on the right. Swipe down/up moves between cards; every
 // card shares one layout, so changing card is text updates plus one image.
 // Tap replays the card: its keyframes (what was played, then the fix) are
 // sent one after another at Bluetooth pace, then it settles on the static

@@ -4,8 +4,9 @@ import { beatFraction, flaggedNotes, noteName } from './model.ts'
 
 // Static art for one mistake card: a 288×144 greyscale image (the largest a
 // G2 image container takes), drawn in the shared visual language of the Paper
-// "Mistake animations" page: solid = expected, hollow/dashed = detected, a
-// shaded band marks the beat in question, and shape carries meaning, not colour.
+// "Mistake animations" page: solid = expected, × = what the mic heard (a
+// hollow notehead would read as a half note), a shaded band marks the beat in
+// question, and shape carries meaning, not colour.
 export const ART_W = 288
 export const ART_H = 144
 
@@ -86,14 +87,12 @@ function drawKeyboard(ctx: CanvasRenderingContext2D, expected: number, detected:
     ctx.setLineDash([])
     keyLabel(ctx, pressed, noteName(detected), INK)
 
-    // ○ → ● above the keys: from what was played to what to play.
+    // × → ● above the keys: from what was played to what to play.
     const from = pressed.x + pressed.w / 2
     const to = target.x + target.w / 2
+    cross(ctx, from, 22)
     ctx.strokeStyle = INK
     ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(from, 22, 6, 0, Math.PI * 2)
-    ctx.stroke()
     ctx.fillStyle = INK
     ctx.beginPath()
     ctx.arc(to, 22, 6, 0, Math.PI * 2)
@@ -169,7 +168,7 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   const flagged: VisualNote[] = [...flaggedSides.expected, ...flaggedSides.detected]
 
   // A wrong note played on the right beat would sit on top of the written one,
-  // a step away: spread them so the hollow (played) and solid (written) read apart.
+  // a step away: spread them so the × (played) and solid note (written) read apart.
   const played = flaggedSides.detected[0]
   const written = flaggedSides.expected[0]
   const sameBeat =
@@ -197,11 +196,11 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   }
 
   if (layer === 'played') {
-    // Everything that was heard, hollow; a missed note leaves an empty dashed slot.
+    // Everything that was heard, as ×; a missed note leaves an empty dashed slot.
     for (const note of card.detected.notes) {
       const nx = x(note.onsetBeat)
       ledgers(ctx, nx, note.midiPitch)
-      notehead(ctx, nx, staffY(note.midiPitch), true, INK)
+      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
     }
     if (card.kind === 'missing_note' && card.variant === 'missing') {
       for (const note of flaggedSides.expected) dashedSlot(ctx, x(note.onsetBeat))
@@ -227,16 +226,16 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   }
   if (layer === 'written') return
 
-  // Detected (only the unpaired notes): hollow.
+  // Detected (only the unpaired notes): ×.
   if (!(card.kind === 'missing_note' && card.variant === 'missing')) {
     for (const note of card.detected.notes.filter(n => detIds.has(n.id))) {
       const nx = x(note.onsetBeat, note.id)
       ledgers(ctx, nx, note.midiPitch)
-      notehead(ctx, nx, staffY(note.midiPitch), true, INK)
+      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
     }
   }
 
-  // A wrong note: arrow from the hollow note played to the solid one written.
+  // A wrong note: arrow from the × played to the solid note written.
   if (sameBeat && played.midiPitch !== written.midiPitch) {
     arrow(ctx, x(played.onsetBeat, played.id) + 7, staffY(played.midiPitch), x(written.onsetBeat, written.id) - 9, staffY(written.midiPitch))
   }
@@ -295,7 +294,7 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer
 
   if (layer === 'played') {
     // Only when the note was heard.
-    if (detected) hollowCircle(ctx, x(detected.onsetBeat), RULER_Y + 1)
+    if (detected) cross(ctx, x(detected.onsetBeat), RULER_Y + 1)
     return
   }
 
@@ -307,9 +306,7 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer
     // The fix: the note lands on the tick; where it was heard stays dashed.
     if (detected) {
       const dx = x(detected.onsetBeat)
-      ctx.setLineDash([2, 3])
-      hollowCircle(ctx, dx, RULER_Y + 1)
-      ctx.setLineDash([])
+      cross(ctx, dx, RULER_Y + 1, DIM)
       ctx.beginPath()
       ctx.arc(ex, RULER_Y + 1, 7, 0, Math.PI * 2)
       ctx.fill()
@@ -328,7 +325,7 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer
   if (detected) {
     // Hollow circle = when the note was heard; bracket labels the gap.
     const dx = x(detected.onsetBeat)
-    hollowCircle(ctx, dx, RULER_Y + 1)
+    cross(ctx, dx, RULER_Y + 1)
     const delta = card.metrics.timingDeltaBeats ?? detected.onsetBeat - expected.onsetBeat
     const [a, b] = [Math.min(dx, ex), Math.max(dx, ex)]
     ctx.fillStyle = INK
@@ -339,12 +336,20 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer
   }
 }
 
-function hollowCircle(ctx: CanvasRenderingContext2D, cx: number, cy: number) {
-  ctx.strokeStyle = INK
-  ctx.lineWidth = 2
+// × = what the mic heard, drawn where the note sounded.
+export const CROSS_HALF = 6
+
+function cross(ctx: CanvasRenderingContext2D, cx: number, cy: number, color = INK) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2.5
+  ctx.lineCap = 'round'
   ctx.beginPath()
-  ctx.arc(cx, cy, 7, 0, Math.PI * 2)
+  ctx.moveTo(cx - CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx + CROSS_HALF, cy + CROSS_HALF)
+  ctx.moveTo(cx + CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx - CROSS_HALF, cy + CROSS_HALF)
   ctx.stroke()
+  ctx.lineCap = 'butt'
 }
 
 // ── Duration bars ─────────────────────────────────────────────────────
