@@ -3,7 +3,7 @@ import { noteName, passages, type Passage, type ReferenceNote } from './passages
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; exit: () => void; getMode?: () => 'demo' | 'phone' };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => 'demo' | 'phone' };
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -178,7 +178,6 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let scenario: Scenario = 'mistakes';
   let menuOpen = false;
   let cancelOpen = false;
-  let connection = 'G2 integration not connected';
   let timer: number | undefined;
   let recordingTime: HTMLElement | null = null;
   let touchStart: number | null = null;
@@ -252,7 +251,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'), node('p', 'connection-status', connection));
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const selector = node('label', 'scenario-label', 'Demo result');
     if (mode() === 'demo') {
       const select = node('select'); select.setAttribute('aria-label', 'Demo result scenario');
@@ -507,23 +506,13 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     }
   }
 
-  function onConnection(event: Event): void {
-    const detail: unknown = (event as CustomEvent<unknown>).detail;
-    if (detail && typeof detail === 'object' && 'connected' in detail && typeof detail.connected === 'boolean') {
-      connection = detail.connected ? 'G2 connected' : 'G2 integration not connected';
-      render();
-    }
-  }
-
   const unsubscribe = store.subscribe(render);
   root.addEventListener('keydown', onKeyDown);
-  root.addEventListener('encore:connection', onConnection);
   root.addEventListener('encore:mode-change', render);
   render();
   return () => {
     unsubscribe();
     root.removeEventListener('keydown', onKeyDown);
-    root.removeEventListener('encore:connection', onConnection);
     root.removeEventListener('encore:mode-change', render);
     if (timer !== undefined) window.clearInterval(timer);
     root.replaceChildren();

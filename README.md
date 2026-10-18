@@ -37,7 +37,7 @@ npm run pack       # build + pack into .ehpk
 
 ## Phone companion (`mobile/`)
 
-The phone UI is separate from the glasses application in `g2/`. The mobile app owns its source, tests, package configuration and documentation; it does not import from or modify the glasses app. Its optional display adapter is a mobile-side integration seam, not the teammate's G2 microphone implementation.
+The phone UI is separate from the glasses application in `g2/`. The mobile app owns its source, tests, package configuration and documentation. It does not import the glasses app or SDK, write to glasses, handle glasses gestures, or package a glasses app. See `AGENTS.md` and spec section 9 for the side-effect boundary.
 
 ```sh
 cd mobile
