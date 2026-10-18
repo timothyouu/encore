@@ -12,7 +12,7 @@ import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from './feedback.ts';
 
 type Mode = 'phone' | 'g2';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
 // deviceStatus comes from a host that owns a real device connection; the phone-only app has none.
 const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
@@ -53,7 +53,7 @@ function dateLabel(value: string): string {
 }
 
 function sourceLabel(record: AttemptRecord): string {
-  return record.captureSource === 'test' ? 'Test WAV' : record.captureSource === 'g2' ? 'G2' : record.captureSource === 'phone' ? 'Phone mic' : 'Demo';
+  return record.captureSource === 'test' ? 'Test WAV' : record.captureSource === 'g2' ? 'G2' : record.captureSource === 'phone' ? 'Microphone' : 'Demo';
 }
 
 function coachingLabel(record: AttemptRecord): string | null {
@@ -400,21 +400,9 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const start = control('Start recording →', 'primary-action', actions.start);
-    const testUpload = node('label', 'test-wav-label', 'Use a test WAV recording');
-    if (actions.importWav) {
-      const file = node('input');
-      file.type = 'file'; file.accept = '.wav,audio/wav';
-      file.setAttribute('aria-label', 'Import test WAV for this passage');
-      file.addEventListener('change', () => {
-        const selected = file.files?.[0];
-        if (selected) actions.importWav?.(selected);
-        file.value = '';
-      });
-      add(testUpload, file, node('span', 'subtle', 'Labeled as test audio in results and History.'));
-    }
-    add(page, top, heading(passage.title, 'Read the score, then play the phrase'), preview, source, actions.importWav ? testUpload : null, node('div', 'grow'), start);
+    add(page, top, heading(passage.title, 'Read the score, then play the phrase'), preview, source, node('div', 'grow'), start);
     return page;
   }
 
@@ -448,7 +436,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       preview.setAttribute('aria-label', 'Static reference sheet music while recording');
       core.append(preview);
     }
-    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Phone microphone · live audio level; reference sheet music is static'));
+    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Microphone · live audio level; reference sheet music is static'));
     add(page, core, control('Stop & analyze', 'primary-action', actions.stop), control('Cancel', 'secondary-action', openDialog));
     if (record) updateTime(record);
     return page;
@@ -671,7 +659,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const shell = node('div', 'encore-shell');
     shell.append(header());
     const source = record ? record.captureSource ?? 'demo' : 'phone';
-    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? `G2 source · ${deviceStatus()}` : 'Phone microphone · service connection unverified');
+    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? `G2 source · ${deviceStatus()}` : 'Service connection unverified');
     demo.setAttribute('role', 'status'); shell.append(demo);
     if (store.storageWarning) shell.append(node('div', 'storage-warning', store.storageWarning));
     if (screen === 'library') shell.append(library());

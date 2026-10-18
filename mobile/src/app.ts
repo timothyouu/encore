@@ -93,7 +93,7 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
   const recording = (): boolean => Boolean(phone?.recording || driver?.recording);
   const unmount = mountPhone(root, store, {
     start: () => { void start(); }, stop: () => { void stop(); }, cancel,
-    retry: () => { void phone?.retry(); }, importWav: (blob: Blob) => { void phone?.processWavBlob(blob); },
+    retry: () => { void phone?.retry(); },
     canRetry: (attemptId: string) => phone?.canRetry(attemptId) ?? false,
     getMode: () => mode, isBusy: busy, deviceStatus: options.deviceStatus,
     getWaveform: () => mode === 'phone' ? phone?.getWaveform() ?? null : null,

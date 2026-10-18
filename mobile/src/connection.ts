@@ -3,7 +3,7 @@ import type { CaptureEndpoints } from './capture.ts';
 
 export type RecordingSource = 'phone' | 'g2';
 export type Connection = { mode: RecordingSource; upload: string; analysis: string; coaching: string };
-const SOURCE_LABELS: Record<RecordingSource, string> = { phone: 'Phone microphone', g2: 'G2 microphone' };
+const SOURCE_LABELS: Record<RecordingSource, string> = { phone: 'Microphone', g2: 'G2 microphone' };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
 export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null,
@@ -19,7 +19,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   const form = document.createElement('form');
   form.style.cssText = 'display:grid;gap:12px;';
   const explanation = document.createElement('p');
-  explanation.textContent = 'Phone recording sends your normalized WAV audio through upload, analysis, and coaching. Results and history use that recorded analysis. Raw audio is not saved in History.';
+  explanation.textContent = 'Recording sends normalized WAV audio through upload, analysis, and coaching. Results and history use that analysis. Raw audio is not saved in History.';
   form.append(explanation);
   const modeLabel = document.createElement('label');
   modeLabel.textContent = 'Recording source';

@@ -313,11 +313,16 @@ export class PhoneCapture {
       });
       recorder.addEventListener('error', this.onRecorderError);
       stream.getAudioTracks().forEach((track) => track.addEventListener('ended', this.onTrackEnded));
+      recorder.start();
+      // Publish the recording screen only after the browser has accepted the start.
+      // Some browsers can throw here (for example when the selected codec is unavailable).
       const record = this.store.start('phone');
-      if (!record) throw new Error('The passage is no longer ready to record.');
+      if (!record) {
+        try { if (recorder.state === 'recording') recorder.stop(); } catch { /* Release the stream below. */ }
+        throw new Error('The passage is no longer ready to record.');
+      }
       record.captureSource = 'phone';
       this.activeAttemptId = record.attemptId;
-      recorder.start();
       this.meter = AudioMeter.create(stream);
       this.recording = true;
       this.timer = setTimeout(() => { void this.stop(); }, MAX_CAPTURE_MS);
