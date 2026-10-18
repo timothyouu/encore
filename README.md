@@ -42,9 +42,17 @@ The phone UI is separate from the glasses application in `g2/`. The mobile app o
 ```sh
 cd mobile
 npm ci
-npm run dev       # phone UI on :5174; glasses scaffold uses :5173
+npm run dev       # phone UI on :5176; glasses scaffold uses :5173
 npm test
 npm run build
 ```
 
 See [mobile setup and limitations](mobile/README.md) and [verification handoff](mobile/docs/mobile-verification.md).
+
+## Local audio, coaching, and persistence
+
+The local stack normalizes phone audio to WAV, runs Basic Pitch through a Strands tool, and sends the same WAV plus measured findings to a Strands Gemini coach. History and settings remain in browser IndexedDB; audio has a bounded temporary retry window. Phone Sentry monitoring is opt-in and scrubs payloads.
+
+See [pipeline setup](server/README.md), [analysis setup](analysis/README.md), [storage policy and checks](docs/storage-verification.md), and [Sentry setup](mobile/docs/sentry.md). Real `.env` files are ignored; only example templates belong in Git.
+
+With dependencies already prepared, run `bash scripts/start-local.sh --fallback` for a local run without provider calls. To avoid an occupied phone port, use `ENCORE_MOBILE_PORT=5186 bash scripts/start-local.sh --fallback`. Run `bash scripts/verify-storage.sh` for the combined regression suite. Gemini access and physical device behavior require separate live verification.

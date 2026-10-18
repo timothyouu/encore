@@ -1,0 +1,1935 @@
+{
+  "schemaVersion": "1",
+  "examples": [
+    {
+      "name": "wrong_note-pitch",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-1",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-1",
+            "kind": "wrong_note",
+            "variant": "pitch",
+            "priority": 3,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 64,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Find F4, then play that beat slowly.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-1"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrong_note-octave",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-2",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-2",
+            "kind": "wrong_note",
+            "variant": "octave",
+            "priority": 3,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 77,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Find F4 in the lower octave.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-2"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrong_note-accidental",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-3",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-3",
+            "kind": "wrong_note",
+            "variant": "accidental",
+            "priority": 3,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 66,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Play F sharp on this beat.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-3"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "wrong_note-self_fix",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-4",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-4",
+            "kind": "wrong_note",
+            "variant": "self_fix",
+            "priority": 3,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 64,
+                  "onsetBeat": 5,
+                  "durationBeats": 0.2
+                },
+                {
+                  "id": "d5.25",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.25,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Nice catch. Find F4 before the beat.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-4"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5",
+                "d5.25"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_note-missing",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-5",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-5",
+            "kind": "missing_note",
+            "variant": "missing",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Play F4 twice, then D4.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-5"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "missing_note-swapped_order",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-6",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-6",
+            "kind": "missing_note",
+            "variant": "swapped_order",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.5",
+                  "midiPitch": 62,
+                  "onsetBeat": 5.5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Keep F4 before D4.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-6"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d5.5",
+                "d6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "extra_note-extra",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-7",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-7",
+            "kind": "extra_note",
+            "variant": "extra",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d4.5",
+                  "midiPitch": 67,
+                  "onsetBeat": 4.5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Skip G4 between the two F4 notes.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-7"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d4.5",
+                "d5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "extra_note-swapped_order",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-8",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-8",
+            "kind": "extra_note",
+            "variant": "swapped_order",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5",
+                  "midiPitch": 62,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Put F4 before D4.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-8"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d5",
+                "d5.5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "timing-early",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-9",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-9",
+            "kind": "timing",
+            "variant": "early",
+            "priority": 4,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4.75",
+                  "midiPitch": 65,
+                  "onsetBeat": 4.75,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "timingDeltaBeats": -0.25
+            },
+            "cue": "Wait for beat 6.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-9"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d4.75"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "timing-late",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-10",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-10",
+            "kind": "timing",
+            "variant": "late",
+            "priority": 4,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5.25",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.25,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "timingDeltaBeats": 0.25
+            },
+            "cue": "Play right on beat 6.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-10"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5.25"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "duration-short",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-11",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-11",
+            "kind": "duration",
+            "variant": "short",
+            "priority": 5,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 62,
+                  "onsetBeat": 5,
+                  "durationBeats": 2
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 62,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "expectedDurationBeats": 2,
+              "detectedDurationBeats": 1
+            },
+            "cue": "Hold D4 for two counts.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-11"
+              ],
+              "referenceNoteIds": [
+                "r5"
+              ],
+              "detectedNoteIds": [
+                "d5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "duration-long",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-12",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-12",
+            "kind": "duration",
+            "variant": "long",
+            "priority": 5,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1.5
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 62,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "expectedDurationBeats": 1,
+              "detectedDurationBeats": 1.5
+            },
+            "cue": "Lift F4 before D4.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "note_alignment",
+              "findingIds": [
+                "fixture-finding-12"
+              ],
+              "referenceNoteIds": [
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d5",
+                "d6"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unclear_audio-uncertain",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-13",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-13",
+            "kind": "unclear_audio",
+            "variant": "uncertain",
+            "priority": 1,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED CLEAR PIANO",
+              "notes": []
+            },
+            "detected": {
+              "label": "DETECTED AUDIO",
+              "notes": []
+            },
+            "metrics": {},
+            "cue": "Check the microphone and try again.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "audio_quality",
+              "findingIds": [],
+              "referenceNoteIds": [],
+              "detectedNoteIds": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unclear_audio-noisy",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-14",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-14",
+            "kind": "unclear_audio",
+            "variant": "noisy",
+            "priority": 1,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED CLEAR PIANO",
+              "notes": []
+            },
+            "detected": {
+              "label": "DETECTED AUDIO",
+              "notes": []
+            },
+            "metrics": {},
+            "cue": "Find a quieter spot and try again.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "audio_quality",
+              "findingIds": [],
+              "referenceNoteIds": [],
+              "detectedNoteIds": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unclear_audio-quiet",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-15",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-15",
+            "kind": "unclear_audio",
+            "variant": "quiet",
+            "priority": 1,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED CLEAR PIANO",
+              "notes": []
+            },
+            "detected": {
+              "label": "DETECTED AUDIO",
+              "notes": []
+            },
+            "metrics": {},
+            "cue": "Move the microphone closer and try again.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "audio_quality",
+              "findingIds": [],
+              "referenceNoteIds": [],
+              "detectedNoteIds": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unclear_audio-no_piano",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-16",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-16",
+            "kind": "unclear_audio",
+            "variant": "no_piano",
+            "priority": 1,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED CLEAR PIANO",
+              "notes": []
+            },
+            "detected": {
+              "label": "DETECTED AUDIO",
+              "notes": []
+            },
+            "metrics": {},
+            "cue": "Check the microphone and start playing.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "audio_quality",
+              "findingIds": [],
+              "referenceNoteIds": [],
+              "detectedNoteIds": []
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tempo_drift-rushing",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-17",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-17",
+            "kind": "tempo_drift",
+            "variant": "rushing",
+            "priority": 4,
+            "focus": {
+              "startBeat": 2,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r2",
+                  "midiPitch": 64,
+                  "onsetBeat": 2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r3",
+                  "midiPitch": 64,
+                  "onsetBeat": 3,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r4",
+                  "midiPitch": 67,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 67,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d2",
+                  "midiPitch": 64,
+                  "onsetBeat": 2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d2.94",
+                  "midiPitch": 64,
+                  "onsetBeat": 2.94,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d3.83",
+                  "midiPitch": 67,
+                  "onsetBeat": 3.83,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d4.67",
+                  "midiPitch": 67,
+                  "onsetBeat": 4.67,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.46",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.46,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "driftPercent": -12
+            },
+            "cue": "Keep each beat the same length.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-17"
+              ],
+              "referenceNoteIds": [
+                "r2",
+                "r3",
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d2",
+                "d2.94",
+                "d3.83",
+                "d4.67",
+                "d5.46"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "tempo_drift-slowing",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-18",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-18",
+            "kind": "tempo_drift",
+            "variant": "slowing",
+            "priority": 4,
+            "focus": {
+              "startBeat": 2,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r2",
+                  "midiPitch": 64,
+                  "onsetBeat": 2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r3",
+                  "midiPitch": 64,
+                  "onsetBeat": 3,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r4",
+                  "midiPitch": 67,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 67,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d2",
+                  "midiPitch": 64,
+                  "onsetBeat": 2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d3.06",
+                  "midiPitch": 64,
+                  "onsetBeat": 3.06,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d4.17",
+                  "midiPitch": 67,
+                  "onsetBeat": 4.17,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.33",
+                  "midiPitch": 67,
+                  "onsetBeat": 5.33,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6.54",
+                  "midiPitch": 65,
+                  "onsetBeat": 6.54,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "driftPercent": 12
+            },
+            "cue": "Keep the beat steady.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-18"
+              ],
+              "referenceNoteIds": [
+                "r2",
+                "r3",
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d2",
+                "d3.06",
+                "d4.17",
+                "d5.33",
+                "d6.54"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "uneven_rhythm-alternating",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-19",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-19",
+            "kind": "uneven_rhythm",
+            "variant": "alternating",
+            "priority": 4,
+            "focus": {
+              "startBeat": 2,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r2",
+                  "midiPitch": 65,
+                  "onsetBeat": 2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r3",
+                  "midiPitch": 65,
+                  "onsetBeat": 3,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d1.8",
+                  "midiPitch": 65,
+                  "onsetBeat": 1.8,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d3.2",
+                  "midiPitch": 65,
+                  "onsetBeat": 3.2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d3.8",
+                  "midiPitch": 65,
+                  "onsetBeat": 3.8,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.2",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.2,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.8",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.8,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Count evenly through the phrase.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-19"
+              ],
+              "referenceNoteIds": [
+                "r2",
+                "r3",
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d1.8",
+                "d3.2",
+                "d3.8",
+                "d5.2",
+                "d5.8"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "unexpected_pause-pause",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-20",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-20",
+            "kind": "unexpected_pause",
+            "variant": "pause",
+            "priority": 4,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d7",
+                  "midiPitch": 65,
+                  "onsetBeat": 7,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "gapBeats": 1
+            },
+            "cue": "Keep the phrase moving through beat 6.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-20"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d6",
+                "d7"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "rest_violation-rest",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-21",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-21",
+            "kind": "rest_violation",
+            "variant": "rest",
+            "priority": 4,
+            "focus": {
+              "startBeat": 5,
+              "endBeat": 6
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": []
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.5,
+                  "durationBeats": 0.3
+                }
+              ]
+            },
+            "metrics": {},
+            "cue": "Leave this rest silent.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-21"
+              ],
+              "referenceNoteIds": [],
+              "detectedNoteIds": [
+                "d5.5"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "section_repeat_skip-repeated",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-22",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-22",
+            "kind": "section_repeat_skip",
+            "variant": "repeated",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 8
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r7",
+                  "midiPitch": 65,
+                  "onsetBeat": 7,
+                  "durationBeats": 1
+                }
+              ],
+              "segmentIds": [
+                "barA",
+                "barB"
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d4.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 4.5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5.5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 6.5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d7.5",
+                  "midiPitch": 65,
+                  "onsetBeat": 7.5,
+                  "durationBeats": 1
+                }
+              ],
+              "segmentIds": [
+                "barA",
+                "barA",
+                "barB"
+              ]
+            },
+            "metrics": {},
+            "cue": "Play bar A once, then move to bar B.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-22"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6",
+                "r7"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d5",
+                "d4.5",
+                "d5.5",
+                "d6.5",
+                "d7.5"
+              ]
+            },
+            "segments": [
+              {
+                "id": "barA",
+                "label": "BAR A",
+                "startBeat": 4,
+                "endBeat": 6
+              },
+              {
+                "id": "barB",
+                "label": "BAR B",
+                "startBeat": 6,
+                "endBeat": 8
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "section_repeat_skip-skipped",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-23",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-23",
+            "kind": "section_repeat_skip",
+            "variant": "skipped",
+            "priority": 2,
+            "focus": {
+              "startBeat": 4,
+              "endBeat": 8
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r7",
+                  "midiPitch": 65,
+                  "onsetBeat": 7,
+                  "durationBeats": 1
+                }
+              ],
+              "segmentIds": [
+                "barA",
+                "barB"
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d4",
+                  "midiPitch": 65,
+                  "onsetBeat": 4,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ],
+              "segmentIds": [
+                "barB"
+              ]
+            },
+            "metrics": {},
+            "cue": "Play bar A before bar B.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "phrase_pattern",
+              "findingIds": [
+                "fixture-finding-23"
+              ],
+              "referenceNoteIds": [
+                "r4",
+                "r5",
+                "r6",
+                "r7"
+              ],
+              "detectedNoteIds": [
+                "d4",
+                "d5",
+                "d6"
+              ]
+            },
+            "segments": [
+              {
+                "id": "barA",
+                "label": "BAR A",
+                "startBeat": 4,
+                "endBeat": 6
+              },
+              {
+                "id": "barB",
+                "label": "BAR B",
+                "startBeat": 6,
+                "endBeat": 8
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "recurring_trouble-recurring",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-24",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-24",
+            "kind": "recurring_trouble",
+            "variant": "recurring",
+            "priority": 4,
+            "focus": {
+              "startBeat": 5,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "recurrenceCount": 3,
+              "recurrenceWindow": 3
+            },
+            "cue": "Practice beats 6 and 7 slowly three times.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "history",
+              "findingIds": [
+                "fixture-finding-24"
+              ],
+              "referenceNoteIds": [
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d5",
+                "d6"
+              ]
+            },
+            "historyRows": [
+              {
+                "attemptId": "take-3",
+                "label": "TAKE 3",
+                "flaggedBeats": [
+                  6
+                ]
+              },
+              {
+                "attemptId": "take-4",
+                "label": "TAKE 4",
+                "flaggedBeats": [
+                  5
+                ]
+              },
+              {
+                "attemptId": "take-5",
+                "label": "TAKE 5",
+                "flaggedBeats": [
+                  6
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "recurring_trouble-resolved",
+      "plan": {
+        "schemaVersion": "1",
+        "attemptId": "fixture-attempt-25",
+        "passageId": "paper-demo",
+        "passageVersion": "1",
+        "source": "fixture",
+        "cards": [
+          {
+            "id": "fixture-25",
+            "kind": "recurring_trouble",
+            "variant": "resolved",
+            "priority": 4,
+            "focus": {
+              "startBeat": 5,
+              "endBeat": 7
+            },
+            "expected": {
+              "label": "EXPECTED",
+              "notes": [
+                {
+                  "id": "r5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "r6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "detected": {
+              "label": "DETECTED",
+              "notes": [
+                {
+                  "id": "d5",
+                  "midiPitch": 65,
+                  "onsetBeat": 5,
+                  "durationBeats": 1
+                },
+                {
+                  "id": "d6",
+                  "midiPitch": 65,
+                  "onsetBeat": 6,
+                  "durationBeats": 1
+                }
+              ]
+            },
+            "metrics": {
+              "recurrenceCount": 2,
+              "recurrenceWindow": 3
+            },
+            "cue": "Beats 6 and 7 are clean. Keep going.",
+            "evidence": {
+              "source": "fixture",
+              "measurement": "history",
+              "findingIds": [
+                "fixture-finding-25"
+              ],
+              "referenceNoteIds": [
+                "r5",
+                "r6"
+              ],
+              "detectedNoteIds": [
+                "d5",
+                "d6"
+              ]
+            },
+            "historyRows": [
+              {
+                "attemptId": "take-3",
+                "label": "TAKE 3",
+                "flaggedBeats": [
+                  6
+                ]
+              },
+              {
+                "attemptId": "take-4",
+                "label": "TAKE 4",
+                "flaggedBeats": [
+                  6
+                ]
+              },
+              {
+                "attemptId": "take-5",
+                "label": "TAKE 5",
+                "flaggedBeats": []
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
