@@ -131,7 +131,7 @@ export class PhoneCapture {
   private rejectRecording: ((error: Error) => void) | null = null;
   private trace: TelemetrySpan | null = null;
   private stepTrace: TelemetrySpan | null = null;
-  private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; digest?: string; artifact?: Artifact; savedAt?: number }>();
+  private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; digest?: string | null; artifact?: Artifact; savedAt?: number }>();
   private retryExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly store: SessionStore;
   private endpoints: CaptureEndpoints;
@@ -224,7 +224,7 @@ export class PhoneCapture {
     (this.retryExpiryTimer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
   }
 
-  private remember(attemptId: string, value: { blob?: Blob; normalized?: NormalizedAudio; digest?: string; artifact?: Artifact; savedAt?: number }): void {
+  private remember(attemptId: string, value: { blob?: Blob; normalized?: NormalizedAudio; digest?: string | null; artifact?: Artifact; savedAt?: number }): void {
     this.saved.set(attemptId, { ...value, savedAt: value.savedAt ?? Date.now() });
     this.scheduleMemoryExpiry();
   }
