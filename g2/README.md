@@ -29,6 +29,10 @@ To record from the glasses, open **Connection settings** on the phone and choose
 
 Glasses diagnostics are in the collapsed **Glasses debug** panel under the phone UI; it opens by itself on any error.
 
+## Uploads
+
+Set the **Upload URL** on the phone screen (saved in Even app storage). Each take is POSTed as `multipart/form-data`: `audio` (WAV) and `metadata` (JSON: attempt ID, passage ID/version, timestamps, format, duration, measured byte rate, `captureSource: "g2"`). The server must send CORS headers, and the packaged app needs its domain in `app.json` under a `network` permission. For simulator testing, `VITE_ENCORE_UPLOAD_URL=<url> npm run dev` presets the URL when none is saved.
+
 ## Pack for distribution
 
 ```bash
