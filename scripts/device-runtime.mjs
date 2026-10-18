@@ -1,9 +1,13 @@
-// Local verification launcher. Provider calls remain disabled until physical capture is verified.
+// Device backend. Gemini uses the explicit server configuration; offline mode remains available.
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as httpModule from '../server/src/http.ts';
+import * as providerModule from '../server/src/provider-config.ts';
+import * as coachingModule from '../server/src/coaching.ts';
 
 const { createCoachServer, loadLibrary } = httpModule.default ?? httpModule;
+const { loadProviderConfig } = providerModule.default ?? providerModule;
+const { createGeminiChooser } = coachingModule.default ?? coachingModule;
 const run = fileURLToPath(new URL('../.run/', import.meta.url));
 mkdirSync(run, { recursive: true, mode: 0o700 });
 const origin = process.env.ENCORE_DEVICE_ORIGIN ?? 'http://localhost:5196';
@@ -18,8 +22,10 @@ if (token.length < 32) throw new Error('Existing session token is unavailable.')
 const port = Number(process.env.ENCORE_DEVICE_PORT ?? '8799');
 const allowLoopbackClientOrigins = process.env.ENCORE_ALLOW_LOOPBACK_CLIENT_ORIGINS === 'true';
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
+const provider = loadProviderConfig();
+const chooser = provider ? createGeminiChooser(provider.apiKey, provider.modelId) : null;
 const server = createCoachServer({
-  library: await loadLibrary(), chooser: null, token, allowedOrigin: origin, allowLoopbackClientOrigins,
+  library: await loadLibrary(), chooser, token, allowedOrigin: origin, allowLoopbackClientOrigins,
   analysisUrl: process.env.ENCORE_ANALYSIS_URL ?? 'http://127.0.0.1:8012/v1/analyze',
   publicBaseUrl: JSON.parse(readFileSync(new URL('../g2/service-origin.json', import.meta.url), 'utf8')).origin,
   observeRequest(event) {
@@ -31,6 +37,6 @@ server.requestTimeout = 70_000;
 server.headersTimeout = 10_000;
 server.keepAliveTimeout = 5_000;
 server.listen(port, '127.0.0.1', () => {
-  console.log(JSON.stringify({ event: 'device-backend-ready', port, allowedOrigin: origin, allowLoopbackClientOrigins, modelConfigured: false }));
+  console.log(JSON.stringify({ event: 'device-backend-ready', port, allowedOrigin: origin, allowLoopbackClientOrigins, modelConfigured: Boolean(chooser) }));
 });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
