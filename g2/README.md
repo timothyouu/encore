@@ -53,6 +53,7 @@ Produces an `.ehpk` file.
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/recorder.ts` / `src/wav.ts` | One mic capture at a time; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
+| `src/keyboard.ts` | Draws a finding's keyboard schematic (expected vs heard keys, hold bars) as one 288×96 PNG. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
 | `src/screens/` | One file per glasses state (spec §4). |
 
@@ -64,7 +65,7 @@ Produces an `.ehpk` file.
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
 | 04 | Analyzing | Short status; no input, no menu |
-| 05 | Review | Where, what happened, one cue (coaching cue when it cites this finding); `▼ guide` when there is a correction; tap → Selection. Text only for now |
-| 06 | Guide | The correction and any authored finger; swipe up → Review; tap → Selection. Text only for now |
+| 05 | Review | Where, what happened, one cue (coaching cue when it cites this finding); `▼ guide` when there is a correction; swipe up → previous finding's Guide; tap → Selection |
+| 06 | Guide | The correction and any authored finger, plus a keyboard schematic marking expected vs heard keys when the coaching visual supplies one; swipe up → Review; swipe down → next finding's Review; tap → Selection |
 | — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |

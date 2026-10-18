@@ -12,11 +12,15 @@ export type ResultView = {
   review: string
   // Guide: the correction for that finding; null when there is nothing to correct.
   guide: string | null
+  // Position in the finding list, so swipes can page Review ⇄ Guide across
+  // findings (spec §4: swipe down is the next feedback page, up the previous).
+  index: number
+  findings: number
 }
 
 export function resultView(record: AttemptRecord, passage: Passage, findingIndex: number): ResultView {
   const tag = (record.captureSource ?? 'demo') === 'demo' ? 'Demo' : ''
-  const base = { title: passage.title, tag }
+  const base = { title: passage.title, tag, index: 0, findings: 0 }
   const analysis = record.analysis
   if (!analysis || analysis.status !== 'ok') {
     // Trust before detail (spec §2): no musical claim from unclear audio.
@@ -40,5 +44,7 @@ export function resultView(record: AttemptRecord, passage: Passage, findingIndex
     ...base,
     review: `${where} · ${findingTitle(finding)}${count}\n${detailFor(finding, passage, record)}\n${cue}`,
     guide: `${correction}${finger ? `\nSuggested finger ${finger} (authored)` : ''}`,
+    index,
+    findings: findings.length,
   }
 }
