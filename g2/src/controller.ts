@@ -1,6 +1,5 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
-import { orderedFindings } from '../../mobile/src/feedback.ts'
 import { resolveMistakeVisualization } from '../../mobile/src/visualization.ts'
 import type { VisualCard } from '../../shared/visual-contract.ts'
 import type { CoachingResult } from '../../shared/contracts.ts'
@@ -50,7 +49,7 @@ function keyOf(state: SessionState): string {
     case 'review':
     case 'guide':
     case 'sheet':
-      return `review:${state.attemptId}:${state.findingIndex}`
+      return `${state.screen === 'sheet' ? state.sheetOrigin : state.screen}:${state.attemptId}:${state.findingIndex}:${state.historyOrigin}`
     default:
       return `${state.screen}:${state.attemptId}`
   }
@@ -160,31 +159,25 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
       case 'sheet': {
         if (!record || !passage) return null
         const { views, tag } = reviewData(record, passage)
-        const findingId = orderedFindings(record, passage)[state.findingIndex]?.id
-        const matched = findingId ? views.findIndex(view => view.card?.evidence.findingIds.includes(findingId)) : -1
         return reviewScreen({
           views,
           tag,
-          initialIndex: matched < 0 ? 0 : matched,
+          initialIndex: state.findingIndex,
+          phase: state.screen === 'sheet' ? state.sheetOrigin : state.screen,
+          history: state.historyOrigin,
           onPlayAgain: playAgain,
-          onCardChange: view => {
+          onNavigate: delta => {
             if (store.state.attemptId !== record.attemptId) return
-            const findings = orderedFindings(record, passage)
-            const target = findings.findIndex(finding => view.card?.evidence.findingIds.includes(finding.id))
             batch(() => {
               store.closeSheet()
-              store.showReview()
-              if (target >= 0) store.moveFinding(target - store.state.findingIndex)
-              // A swipe already changed the current Review in place. Adopt its
-              // new store key so the store emission does not rebuild it.
-              currentKey = keyOf(store.state)
+              store.moveFeedback(delta)
             })
           },
           keyboardContext: view => {
             const card = view.card
             if (!card || card.evidence.source !== 'analysis' || card.evidence.findingIds.length !== 1) return null
             if (!['missing_note', 'extra_note', 'timing', 'duration'].includes(card.kind)) return null
-            const finding = orderedFindings(record, passage).find(item => item.id === card.evidence.findingIds[0])
+            const finding = record.analysis?.findings.find(item => item.id === card.evidence.findingIds[0])
             return finding && finding.kind === card.kind ? resolveMistakeVisualization(record, passage, finding) : null
           },
           renderArt,

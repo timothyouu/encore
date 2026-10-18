@@ -21,11 +21,11 @@ async function harness(t, status = 'ok') {
     fetchImpl: async (_url, init) => {
       detectorCalls++;
       assert.deepEqual(Buffer.from(await init.body.get('audio').arrayBuffer()), bytes);
-      return new Response(JSON.stringify({ ...analysis, status }), { status: 200 });
+      return new Response(JSON.stringify({ ...analysis, status, ...(status === 'ok' ? {} : { findings: [], alignment: { offsetSec: null, reliable: false } }) }), { status: 200 });
     },
     chooser: async (_prompt, wav) => {
       coachCalls++; assert.deepEqual(Buffer.from(wav), bytes);
-      return { findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' };
+      return { findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' };
     } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => server.close(resolve)));
@@ -60,6 +60,10 @@ test('fixed acceptance: bytes survive analysis and are removed after both consum
   assert.equal((await h.getAudio(receipt)).status, 200, 'analysis alone must not delete WAV');
   const coached = await h.post('/v1/coach', { ...fields, analysis: analyzed });
   assert.equal(coached.status, 200);
+  const result = await coached.json();
+  assert.equal(analyzed.schemaVersion, '2');
+  assert.equal(result.coachingSource, 'gemini', 'the injected constrained chooser must pass validation');
+  assert.equal(result.primarySegmentId, analyzed.displaySegments[0].id);
   assert.equal((await h.post('/v1/coach', { ...fields, analysis: analyzed })).status, 200);
   assert.deepEqual(h.calls(), [1, 1], 'response retries must reuse cached computations');
   h.advance(60001);
@@ -78,7 +82,9 @@ test('fixed acceptance: terminal uncertain analysis needs no coach and expires a
 test('fixed acceptance: technical analysis result retains audio for explicit retry', async t => {
   const h = await harness(t, 'error');
   const receipt = await (await h.upload()).json();
-  await h.post('/v1/analyze', { artifactId: receipt.artifactId, ...metadata });
+  const analyzed = await h.post('/v1/analyze', { artifactId: receipt.artifactId, ...metadata });
+  assert.equal(analyzed.status, 200);
+  assert.equal((await analyzed.json()).status, 'error');
   h.advance(60001);
   assert.equal((await h.getAudio(receipt)).status, 200);
   h.advance(540000);

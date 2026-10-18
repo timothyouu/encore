@@ -113,6 +113,9 @@ test('G2 fake-bridge take keeps one ID through 16k WAV, normalized HTTP receipt,
   await settle();
   assert.equal(controller.current.name, 'review');
   assert.match(textByName(h.bridge).counter, /G2 · local cue/);
+  controller.onInput({ kind: 'tap' });
+  await settle();
+  assert.equal(h.store.state.screen, 'guide');
   const beforeReplay = h.bridge.callsTo('updateImageRawData').length;
   controller.onInput({ kind: 'tap' });
   controller.onInput({ kind: 'tap' });

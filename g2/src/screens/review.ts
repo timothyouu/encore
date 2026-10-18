@@ -3,7 +3,7 @@ import type { CoachingResult } from '../../../shared/contracts.ts'
 import type { VisualCard } from '../../../shared/visual-contract.ts'
 import type { MistakeVisualization } from '../../../mobile/src/visualization.ts'
 import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, padToWidth, rightText, text } from '../layout.ts'
-import { ART_H, ART_W, MAX_REVEAL_STEPS, renderCardArt, renderReplayFrame, replaySteps, type ReplayStep } from '../review/art.ts'
+import { ART_H, ART_W, MAX_REVEAL_STEPS, renderBarArt, renderCardArt, renderReplayFrame, replaySteps, type ReplayStep } from '../review/art.ts'
 import { CUE_WIDTH, cardViews, type CardView } from '../review/model.ts'
 import { status } from '../status.ts'
 import type { Screen, ScreenContext } from './screen.ts'
@@ -16,6 +16,7 @@ const DETECTED = { id: 4, name: 'detected' }
 const CUE = { id: 5, name: 'cue' }
 const NEXT = { id: 6, name: 'next' }
 const REPLAY = { id: 7, name: 'replay' }
+const PHASE = { id: 8, name: 'phase' }
 
 const ART_Y = 44
 const COLUMN_X = 300
@@ -34,6 +35,10 @@ type ReviewOptions = {
   views?: CardView[]
   tag?: string
   initialIndex?: number
+  // Saved attempts traverse Review(i), Guide(i), Review(i+1) in the store.
+  phase?: 'review' | 'guide'
+  history?: boolean
+  onNavigate?: (delta: number) => void
   // Double tap: back to passage selection (spec §4 "Play again").
   onPlayAgain(): void
   // Keep the shared phone finding selection aligned with a glasses card swipe.
@@ -63,11 +68,14 @@ export function reviewScreen({
   views = coaching ? cardViews(coaching) : [{ card: null, header: 'Feedback unavailable', legend: ['No validated coaching result', ''], cue: 'Try again.' }],
   tag = '',
   initialIndex = 0,
+  phase,
+  history = false,
+  onNavigate,
   onPlayAgain,
   onCardChange,
   keyboardContext,
   demo = false,
-  renderArt = renderCardArt,
+  renderArt,
   renderFrame = renderReplayFrame,
   frameDwellMs = FRAME_DWELL_MS,
 }: ReviewOptions): Screen {
@@ -78,18 +86,22 @@ export function reviewScreen({
   let replaying = false
   // Keep the last picture delivered to the glasses across an OS-menu redraw.
   let displayed: { index: number; step: ReplayStep } | null = null
+  const paired = Boolean(phase && views.some(view => view.findingId))
 
   const contextFor = (i: number) => keyboardContext?.(views[i]) ?? null
   const steps = (i: number) => {
     const card = views[i].card
-    return card ? replaySteps(card, Boolean(contextFor(i))) : []
+    return card ? replaySteps(card, Boolean(contextFor(i)), Boolean(views[i].segment)) : []
   }
   const counter = (i: number) => {
     const count = views.length > 1 ? `${i + 1} / ${views.length}` : ''
     return `${tag || (demo ? 'DEMO' : '')} ${count}`.trim()
   }
-  const nextHint = (i: number) => (i < views.length - 1 ? NEXT_HINT : '')
-  const replayHint = (i: number) => (steps(i).length ? REPLAY_HINT : '')
+  const nextHint = (i: number) => paired && phase === 'review' ? padToWidth('▼  guide', DOTS_ROOM) : (i < views.length - 1 ? NEXT_HINT : '')
+  const replayHint = (i: number) => paired && phase === 'review' ? 'tap  guide' : (steps(i).length ? REPLAY_HINT : '')
+  const phaseLabel = (view: CardView) => phase
+    ? `${history ? 'Saved ' : ''}${phase === 'review' ? 'Review' : 'Guide'}${view.position ? ` · ${view.position}` : ''}` : ''
+  const cue = (view: CardView) => phase === 'review' && view.findingId ? 'Compare the notes. Swipe down for guidance.' : view.cue
   const dots = (done: number, total: number) => padToWidth('●'.repeat(done) + '○'.repeat(total - done), DOTS_ROOM)
 
   function texts(view: CardView, i: number): [{ id: number; name: string }, string][] {
@@ -98,9 +110,10 @@ export function reviewScreen({
       [COUNTER, counter(i)],
       [EXPECTED, view.legend[0]],
       [DETECTED, view.legend[1]],
-      [CUE, view.cue],
+      [CUE, cue(view)],
       [NEXT, nextHint(i)],
       [REPLAY, replayHint(i)],
+      [PHASE, phaseLabel(view)],
     ]
   }
 
@@ -108,7 +121,8 @@ export function reviewScreen({
     const card = views[i].card
     if (!card || !context) return Promise.resolve()
     const ctx = context
-    return renderArt(card)
+    const paint = renderArt ?? (views[i].segment ? (value: VisualCard) => renderBarArt(value, phase === 'guide') : renderCardArt)
+    return paint(card)
       .then(png => ctx.glasses.updateImage(ART, png, still))
       .catch(error => status(`card art failed: ${String(error)}`, 'error'))
   }
@@ -117,8 +131,9 @@ export function reviewScreen({
     const shown = displayed
     const card = views[i].card
     if (!shown || shown.index !== i || !card || !context) return sendStatic(i, still)
+    const ctx = context
     return renderFrame(card, shown.step, contextFor(i))
-      .then(png => context?.glasses.updateImage(ART, png, still))
+      .then(png => ctx.glasses.updateImage(ART, png, still))
       .catch(error => status(`replay art failed: ${String(error)}`, 'error'))
   }
 
@@ -170,7 +185,7 @@ export function reviewScreen({
   }
 
   return {
-    name: 'review',
+    name: phase ?? 'review',
 
     page: () => {
       const first = views[index]
@@ -181,7 +196,8 @@ export function reviewScreen({
           text({ ...EXPECTED, x: COLUMN_X, y: 60, width: CUE_WIDTH, content: first.legend[0], brightness: LEGEND_BRIGHTNESS }),
           text({ ...DETECTED, x: COLUMN_X, y: 87, width: CUE_WIDTH, content: first.legend[1], brightness: LEGEND_BRIGHTNESS }),
           // Swipes reach the app through this capture container.
-          text({ ...CUE, x: COLUMN_X, y: 124, width: CUE_WIDTH, height: 84, content: first.cue, capture: true }),
+          text({ ...CUE, x: COLUMN_X, y: 124, width: CUE_WIDTH, height: 81, content: cue(first), capture: true }),
+          text({ ...PHASE, x: MARGIN_X, y: 211, width: 528, content: phaseLabel(first), brightness: LEGEND_BRIGHTNESS }),
           // Bottom row: replay hint (then the frame caption) left, next hint (then progress dots) right.
           text({ ...REPLAY, x: MARGIN_X, y: HINT_Y, width: 260, content: replayHint(index), brightness: HINT_BRIGHTNESS }),
           rightText({ ...NEXT, y: HINT_Y, content: nextHint(index), sizeFor: DOTS_ROOM, brightness: HINT_BRIGHTNESS }),
@@ -206,7 +222,10 @@ export function reviewScreen({
     },
 
     onInput(input) {
-      if (input.kind === 'swipeDown' && index < views.length - 1) show(index + 1)
+      if (paired && onNavigate && input.kind === 'swipeDown') onNavigate(1)
+      else if (paired && onNavigate && input.kind === 'swipeUp') onNavigate(-1)
+      else if (paired && onNavigate && phase === 'review' && input.kind === 'tap') onNavigate(1)
+      else if (input.kind === 'swipeDown' && index < views.length - 1) show(index + 1)
       else if (input.kind === 'swipeUp' && index > 0) show(index - 1)
       else if (input.kind === 'tap') replay(index)
       else if (input.kind === 'doubleTap') onPlayAgain()

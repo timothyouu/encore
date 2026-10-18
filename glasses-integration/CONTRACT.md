@@ -46,12 +46,18 @@ g2/index.html (Even Hub WebView)
 | `ready` | Ready | tap → host `start()`; double tap → `showLibrary()` |
 | `recording` | Recording (same page as Ready; text swapped in place) | tap → host `stop()`; double tap → discard: `cancel()` then `selectPassage(same id)` |
 | `processing` | Analyzing | none |
-| `review`, `guide`, `sheet` | Review cards for the same saved attempt | swipe down/up → next/previous card; tap → replay current card; double tap → `showLibrary()` |
+| `review` | Review of selected finding/bar pair | swipe down or tap → matching Guide; swipe up → previous Guide; double tap → `showLibrary()` |
+| `guide` | Correction for the same finding/bar pair | swipe down → next Review; swipe up → matching Review; tap → replay; double tap → `showLibrary()` |
+| `sheet` | Review or Guide matching `sheetOrigin` and selected finding/bar | paging closes the phone sheet and calls `moveFeedback(delta)` |
 | `error` | Recoverable error | tap or double tap → `showLibrary()` |
 
-Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
+Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It rebuilds a page when the G2 phase, selected finding/bar pair, saved attempt or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
 
-Card paging updates the shared selected finding by validated evidence ID and closes an open phone Sheet overlay before showing Review. Replay is G2 presentation state; neither paging nor replay creates a new attempt. Phone Guide and Sheet remain phone views. G2 combines corrective notes, keys, rhythm, and authored-finger guidance into Review cards and replay. Validated keyboard and hold-duration context from the earlier Guide implementation is available within replay; the latest resting art and final correction frame remain intact. Switching attempts, returning to selection, or leaving a card invalidates its queued images and replay timers. History is read-only and never resubmits audio.
+Segment calculation and feedback ordering live in `shared/segments.ts` and `shared/feedback.ts`. The server validates Python detector results, enriches them into v2 locations/segments, and persists them with constrained code-written coaching. `SessionStore.entries()` exposes all finding/bar pairs; `selectedEntry()` resolves the current pair; `moveFeedback(delta)` walks Review → Guide → next Review (and back); `selectEntry(index)` opens a chosen pair's Review. The primary and other priority segments precede remaining affected bars, with unlocated findings last. The capped visual summary never caps navigation.
+
+Phone and G2 Review/Guide show the same selected bar and finding. G2 paging closes an open phone Sheet overlay first. Notation clips at the saved bar boundaries; out-of-passage/unlocated findings have no inferred notation highlight. Legacy v1 results remain full-passage feedback without invented saved bar locations. Review tap opens the matching Guide; Guide tap replays its correction. Gallery fixtures keep their existing standalone replay controls.
+
+Replay is G2 presentation state; neither paging nor replay creates a new attempt. Switching attempts, changing phase/pair, returning to selection, or leaving a page invalidates queued images and replay timers. History remains read-only and never resubmits audio. Physical G2 legibility, BLE delivery and gesture behavior remain device acceptance gates.
 
 ## Capture rules
 

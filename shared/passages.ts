@@ -20,6 +20,7 @@ export type Passage = {
   title: string
   tempoBpm: number
   beatsPerBar: number
+  bars?: { number: number; startBeat: number; endBeat: number }[]
   purpose: string
   focus: string
   notes: ReferenceNote[]
@@ -52,6 +53,7 @@ export const PASSAGES: Passage[] = [
     title: 'First Steps',
     tempoBpm: 60,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Adjacent-note accuracy',
     focus: 'Step cleanly to each next key',
     notes: notes('P01', { midiPitches: [60, 62, 64, 65, 67, 65, 64, 60], fingers: [1, 2, 3, 4, 5, 4, 3, 1] }),
@@ -62,6 +64,7 @@ export const PASSAGES: Passage[] = [
     title: 'Little Echo',
     tempoBpm: 60,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Repeated onsets',
     focus: 'Play each repeat cleanly',
     notes: notes('P02', { midiPitches: [64, 64, 67, 67, 65, 65, 62, 62], fingers: [3, 3, 5, 5, 4, 4, 2, 2] }),
@@ -72,6 +75,7 @@ export const PASSAGES: Passage[] = [
     title: 'Open Windows',
     tempoBpm: 60,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Skipped-key selection',
     focus: 'Land each skip on the right key',
     // Bar 2 shifts to the D position (D1 E2 F3 G4 A5) to reach A.
@@ -83,6 +87,7 @@ export const PASSAGES: Passage[] = [
     title: 'Hold the Moment',
     tempoBpm: 60,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Durations',
     focus: 'Hold the long notes full length',
     notes: notes('P04', {
@@ -98,6 +103,7 @@ export const PASSAGES: Passage[] = [
     title: 'Room to Breathe',
     tempoBpm: 60,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Rests',
     focus: 'Let the rests stay silent',
     notes: notes('P05', {
@@ -112,6 +118,7 @@ export const PASSAGES: Passage[] = [
     title: 'Small Climb',
     tempoBpm: 72,
     beatsPerBar: 4,
+    bars: [{ number: 1, startBeat: 0, endBeat: 4 }, { number: 2, startBeat: 4, endBeat: 8 }],
     purpose: 'Steady timing at a faster tempo',
     focus: 'Keep a steady beat at 72',
     // G and A extend the C position: G4, A5.

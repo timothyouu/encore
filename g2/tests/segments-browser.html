@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Encore paired G2 mock</title>
+<link rel="icon" href="data:,">
+<style>
+  body { margin:24px; background:#202020; color:#eee; font:16px system-ui,sans-serif; }
+  .screens { display:flex; flex-wrap:wrap; gap:24px; }
+  .surface { position:relative; width:576px; height:288px; background:#000; border:1px solid #555; color:white; font:20px/27px sans-serif; }
+  .surface div { position:absolute; overflow:hidden; white-space:pre-wrap; }
+  .surface img { position:absolute; width:288px; height:144px; }
+  button { margin:16px 8px 0 0; padding:8px 12px; }
+</style>
+<h1>Mock G2 · paired Review and Guide</h1>
+<p>Synthetic saved result, browser approximation of firmware text. No glasses, recording, backend, or model call.</p>
+<div class="screens"><section><h2>Review</h2><div id="review" class="surface"></div></section><section><h2>Guide</h2><div id="guide" class="surface"></div></section></div>
+<button id="previous">Previous finding/bar</button><button id="next">Next finding/bar</button><span id="counter"></span>
+<script type="module">
+  import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../../mobile/src/session.ts'
+  import { calculateDisplaySegments } from '../../shared/segments.ts'
+  import { PASSAGES } from '../src/passages.ts'
+  import { reviewData } from '../src/feedback.ts'
+  import { reviewScreen } from '../src/screens/review.ts'
+
+  const store = new SessionStore({getItem:()=>null,setItem(){}})
+  store.selectPassage('P01')
+  const record = store.start('demo')
+  store.stop()
+  const passage = PASSAGES[0]
+  record.analysis = fixtureAnalysis(record,'mistakes')
+  Object.assign(record.analysis,{schemaVersion:'2',...calculateDisplaySegments(passage,record.analysis.findings,
+    record.analysis.detectedNotes,record.analysis.attemptTempoBpm,record.analysis.alignment)})
+  record.coaching = fixtureCoaching(record)
+  record.coaching.schemaVersion = '2'
+  record.coaching.primarySegmentId = record.analysis.findings[0].segmentIds[0]
+  const {views,tag} = reviewData(record,passage)
+  let index=0, generation=0
+  const active=[]
+  async function show(){
+    window.fixtureReady=false
+    const mine=++generation
+    for(const screen of active.splice(0)) screen.dispose?.()
+    await Promise.all(['review','guide'].map(phase=>new Promise(resolve=>{
+      const surface=document.getElementById(phase)
+      surface.replaceChildren()
+      const screen=reviewScreen({views,tag,initialIndex:index,phase,history:true,onPlayAgain(){}})
+      active.push(screen)
+      const page=screen.page()
+      for(const box of page.textObject){
+        const node=document.createElement('div')
+        node.dataset.name=box.containerName
+        Object.assign(node.style,{left:`${box.xPosition}px`,top:`${box.yPosition}px`,width:`${box.width}px`,height:`${box.height}px`,
+          opacity:box.textColor===undefined?'1':String(Math.max(.4,box.textColor/4))})
+        node.textContent=box.containerName==='next'?box.content.trim():box.content
+        if(box.containerName==='next') Object.assign(node.style,{textAlign:'right',whiteSpace:'nowrap'})
+        surface.append(node)
+      }
+      const image=document.createElement('img')
+      image.alt=`${phase} notation for ${views[index].position}`
+      Object.assign(image.style,{left:'0px',top:'44px'})
+      surface.append(image)
+      screen.enter({isActive:()=>generation===mine,redraw(){},glasses:{
+        async updateImage(_container,bytes,still){
+          if(!still()) return false
+          const url=URL.createObjectURL(new Blob([bytes],{type:'image/png'}))
+          image.src=url
+          await image.decode()
+          resolve()
+          return true
+        },
+        async updateText(container,content,still){
+          if(still()) surface.querySelector(`[data-name="${container.name}"]`).textContent=content
+          return true
+        },
+      }})
+    })))
+    document.getElementById('counter').textContent=`${index+1} / ${views.length} · ${views[index].findingId} · ${views[index].segment.id}`
+    window.fixtureReady=true
+    window.fixtureInfo={findingId:views[index].findingId,segment:views[index].segment,position:views[index].position}
+  }
+  document.getElementById('previous').onclick=()=>{index=Math.max(0,index-1);void show()}
+  document.getElementById('next').onclick=()=>{index=Math.min(views.length-1,index+1);void show()}
+  void show()
+</script>
+</html>

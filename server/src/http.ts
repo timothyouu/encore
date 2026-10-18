@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util';
 import { isQuotaError } from './quota.js';
 import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
@@ -8,6 +9,7 @@ import type { AnalysisResult, CoachingResult, Passage } from './contracts.js';
 import { coach, type ModelChooser } from './coaching.js';
 import { ArtifactStore, AttemptConflictError, MAX_JSON_BYTES, PurgedAttemptError, StoreFullError, parseId, parseRecording, type Artifact } from './recordings.js';
 import { InputError, parseCoachRequest, parsePassages } from './validation.js';
+import { enrichAnalysisSegments } from '../../shared/segments.ts';
 import { invokeBasicPitch } from './workflow.js';
 
 const RATE_LIMIT = 30;
@@ -204,7 +206,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
             } catch { throw new AnalysisError('invalid analysis result'); }
             if (parsed.request.analysis.attemptId !== artifact.metadata.attemptId ||
                 parsed.request.analysis.attemptTempoBpm !== artifact.metadata.attemptTempoBpm) throw new AnalysisError('analysis mismatch');
-            return parsed.request.analysis;
+            return enrichAnalysisSegments(parsed.request.analysis, parsed.passage);
           }), analysisTimeoutMs).then(result => {
             if (store.get(artifact.id) !== artifact) throw new ExpiredArtifactError();
             if (result.status !== 'error') {
@@ -222,7 +224,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       }
       if (!artifact.analysis) { error(response, 409, 'analysis_required', corsOrigin); return; }
       const parsed = parseCoachRequest(raw, options.library);
-      if (JSON.stringify(parsed.request.analysis) !== JSON.stringify(artifact.analysis)) {
+      if (!isDeepStrictEqual(parsed.request.analysis, artifact.analysis)) {
         error(response, 409, 'analysis_mismatch', corsOrigin); return;
       }
       if (artifact.coaching) { send(response, 200, artifact.coaching, corsOrigin); return; }

@@ -1,4 +1,4 @@
-export type { ReferenceNote, Passage, DetectedNote, Finding, AnalysisResult, CoachingResult, CoachRequest } from '../../shared/contracts.js';
+export type { ReferenceNote, Passage, FindingLocation, DisplaySegment, DetectedNote, Finding, AnalysisResult, CoachingResult, CoachRequest } from '../../shared/contracts.js';
 
 export type RecordingMetadata = {
   attemptId: string;

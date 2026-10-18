@@ -1,5 +1,5 @@
 import { getTextWidth } from '@evenrealities/pretext'
-import type { CoachingResult, Passage } from '../../../shared/contracts.ts'
+import type { CoachingResult, DisplaySegment, Passage } from '../../../shared/contracts.ts'
 import type { VisualCard, VisualNote } from '../../../shared/visual-contract.ts'
 import { validateVisualPlan } from '../../../shared/visual-plan.ts'
 
@@ -11,6 +11,10 @@ export type CardView = {
   // "● Expected F4" / "× Detected E4": solid note = expected, × = what was heard.
   legend: [string, string]
   cue: string
+  // Present only when validated saved evidence supplies an authored bar.
+  segment?: DisplaySegment
+  findingId?: string
+  position?: string
 }
 
 // ASCII '#': the firmware font spaces '♯' wide enough to read as "F #4".
