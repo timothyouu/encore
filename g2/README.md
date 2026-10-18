@@ -30,6 +30,10 @@ To record from the glasses, open **Connection settings** on the hosted phone pag
 
 Glasses diagnostics are in the collapsed **Glasses debug** panel under the phone UI; it opens by itself on any error.
 
+## Legacy upload utility
+
+`src/upload.ts` is retained from the teammate branch for compatibility, but the current host does not import it. Its standalone multipart upload and saved Upload URL are not part of this package's user flow. Active G2 takes use the authenticated shared `PhoneCapture` pipeline described above, with one attempt and one History record. Do not wire the legacy utility alongside that pipeline.
+
 ## Pack for distribution
 
 ```bash
