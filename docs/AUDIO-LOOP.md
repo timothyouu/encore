@@ -11,7 +11,7 @@ The script starts Vite on a free local port and stops it afterward. It generates
 This is browser-mediated synthetic input, not proof of physical microphone or live piano performance. The mock analysis is conditional on the recorded WAV. It does not assert Basic Pitch correctness. The separate real local HTTP pipeline check runs three synthetic WAVs through Basic Pitch and key-free coaching:
 
 ```bash
-PYTHONPATH=. analysis/.venv/bin/python acceptance/recorded-audio-pipeline.py
+PYTHONPATH=. analysis/.venv/bin/python acceptance/recorded-audio-pipeline.py --base http://127.0.0.1:8830
 ```
 
 That pipeline needs the local analysis and coaching servers described in `docs/audio-driven-handoff.md`; its log is `.run/recorded-audio-pipeline.log`. It verified reference 8/8 matching, changed-pitch wrong-note detection, and silence returning insufficient audio with no findings. The browser gate does not need those servers or provider credentials.
@@ -23,3 +23,9 @@ The browser assertions were first frozen before implementation correction at SHA
 Final browser result: pass. One run measured a 2–57 px waveform range, a 441 Hz tone in a 537,182-byte uploaded WAV, one stopped track after pending cancellation, and one stopped track plus a closed metering context after active cancellation. A completed recording closed both its metering and decoding contexts. Representative screenshots are `.run/recording-waveform.png` and `.run/recorded-result.png`. These files are ignored local review artifacts.
 
 The repository gate was also run by the coordinator: 26 server tests and typecheck, 14 Python analysis tests, 4 duration acceptance tests, 8 Paper contract tests, five storage-server acceptance tests, and the full mobile suite plus build. Final mobile coverage was 162 passing tests, including five focused meter tests. The G2 diff is empty. Real phone/browser microphone behavior, physical acoustics, G2 hardware, and live Gemini coaching remain unverified.
+
+## Shared-host merge verification
+
+After reconciling PR22 with main's shared phone/G2 app, the existing browser verifier was updated only for upstream's stricter upload receipt contract: return the uploaded metadata alongside the artifact ID/hash, matching the actual server. The first navigation attempt timed out before reaching any assertions; navigation now waits for DOMContentLoaded with a 30-second timeout so unrelated resource loading does not block app testing. Waveform, actual WAV bytes, service call identity, results, History/reload, denial and cancellation assertions are retained. Reconciled verifier SHA-256: `4f620c7c8d8cf34385c884241ec59fe9c9148c697519707fdc1be4299912d870`.
+
+The rerun passed with waveform range 2-57 px, measured 441 Hz, and a 545,120-byte uploaded WAV. Logs: `.run/merged-browser.log`. Real updated Basic Pitch/offline coaching also passed all three WAV cases at ports 8030/8830 (`.run/merged-pipeline.log`). The expanded repository gate is `bash scripts/verify-storage.sh --include-g2`; results are recorded in the reconciliation section of `audio-driven-handoff.md`.

@@ -3,72 +3,44 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#F6F2EA" />
     <title>Encore</title>
     <style>
       html, body {
-        margin: 0;
-        height: 100%;
-        /* ER brand dark-theme surface (#232323) + Neutral-200 text (#E5E5E5). */
-        background: #232323;
-        color: #E5E5E5;
-        font: 14px/1.4 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
         /* Kill WebView zoom + iOS auto-sizing + rubber-band scroll. */
         touch-action: manipulation;
         -webkit-text-size-adjust: 100%;
         overscroll-behavior: none;
       }
-      body {
+      /* Glasses-side diagnostics (src/status.ts), below the phone UI. */
+      #debug {
+        max-width: 390px;
+        margin: 0 auto 24px;
+        padding: 0 24px;
+        color: #625F58;
+        font: 14px/1.5 system-ui, sans-serif;
+      }
+      #debug summary {
+        min-height: 44px;
         display: flex;
-        flex-direction: column;
+        align-items: center;
+        cursor: pointer;
       }
-      /* Phone-side settings for the glasses app (src/phone.ts). */
-      #settings {
-        padding: 20px 20px 12px;
-        border-bottom: 1px solid #3a3a3a;
-      }
-      #settings label {
-        display: block;
-        margin-bottom: 6px;
-        color: #8A8A8A;
-        font-size: 13px;
-      }
-      #settings .row {
-        display: flex;
-        gap: 8px;
-      }
-      #settings input {
-        flex: 1;
-        min-width: 0;
-        padding: 10px 12px;
-        border: 0;
-        border-radius: 10px;
-        background: rgba(255, 255, 255, 0.08);
-        color: inherit;
-        font: inherit;
-      }
-      #settings button {
-        padding: 10px 16px;
-        border: 0;
-        border-radius: 10px;
-        background: #FEF991;
-        color: #232323;
-        font: inherit;
-        font-weight: 600;
-      }
-      /* Startup/error trail written by src/status.ts. */
-      #app {
-        flex: 1;
-        padding: 16px 20px;
-        box-sizing: border-box;
+      #log {
+        margin: 12px 0 0;
+        max-height: 40vh;
+        overflow-y: auto;
         white-space: pre-wrap;
         font: 12px/1.5 ui-monospace, Menlo, monospace;
-        overflow-y: auto;
       }
     </style>
   </head>
   <body>
-    <div id="settings"></div>
     <div id="app">Loading Encore… (if this never changes, the script did not load)</div>
+    <details id="debug">
+      <summary>Glasses debug</summary>
+      <pre id="log"></pre>
+    </details>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

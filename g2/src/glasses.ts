@@ -118,13 +118,15 @@ export class Glasses {
   // queued for a screen the player already left is dropped.
   updateImage(container: { id: number; name: string }, imageData: Uint8Array, stillWanted: () => boolean) {
     return this.enqueue(`image ${container.name}`, async () => {
-      if (!stillWanted()) return
+      if (!stillWanted()) return false
       const result = await this.bridge.updateImageRawData(
         new ImageRawDataUpdate({ containerID: container.id, containerName: container.name, imageData }),
       )
       if (result !== ImageRawDataUpdateResult.success) {
         status(`image ${container.name}: ${result}`, 'error')
+        return false
       }
+      return true
     })
   }
 

@@ -1,5 +1,5 @@
 export class QuotaStoppedError extends Error {
-  constructor() { super('Gemini quota reached. Provider calls stopped until restart; no paid fallback.'); }
+  constructor() { super('Gemini quota reached. Provider calls stopped pending quota reset and operator verification; no paid fallback.'); }
 }
 export function isQuotaError(value: unknown, seen = new Set<unknown>()): boolean {
   if (!value || typeof value !== 'object' || seen.has(value)) return false;

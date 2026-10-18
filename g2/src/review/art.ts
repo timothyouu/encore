@@ -1,4 +1,6 @@
 import type { VisualCard, VisualNote } from '../../../shared/visual-contract.ts'
+import type { MistakeVisualization } from '../../../mobile/src/visualization.ts'
+import { drawKeyboardSchematic } from '../keyboard.ts'
 import { SHARP_PITCH_CLASSES, canvas, stepOf, toPng } from '../staff.ts'
 import { beatFraction, flaggedNotes, noteName } from './model.ts'
 
@@ -477,7 +479,7 @@ async function paint(draw: (ctx: CanvasRenderingContext2D) => void): Promise<Uin
 export type ReplayStep = {
   caption: string
   layer: Layer
-  art: 'staff' | 'ruler' | 'duration' | 'keys'
+  art: 'staff' | 'ruler' | 'duration' | 'keys' | 'context'
   // Staff frames: how many notes of the layer are shown so far.
   reveal?: number
   // 'step' frames are part of a reveal; 'end' frames close a phase and stay longer.
@@ -502,37 +504,52 @@ function revealPhase(caption: string, layer: Layer, total: number): ReplayStep[]
 // ending on the fix. Staff cards reveal notes one at a time in the order they
 // sounded, then the written notes the same way. Unclear audio has nothing
 // measured to replay.
-export function replaySteps(card: VisualCard): ReplayStep[] {
+export function replaySteps(card: VisualCard, hasKeyboardContext = false): ReplayStep[] {
+  let steps: ReplayStep[]
   switch (artKind(card)) {
     case 'keyboard':
-      return [
+      steps = [
         { caption: 'what you played', layer: 'played', art: 'staff', hold: 'end' },
         { caption: 'the fix', layer: 'both', art: 'staff', hold: 'end' },
         { caption: 'on the keys', layer: 'both', art: 'keys', hold: 'end' },
       ]
+      break
     case 'ruler':
-      return [
+      steps = [
         { caption: 'when you played', layer: 'played', art: 'ruler', hold: 'end' },
         { caption: 'onto the beat', layer: 'written', art: 'ruler', hold: 'end' },
       ]
+      break
     case 'duration':
-      return [
+      steps = [
         { caption: 'how long you held', layer: 'played', art: 'duration', hold: 'end' },
         { caption: 'full length', layer: 'written', art: 'duration', hold: 'end' },
       ]
+      break
     case 'staff':
-      return [
+      steps = [
         ...revealPhase('what you played', 'played', card.detected.notes.length),
         ...revealPhase("what's written", 'written', card.expected.notes.length),
       ]
+      break
     case 'mic':
       return []
   }
+  if (hasKeyboardContext && ['missing_note', 'extra_note', 'timing', 'duration'].includes(card.kind)) {
+    const firstFix = steps.findIndex(step => step.layer === 'written')
+    if (firstFix >= 0) steps.splice(firstFix, 0, {
+      caption: card.kind === 'duration' ? 'compare the hold' : 'on the keys',
+      layer: 'both', art: 'context', hold: 'end',
+    })
+  }
+  return steps
 }
 
-export function renderReplayFrame(card: VisualCard, step: ReplayStep): Promise<Uint8Array> {
+export function renderReplayFrame(card: VisualCard, step: ReplayStep, context?: MistakeVisualization | null): Promise<Uint8Array> {
   return paint(ctx => {
-    if (step.art === 'ruler') drawRuler(ctx, card, step.layer)
+    if (step.art === 'context') {
+      if (!context || !drawKeyboardSchematic(ctx, context, 24)) throw new Error('validated keyboard context unavailable')
+    } else if (step.art === 'ruler') drawRuler(ctx, card, step.layer)
     else if (step.art === 'duration') drawDuration(ctx, card, step.layer)
     else if (step.art === 'keys') drawStatic(ctx, card)
     else drawStaffWindow(ctx, card, step.layer, step.reveal)

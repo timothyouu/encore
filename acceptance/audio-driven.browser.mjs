@@ -82,7 +82,7 @@ function serviceResponses(page) {
         assert.equal(body.metadata.sampleRate, 22_050);
         evidence.normalized = inspectUploadedWav(body.wavBase64);
         evidence.attemptId = body.metadata.attemptId;
-        response = { artifactId: 'acceptance-artifact', attemptId: evidence.attemptId,
+        response = { ...body.metadata, artifactId: 'acceptance-artifact', attemptId: evidence.attemptId,
           audioUrl: '/api/audio/acceptance-artifact', expiresAt: new Date(Date.now() + 60_000).toISOString(),
           sha256: createHash('sha256').update(evidence.normalized.wav).digest('hex') };
       } else if (url.pathname === '/api/analyze') {

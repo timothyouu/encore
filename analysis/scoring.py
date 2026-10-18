@@ -10,7 +10,7 @@ from math import ceil, isfinite
 from statistics import median
 from typing import Any
 
-SCORING_VERSION = "1.1.0-demo"
+SCORING_VERSION = "1.1.1-demo"
 TIMING_FINDING_SEC = 0.15
 # Provisional event-duration thresholds, not calibrated acoustic sustain measurements.
 DURATION_MIN_SCORE = 0.5
@@ -202,7 +202,25 @@ def score_notes(
             })
     for j, played in enumerate(detected):
         if j not in matched_detected:
+            # A short event between aligned repeats may be a detector split or
+            # a real quick strike. Keep it visible and withhold musical claims.
+            duration = played.get("durationSec")
+            if (isinstance(duration, (int, float)) and isfinite(duration)
+                    and 0 < duration <= 0.20 and 0 < j < len(detected) - 1
+                    and j - 1 in matched_detected and j + 1 in matched_detected
+                    and detected[j - 1]["midiPitch"] == played["midiPitch"]
+                    == detected[j + 1]["midiPitch"]
+                    and detected[j - 1]["onsetSec"] + detected[j - 1]["durationSec"]
+                    >= played["onsetSec"] - 0.03
+                    and detected[j + 1]["onsetSec"] <= played["onsetSec"] + duration + 0.03):
+                if "ambiguous_repeat_boundary" not in result["audioQuality"]["warnings"]:
+                    result["audioQuality"]["warnings"].append("ambiguous_repeat_boundary")
+                continue
             findings.append({"kind": "extra_note", "detectedNoteId": played["id"]})
+    if "ambiguous_repeat_boundary" in result["audioQuality"]["warnings"]:
+        result["status"] = "uncertain"
+        result["alignment"] = {"offsetSec": None, "reliable": False}
+        return result
     result["findings"] = [{"id": f"f{index}", **finding} for index, finding in enumerate(findings, 1)]
     result["metrics"] = {
         "matchedNotes": correct_pitch_count,

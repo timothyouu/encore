@@ -1,12 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PhoneCapture, validateEndpoints, requestTimeoutMs } from '../src/capture.ts';
 import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../src/session.ts';
 import { PhonePersistence } from '../src/storage.ts';
 
 const endpoints = { upload: '/api/recordings', analysis: '/api/analyze', coaching: '/api/coach' };
-const artifact = attemptId => ({ artifactId: 'artifact-1', attemptId, audioUrl: '/v1/recordings/artifact-1',
-  expiresAt: new Date(Date.now() + 60_000).toISOString(), sha256: 'a'.repeat(64) });
+let latestUploadMetadata;
+let latestUploadDigest;
+const artifact = attemptId => ({ ...latestUploadMetadata, artifactId: 'artifact-1', attemptId,
+  audioUrl: '/v1/recordings/artifact-1/audio',
+  expiresAt: new Date(Date.now() + 60_000).toISOString(), sha256: latestUploadDigest });
 const store = () => new SessionStore({ getItem() { return null; }, setItem() {} });
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
 function browser(fetchImplementation, getUserMedia) {
@@ -30,7 +34,18 @@ function browser(fetchImplementation, getUserMedia) {
   Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { mediaDevices: { getUserMedia: getUserMedia ?? (() => Promise.resolve(stream)) } } });
   Object.defineProperty(globalThis, 'MediaRecorder', { configurable: true, value: Recorder });
   Object.defineProperty(globalThis, 'AudioContext', { configurable: true, value: Decoder });
-  Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetchImplementation });
+  latestUploadMetadata = undefined;
+  latestUploadDigest = undefined;
+  Object.defineProperty(globalThis, 'fetch', { configurable: true, value: async (url, options) => {
+    if (options?.body) {
+      const body = JSON.parse(options.body);
+      if (body.metadata && body.wavBase64) {
+        latestUploadMetadata = body.metadata;
+        latestUploadDigest = createHash('sha256').update(Buffer.from(body.wavBase64, 'base64')).digest('hex');
+      }
+    }
+    return fetchImplementation(url, options);
+  } });
   return { track, stream, Recorder, restore() { for (const [name, descriptor] of original) {
     if (descriptor) Object.defineProperty(globalThis, name, descriptor); else delete globalThis[name];
   } } };
@@ -290,4 +305,115 @@ test('late upload response after cancellation cannot overwrite completed attempt
     assert.equal(session.count(), 1); assert.equal(session.records[0].error.stage, 'upload');
     assert.equal(session.records[0].analysis, null); capture.dispose();
   } finally { env.restore(); }
+});
+
+test('a host-completed recording (G2) runs the same upload, analysis and coaching, labeled g2', async () => {
+  const session = store(); const calls = [];
+  const env = browser(async (url, options) => {
+    const body = JSON.parse(options.body); calls.push({ url, body });
+    const record = session.records[0];
+    return { ok: true, json: async () => url === endpoints.upload ? artifact(record.attemptId) :
+      url === endpoints.analysis ? fixtureAnalysis(record, 'mistakes') : fixtureCoaching(record) };
+  });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    session.start('g2'); const record = session.stop();
+    await Promise.all([capture.processRecording(record, new Blob(['wav'])), capture.processRecording(record, new Blob(['wav']))]);
+    assert.equal(session.count(), 1); assert.equal(session.records.length, 1);
+    assert.equal(session.state.screen, 'review');
+    assert.deepEqual(calls.map(call => call.url), Object.values(endpoints));
+    assert.equal(calls[0].body.metadata.captureSource, 'g2');
+    assert.equal(calls[0].body.metadata.attemptId, record.attemptId);
+    capture.dispose();
+  } finally { env.restore(); }
+});
+
+test('a host recording that is empty or not completed is never uploaded', async () => {
+  const session = store(); const calls = [];
+  const env = browser(async (url) => { calls.push(url); return { ok: true, json: async () => ({}) }; });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    const recording = session.start('g2');
+    await capture.processRecording(recording, new Blob(['wav']));
+    const completed = session.stop();
+    await capture.processRecording(completed, new Blob([]));
+    assert.equal(calls.length, 0);
+    assert.equal(session.records[0].error.stage, 'capture');
+    assert.equal(session.count(), 1);
+    capture.dispose();
+  } finally { env.restore(); }
+});
+
+test('receipt SHA and metadata must match normalized upload before analysis', async () => {
+  const session = store(); const calls = [];
+  const env = browser(async (url) => { calls.push(url); const record = session.records[0];
+    return { ok: true, json: async () => ({ ...artifact(record.attemptId), sha256: 'b'.repeat(64) }) }; });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    await capture.start(); await capture.stop();
+    assert.deepEqual(calls, [endpoints.upload]);
+    assert.equal(session.records[0].error.stage, 'upload');
+    assert.match(session.records[0].error.message, /mismatched|invalid/i);
+    capture.dispose();
+  } finally { env.restore(); }
+});
+
+test('terminal upload 410 releases retry audio and asks for a new attempt', async () => {
+  const session = store(); let calls = 0;
+  const env = browser(async () => { calls++; return { ok: false, status: 410 }; });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    await capture.start(); await capture.stop();
+    const id = session.records[0].attemptId;
+    assert.equal(calls, 1);
+    assert.equal(session.records[0].error.stage, 'upload');
+    assert.match(session.records[0].error.message, /Record a new attempt/);
+    assert.equal(capture.canRetry(id), false);
+    await capture.retry(id);
+    assert.equal(calls, 1);
+    capture.dispose();
+  } finally { env.restore(); }
+});
+
+test('session bearer is scoped to exact HTTPS service and revoked on endpoint origin change', async () => {
+  const session = store(); const secure = { upload: 'https://approved.example/api/recordings',
+    analysis: 'https://approved.example/api/analyze', coaching: 'https://approved.example/api/coach' };
+  const calls = []; let failure = true;
+  const env = browser(async (url, options) => {
+    calls.push({ url, authorization: options.headers.Authorization, redirect: options.redirect });
+    const record = session.records[0];
+    if (failure) return { ok: false, status: 503 };
+    return { ok: true, json: async () => url.endsWith('/recordings') ? artifact(record.attemptId) :
+      url.endsWith('/analyze') ? fixtureAnalysis(record, 'uncertain') : {} };
+  });
+  try {
+    session.selectPassage('P01');
+    const capture = new PhoneCapture(session, secure, undefined, undefined,
+      () => ({ token: 'session-only-token-123', origin: 'https://approved.example' }));
+    await capture.start(); await capture.stop();
+    assert.equal(calls[0].authorization, 'Bearer session-only-token-123');
+    assert.equal(calls[0].redirect, 'error');
+    const moved = { ...secure, upload: 'https://other.example/api/recordings',
+      analysis: 'https://other.example/api/analyze', coaching: 'https://other.example/api/coach' };
+    assert.equal(capture.updateEndpoints(moved), true);
+    failure = false; await capture.retry();
+    assert.equal(calls[1].authorization, undefined);
+    assert.equal(calls[2].authorization, undefined);
+    assert.equal(session.records[0].processingStatus, 'result');
+    capture.dispose();
+  } finally { env.restore(); }
+});
+test('receipt passage and sample-rate identity cannot be substituted', async () => {
+  for (const change of [{ passageId: 'P02' }, { sourceSampleRate: 16000 }]) {
+    const session = store(); const calls = [];
+    const env = browser(async (url) => { calls.push(url); const record = session.records[0];
+      return { ok: true, json: async () => ({ ...artifact(record.attemptId), ...change }) }; });
+    try {
+      session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+      await capture.start(); await capture.stop();
+      assert.deepEqual(calls, [endpoints.upload]);
+      assert.equal(session.records[0].error.stage, 'upload');
+      capture.dispose();
+    } finally { env.restore(); }
+  }
 });

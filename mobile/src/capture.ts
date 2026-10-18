@@ -32,6 +32,38 @@ function failureCode(cause: unknown): FailureCode {
   return 'request_failed';
 }
 type Artifact = { artifactId: string; audioUrl: string; expiresAt: string; sha256: string; attemptId: string };
+export type SessionAuthorization = { token: string; origin: string };
+
+async function sha256(bytes: Uint8Array): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error('Secure audio verification is unavailable.');
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
+  return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function captureSource(record: AttemptRecord): 'phone' | 'test' | 'g2' {
+  return record.captureSource === 'test' || record.captureSource === 'g2' ? record.captureSource : 'phone';
+}
+
+function scopedBearer(url: string, endpoints: CaptureEndpoints, authorization: SessionAuthorization | undefined): string | undefined {
+  if (!authorization || !/^[A-Za-z0-9._~+\/=\-]{16,1024}$/.test(authorization.token)) return undefined;
+  try {
+    const origin = new URL(authorization.origin);
+    if (origin.protocol !== 'https:' || origin.origin !== authorization.origin ||
+        origin.pathname !== '/' || origin.search || origin.hash || origin.username || origin.password) return undefined;
+    const routes = [
+      [endpoints.upload, 'recordings'],
+      [endpoints.analysis, 'analyze'],
+      [endpoints.coaching, 'coach'],
+    ] as const;
+    for (const [endpoint, route] of routes) {
+      const parsed = new URL(endpoint);
+      if (parsed.origin !== origin.origin || !['/api/' + route, '/v1/' + route].includes(parsed.pathname) ||
+          parsed.search || parsed.hash || parsed.username || parsed.password) return undefined;
+    }
+    if (!routes.some(([endpoint]) => endpoint === url)) return undefined;
+    return authorization.token;
+  } catch { return undefined; }
+}
 
 function validEndpoint(value: string): boolean {
   if (!value || value.trim() !== value) return false;
@@ -63,12 +95,19 @@ function message(error: unknown): string {
   return error instanceof Error && error.message ? error.message : 'The request failed.';
 }
 
-function artifactValid(value: unknown, attemptId: string): value is Artifact {
+function artifactValid(value: unknown, record: AttemptRecord, normalized: NormalizedAudio,
+  attemptTempoBpm: number, digest: string): value is Artifact {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
-  return item.attemptId === attemptId && typeof item.artifactId === 'string' && item.artifactId.length > 0 &&
+  return item.attemptId === record.attemptId &&
+    item.passageId === record.passageId && item.passageVersion === record.passageVersion &&
+    item.attemptTempoBpm === attemptTempoBpm && item.captureSource === captureSource(record) &&
+    item.sourceSampleRate === normalized.sourceSampleRate && item.sampleRate === normalized.sampleRate &&
+    item.channels === normalized.channels && item.encoding === normalized.encoding &&
+    typeof item.durationSec === 'number' && Math.abs(item.durationSec - normalized.durationSec) < 0.0001 &&
+    typeof item.artifactId === 'string' && item.artifactId.length > 0 &&
     typeof item.audioUrl === 'string' && item.audioUrl.length > 0 && typeof item.expiresAt === 'string' &&
-    Date.parse(item.expiresAt) > Date.now() && typeof item.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(item.sha256);
+    Date.parse(item.expiresAt) > Date.now() && item.sha256 === digest;
 }
 
 export class PhoneCapture {
@@ -89,23 +128,27 @@ export class PhoneCapture {
   private rejectRecording: ((error: Error) => void) | null = null;
   private trace: TelemetrySpan | null = null;
   private stepTrace: TelemetrySpan | null = null;
-  private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; artifact?: Artifact; savedAt?: number }>();
+  private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; digest?: string; artifact?: Artifact; savedAt?: number }>();
   private retryExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly store: SessionStore;
   private endpoints: CaptureEndpoints;
   private readonly onChange?: () => void;
   private readonly persistence?: PhonePersistence;
+  private readonly getSessionAuthorization?: () => SessionAuthorization | undefined;
+  private sessionAuthorizationRevoked = false;
 
   constructor(
     store: SessionStore,
     endpoints: CaptureEndpoints,
     onChange?: () => void,
     persistence?: PhonePersistence,
+    getSessionAuthorization?: () => SessionAuthorization | undefined,
   ) {
     this.store = store;
     this.endpoints = endpoints;
     this.onChange = onChange;
     this.persistence = persistence;
+    this.getSessionAuthorization = getSessionAuthorization;
     if (typeof window !== 'undefined') window.addEventListener('pagehide', this.onPageHide);
   }
 
@@ -113,6 +156,11 @@ export class PhoneCapture {
 
   updateEndpoints(endpoints: CaptureEndpoints): boolean {
     if (this.disposed || this.busy || this.recording || !validateEndpoints(endpoints)) return false;
+    if ([endpoints.upload, endpoints.analysis, endpoints.coaching].some((endpoint, index) => {
+      const previous = [this.endpoints.upload, this.endpoints.analysis, this.endpoints.coaching][index];
+      try { return new URL(endpoint).origin !== new URL(previous).origin; }
+      catch { return endpoint !== previous; }
+    })) this.sessionAuthorizationRevoked = true;
     if (endpoints.upload !== this.endpoints.upload) {
       for (const saved of this.saved.values()) saved.artifact = undefined;
     }
@@ -173,7 +221,7 @@ export class PhoneCapture {
     (this.retryExpiryTimer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
   }
 
-  private remember(attemptId: string, value: { blob?: Blob; normalized?: NormalizedAudio; artifact?: Artifact; savedAt?: number }): void {
+  private remember(attemptId: string, value: { blob?: Blob; normalized?: NormalizedAudio; digest?: string; artifact?: Artifact; savedAt?: number }): void {
     this.saved.set(attemptId, { ...value, savedAt: value.savedAt ?? Date.now() });
     this.scheduleMemoryExpiry();
   }
@@ -360,8 +408,11 @@ export class PhoneCapture {
     this.request = controller;
     const timeout = setTimeout(() => controller.abort(), requestTimeoutMs(this.requestStage));
     try {
+      const authorization = this.sessionAuthorizationRevoked ? undefined : this.getSessionAuthorization?.();
+      const token = scopedBearer(url, this.endpoints, authorization);
       const response = await fetch(url, { method: 'POST', body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', signal: controller.signal });
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+        credentials: 'same-origin', redirect: token ? 'error' : 'follow', signal: controller.signal });
       if (!response.ok) throw new ServiceStatusError(`Service returned HTTP ${response.status}.`);
       try {
         return await response.json() as unknown;
@@ -444,17 +495,18 @@ export class PhoneCapture {
       this.requestStage = 'upload';
       this.startStep('phone.upload_request');
       try {
+        saved.digest ??= await sha256(normalized.wav);
         const response = await this.post(this.endpoints.upload, {
           metadata: { attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
             attemptTempoBpm: passage.tempoBpm, sourceSampleRate: normalized.sourceSampleRate,
             sampleRate: normalized.sampleRate, channels: normalized.channels, encoding: normalized.encoding,
-            durationSec: normalized.durationSec, captureSource: record.captureSource === 'test' ? 'test' : 'phone' },
+            durationSec: normalized.durationSec, captureSource: captureSource(record) },
           wavBase64: bytesToBase64(normalized.wav),
         });
         if (generation !== this.generation || this.disposed) return;
         this.endStep('ok');
         this.startStep('phone.upload_validation');
-        if (!artifactValid(response, record.attemptId)) throw new InvalidResponseError('Upload returned a mismatched or invalid artifact.');
+        if (!artifactValid(response, record, normalized, passage.tempoBpm, saved.digest)) throw new InvalidResponseError('Upload returned a mismatched or invalid artifact.');
         artifact = response;
         saved.artifact = artifact;
         uploaded = true;
@@ -462,6 +514,11 @@ export class PhoneCapture {
       } catch (cause) {
         if (generation !== this.generation || this.disposed) return;
         this.endStep('error');
+        if (cause instanceof ServiceStatusError && /HTTP 410\b/.test(cause.message)) {
+          this.fail(record, 'upload', 'This attempt is no longer available on the server. Record a new attempt.', 'service_error');
+          await this.releaseAudio(record.attemptId);
+          return;
+        }
         this.fail(record, 'upload', `Upload failed: ${message(cause)}`, failureCode(cause));
         return;
       }
@@ -484,7 +541,9 @@ export class PhoneCapture {
         if (generation !== this.generation || this.disposed) return;
         this.endStep('error');
         if (cause instanceof ServiceStatusError && /HTTP (404|410)/.test(cause.message)) saved.artifact = undefined;
-        this.fail(record, 'analysis', `Analysis failed: ${message(cause)}`, failureCode(cause));
+        this.fail(record, 'analysis', cause instanceof ServiceStatusError && /HTTP 410\b/.test(cause.message)
+          ? 'Audio artifact expired. Retry the saved recording while it is available.'
+          : `Analysis failed: ${message(cause)}`, failureCode(cause));
         return;
       }
     }
@@ -514,7 +573,9 @@ export class PhoneCapture {
       if (generation !== this.generation || this.disposed) return;
       this.endStep('error');
       if (cause instanceof ServiceStatusError && /HTTP (404|410)/.test(cause.message)) saved.artifact = undefined;
-      this.fail(record, 'coaching', `Coaching failed: ${message(cause)}`, failureCode(cause));
+      this.fail(record, 'coaching', cause instanceof ServiceStatusError && /HTTP 410\b/.test(cause.message)
+        ? 'Audio artifact expired. Retry the saved recording while it is available.'
+        : `Coaching failed: ${message(cause)}`, failureCode(cause));
     }
   }
 
@@ -561,6 +622,43 @@ export class PhoneCapture {
         const record = this.store.records.find(item => item.attemptId === this.activeAttemptId);
         this.endTrace(record?.processingStatus === 'result' ? 'ok' :
           record?.processingStatus === 'error' ? 'error' : 'interrupted');
+        this.busy = false; this.activeAttemptId = null; this.changed();
+      }
+    }
+  }
+
+  /**
+   * Processes an attempt that another capture source already completed (e.g. a
+   * hosting page's G2 microphone): the same normalization, upload, retry window
+   * and history as a phone recording. The caller owns the device; this only
+   * handles the audio bytes.
+   */
+  async processRecording(record: AttemptRecord, blob: Blob): Promise<void> {
+    if (this.disposed || this.busy || this.recording) return;
+    if (record.captureStatus !== 'completed' || record.processingStatus !== 'processing') return;
+    this.pruneMemory();
+    if (blob.size === 0) { this.fail(record, 'capture', 'No audio was recorded.', 'empty_audio'); return; }
+    if (this.saved.size >= RETRY_COUNT_CAP || this.memoryBytes() + blob.size > RETRY_BYTE_CAP ||
+        (this.persistence && !this.persistence.canReserveAudio(MAX_NORMALIZED_WAV_BYTES))) {
+      this.fail(record, 'normalization', 'Recording retry storage is full (24 recordings or 32 MiB). Retry an earlier recording or wait for its 10 minute window to expire.', 'storage_failed');
+      return;
+    }
+    if (!validateEndpoints(this.endpoints)) {
+      this.fail(record, 'upload', 'Configure upload, analysis, and coaching endpoints first.', 'request_failed');
+      return;
+    }
+    this.busy = true;
+    const generation = ++this.generation;
+    this.activeAttemptId = record.attemptId;
+    this.changed();
+    try {
+      this.beginTrace();
+      this.remember(record.attemptId, { blob });
+      await this.process(record, generation);
+    } finally {
+      if (generation === this.generation) {
+        const status = this.store.records.find(item => item.attemptId === record.attemptId)?.processingStatus;
+        this.endTrace(status === 'result' ? 'ok' : status === 'error' ? 'error' : 'interrupted');
         this.busy = false; this.activeAttemptId = null; this.changed();
       }
     }

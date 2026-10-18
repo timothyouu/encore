@@ -1,10 +1,12 @@
-# Future glasses integration
+# Phone and glasses integration
 
-This separate folder reserves the phone-to-glasses integration workstream. Device integration is deferred; nothing in this folder executes or is imported by mobile.
+This folder documents the shared phone/G2 workstream. Nothing in this folder executes or is imported by mobile.
 
-The existing `g2/` folder remains the glasses owner's runtime. Do not duplicate it here or connect it to `mobile/` until an integration contract is reviewed with that owner.
+The `g2/` host owns the bridge, microphone, gestures, and display. It mounts the phone app and shares its SessionStore, normalized recording pipeline, and History. Mobile remains free of device side effects.
 
-## Pending contract
+## Contract and remaining device work
+
+The implemented integration contract is in [CONTRACT.md](CONTRACT.md). Physical evidence and remaining acceptance gates are in [the verification report](../docs/physical-device-verification.md).
 
 - Exchange validated display preferences: schemaVersion, showSheetMusicWhilePlaying, sheetMusicSize, and showNoteNames.
 - Define device acknowledgement, connection/disconnection, unsupported preferences, and error reporting. A local preference save must never imply successful device application.
