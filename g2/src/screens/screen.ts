@@ -15,6 +15,7 @@ export type Screen = {
   page(): Page
   enter?(context: ScreenContext): void
   onInput(input: Input): void
-  // Long press opens Settings unless this is false (Recording, Analyzing, Settings).
-  allowsSettings?: boolean
+  // The OS menu offers the sheet-music toggle unless this is false
+  // (Recording, Analyzing): settings never change mid-capture.
+  allowsMenu?: boolean
 }

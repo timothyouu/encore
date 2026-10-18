@@ -1,5 +1,5 @@
 import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
-import { HEADER_Y, HINT_Y, MARGIN_X, splitRow, text } from '../layout'
+import { HEADER_Y, MARGIN_X, hintRow, splitRow, text } from '../layout'
 import type { Passage } from '../passages'
 import { STAFF_H, TILE_W, renderStaffTiles } from '../staff'
 import { status } from '../status'
@@ -38,7 +38,8 @@ export function readyScreen({ passage, onRecord, onBack }: ReadyOptions): Screen
         ...splitRow(1, 'title', HEADER_Y, passage.title, `${passage.tempoBpm} bpm · RH`),
         // Taps go to whichever container captures events; any one will do.
         text({ id: 3, name: 'focus', x: MARGIN_X, y: FOCUS_Y, width: 528, content: `Focus: ${passage.focus}`, capture: true }),
-        ...splitRow(4, 'hint', HINT_Y, 'tap  ● record', '2× tap  back'),
+        // Only the record hint: recording must never start by surprise. Back is a system convention.
+        ...hintRow(4, ['tap  ●']),
       ],
       imageObject: [staffTile(STAFF_LEFT, 0), staffTile(STAFF_RIGHT, TILE_W)],
     }),

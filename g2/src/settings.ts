@@ -1,3 +1,4 @@
+import { MenuContainerProperty, MenuItemProperty } from '@evenrealities/even_hub_sdk'
 import type { Glasses } from './glasses'
 import { status } from './status'
 
@@ -30,4 +31,19 @@ export function saveSettings(glasses: Glasses, settings: DisplaySettings) {
   glasses.writeStorage(STORAGE_KEY, JSON.stringify(settings)).then(ok => {
     if (!ok) status('settings save failed', 'error')
   }, () => {})
+}
+
+export const SHEET_MUSIC_MENU_ITEM = 1
+
+// The OS menu keeps no item state, so the label is a verb for what selecting
+// it will do, and pages are re-declared after a toggle to refresh it.
+export function sheetMusicMenu(settings: DisplaySettings) {
+  return new MenuContainerProperty({
+    menuItems: [
+      new MenuItemProperty({
+        itemID: SHEET_MUSIC_MENU_ITEM,
+        itemName: settings.showSheetMusicWhilePlaying ? 'Hide sheet music' : 'Show sheet music',
+      }),
+    ],
+  })
 }

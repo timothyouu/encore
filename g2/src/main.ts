@@ -6,8 +6,7 @@ import { PASSAGES } from './passages'
 import { readyScreen } from './screens/ready'
 import type { Screen } from './screens/screen'
 import { selectionScreen } from './screens/selection'
-import { settingsScreen } from './screens/settings'
-import { loadSettings, saveSettings } from './settings'
+import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings'
 
 async function main() {
   status('script loaded; waiting for Even bridge…')
@@ -17,14 +16,15 @@ async function main() {
   status('bridge ready')
 
   let current: Screen
-  // Loaded behind the first page so startup isn't held up by a storage read.
-  let settings = loadSettings(glasses)
+  // Read before the first page: every page declares the menu label from it.
+  let settings = await loadSettings(glasses)
 
   function show(screen: Screen) {
     current = screen
     status(`screen → ${screen.name}`)
+    const menuObject = screen.allowsMenu === false ? undefined : sheetMusicMenu(settings)
     // Failures are already reported by the glasses queue.
-    glasses.showPage(screen.page()).catch(() => {})
+    glasses.showPage({ ...screen.page(), menuObject }).catch(() => {})
     screen.enter?.({ glasses, isActive: () => current === screen })
   }
 
@@ -46,19 +46,12 @@ async function main() {
     )
   }
 
-  // Settings returns to the exact screen object it was opened from.
-  async function openSettings(from: Screen) {
-    show(
-      settingsScreen({
-        settings: await settings,
-        onChange: next => {
-          settings = Promise.resolve(next)
-          saveSettings(glasses, next)
-          status(`sheet music while playing: ${next.showSheetMusicWhilePlaying ? 'on' : 'off'}`)
-        },
-        onClose: () => show(from),
-      }),
-    )
+  function toggleSheetMusic() {
+    settings = { ...settings, showSheetMusicWhilePlaying: !settings.showSheetMusicWhilePlaying }
+    saveSettings(glasses, settings)
+    status(`sheet music while playing: ${settings.showSheetMusicWhilePlaying ? 'on' : 'off'}`)
+    // Re-declare the page so the menu label flips (Hide ↔ Show).
+    show(current)
   }
 
   const handleInput = filterInputs(input => {
@@ -66,13 +59,11 @@ async function main() {
       unsubscribe()
       return
     }
-    // Returning from the background: redraw whatever screen we were on.
-    if (input.kind === 'foreground') {
-      show(current)
-      return
-    }
-    if (input.kind === 'longPress') {
-      if (current.allowsSettings !== false) openSettings(current)
+    // Opening and closing the OS menu also fire foreground events; the page
+    // is still on the glasses, so there is nothing to redraw.
+    if (input.kind === 'foreground') return
+    if (input.kind === 'menuItem') {
+      if (input.itemID === SHEET_MUSIC_MENU_ITEM && current.allowsMenu !== false) toggleSheetMusic()
       return
     }
     current.onInput(input)
