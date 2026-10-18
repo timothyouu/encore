@@ -2,6 +2,7 @@ import { resolveVisualPlan } from '../../mobile/src/paper-evidence.ts'
 import type { AttemptRecord } from '../../mobile/src/session.ts'
 import type { Passage } from './passages.ts'
 import { feedbackEntries } from '../../shared/feedback.ts'
+import { MAX_FEEDBACK_FINDINGS } from '../../shared/finding-priority.ts'
 import { buildVisualPlan } from '../../shared/visual-plan.ts'
 import type { VisualNote } from '../../shared/visual-contract.ts'
 import { viewsForCards, type CardView } from './review/model.ts'
@@ -31,9 +32,8 @@ export function reviewData(record: AttemptRecord, passage: Passage): ReviewData 
     const views = viewsForCards(plan.cards, { evidenceFindingIds: [] })
     return { tag, views: views.length ? views : [textView("Couldn't hear clearly", 'Audio was uncertain', 'Try another recording.')] }
   }
-  // The overview plan deliberately caps its top cards. Navigation must still
-  // include every finding/bar pair, using deterministic evidence for each.
-  const views = feedbackEntries(analysis, passage, record.coaching).map(({ finding, segment }) => {
+  // Keep the full recording on the phone; glasses focus on ten distinct mistakes.
+  const views = feedbackEntries(analysis, passage, record.coaching, MAX_FEEDBACK_FINDINGS).map(({ finding, segment }) => {
     if (analysis.schemaVersion === '2' && !segment) return {
       ...textView('Position unavailable', finding.kind.replace(/_/g, ' '), 'No reliable bar position. Review this event on the phone.'),
       findingId: finding.id,

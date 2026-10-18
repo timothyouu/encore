@@ -259,6 +259,32 @@ function saveSegmentedAttempt(store) {
   return record
 }
 
+test('glasses navigation stops at ten mistakes while phone selection can reach all twenty', async () => {
+  const { store, input, controller } = setup()
+  store.selectPassage('P01')
+  const record = store.start('demo')
+  store.stop()
+  const analysis = fixtureAnalysis(record, 'mistakes')
+  analysis.findings = [{ id: 'missing', kind: 'missing_note', referenceNoteId: PASSAGES[0].notes[0].id },
+    ...Array.from({ length: 19 }, (_, i) => ({ id: `t${i}`, kind: 'timing',
+      referenceNoteId: PASSAGES[0].notes[3].id, detectedNoteId: 'detected-4', timingDeltaMs: 170 + i * 10 }))]
+  assert.equal(store.applyAnalysis(record.attemptId, analysis), true)
+  assert.equal(store.applyCoaching(record.attemptId, fixtureCoaching(record)), true)
+  await settle()
+  assert.equal(store.entries().length, 20)
+  const saved = JSON.stringify(store.records)
+  // A phone-only finding does not let glasses navigate past their selected set.
+  store.selectEntry(15)
+  await settle()
+  await input('swipeDown')
+  assert.equal(store.state.findingIndex, 0)
+  assert.equal(controller.current.name, 'guide')
+  for (let i = 0; i < 25; i++) await input('swipeDown')
+  assert.equal(store.state.findingIndex, 9)
+  assert.equal(controller.current.name, 'guide')
+  assert.equal(JSON.stringify(store.records), saved)
+})
+
 test('segmented G2 navigation visits every finding/bar pair as Review then Guide, and reverses exactly', async () => {
   const { store, input, controller, bridge } = setup()
   saveSegmentedAttempt(store)

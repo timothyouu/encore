@@ -206,3 +206,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .segment-button{border:1px solid var(--line);border-radius:16px;min-height:36px;padding:6px 13px;background:transparent;color:var(--ink);font:inherit;font-size:13px}
 .segment-button.is-selected{background:var(--ink);color:var(--paper)}
 .result-page .score-frame,.guide-page .score-frame{margin:14px 0}
+.all-mistakes{margin:14px 0;border:1px solid var(--line);border-radius:14px;padding:14px}
+.all-mistakes summary{cursor:pointer;font-weight:600}
+.all-mistakes-list{max-height:320px;overflow-y:auto;margin-top:12px;display:grid;gap:8px}
+.all-mistakes-item{display:grid;gap:5px;text-align:left;padding:12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit}
+.all-mistakes-item[aria-pressed=true]{border-color:var(--ink);background:var(--surface)}

@@ -1,12 +1,13 @@
 import type { AnalysisResult, CoachingResult, DisplaySegment, Finding, Passage } from './contracts.ts';
 import { analysisSegmentsValid } from './segments.ts';
 import { buildVisualPlan } from './visual-plan.ts';
+import { compareFindingImportance, topFindings } from './finding-priority.ts';
 
 export type FeedbackEntry = { finding: Finding; segment: DisplaySegment | null };
 
-/** Priority cards focus review; the full findings and all affected bars remain reachable. */
+/** Keep all phone findings; glasses can limit distinct mistakes before bar expansion. */
 export function feedbackEntries(
-  analysis: AnalysisResult, passage: Passage, coaching?: CoachingResult | null,
+  analysis: AnalysisResult, passage: Passage, coaching?: CoachingResult | null, limit: number = Infinity,
 ): FeedbackEntry[] {
   const beat = (finding: Finding): number => {
     const referenceBeat = passage.notes.find(note => note.id === finding.referenceNoteId)?.onsetBeat;
@@ -15,14 +16,14 @@ export function feedbackEntries(
       (detected && analysis.alignment.reliable && analysis.alignment.offsetSec !== null
         ? (detected.onsetSec - analysis.alignment.offsetSec) * analysis.attemptTempoBpm / 60 : Infinity);
   };
-  const orderedFindings = [...analysis.findings].sort((a, b) => beat(a) - beat(b));
+  const orderedFindings = topFindings(analysis, passage, limit);
   if (analysis.schemaVersion === '1') {
     const priority = buildVisualPlan(analysis, passage).cards.flatMap(card => card.evidence.findingIds);
     const rank = (finding: Finding): number => {
       const index = priority.indexOf(finding.id);
       return index < 0 ? Infinity : index;
     };
-    return orderedFindings.sort((a, b) => rank(a) - rank(b) || beat(a) - beat(b))
+    return orderedFindings.sort((a, b) => rank(a) - rank(b) || compareFindingImportance(a, b) || beat(a) - beat(b))
       .map(finding => ({ finding, segment: null }));
   }
   if (!analysisSegmentsValid(analysis, passage)) return [];
@@ -49,16 +50,21 @@ export function feedbackEntries(
       if (card.evidence.findingIds.some(id => segment.findingIds.includes(id))) append(segment);
     }
   }
-  for (const segment of segments) append(segment);
+  for (const finding of orderedFindings) {
+    prioritize(finding.id);
+    for (const segment of segments) {
+      if (finding.segmentIds?.includes(segment.id)) append(segment);
+    }
+  }
   const rankedFindings = [...orderedFindings].sort((a, b) => {
     const rank = (finding: Finding): number => {
       const index = priorityIds.indexOf(finding.id);
       return index < 0 ? Infinity : index;
     };
-    return rank(a) - rank(b) || beat(a) - beat(b);
+    return rank(a) - rank(b) || compareFindingImportance(a, b) || beat(a) - beat(b);
   });
-  const entries: FeedbackEntry[] = ordered.flatMap(segment => rankedFindings
-    .filter(finding => finding.segmentIds?.includes(segment.id)).map(finding => ({ finding, segment })));
+  const entries: FeedbackEntry[] = rankedFindings.flatMap(finding => ordered
+    .filter(segment => finding.segmentIds?.includes(segment.id)).map(segment => ({ finding, segment })));
   return [...entries, ...orderedFindings.filter(finding => finding.location === null)
     .map(finding => ({ finding, segment: null }))];
 }

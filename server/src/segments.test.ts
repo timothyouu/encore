@@ -163,3 +163,39 @@ test('v2 coaching keeps schema and derives primary segment from evidence; uncert
   assert.equal(analysisSegmentsValid({ ...clean, status: 'uncertain', findings: [value.findings[0]] }, passage), false);
   assert.throws(() => enriched({ status: 'uncertain' }));
 });
+
+test('legacy and v2 review select ten distinct mistakes by severity before applying bar layout', () => {
+  const issues: Finding[] = Array.from({ length: 12 }, (_, i) => ({
+    id: `timing-${i}`, kind: 'timing', referenceNoteId: 'n2', detectedNoteId: 'd1',
+    timingDeltaMs: (i % 2 ? -1 : 1) * (160 + i * 10),
+  }));
+  issues.push({ id: 'missed', kind: 'missing_note', referenceNoteId: 'n0' });
+  for (const value of [analysis({ findings: issues }), enriched({ findings: issues })]) {
+    const entries = feedbackEntries(value, passage);
+    assert.equal(new Set(entries.map(entry => entry.finding.id)).size, 13, 'phone keeps every finding');
+    const limited = feedbackEntries(value, passage, null, 10);
+    const ids = [...new Set(limited.map(entry => entry.finding.id))];
+    assert.equal(ids.length, 10);
+    assert.equal(ids[0], 'missed');
+    assert.deepEqual(ids.slice(1), Array.from({ length: 9 }, (_, i) => `timing-${11 - i}`));
+    assert.equal(value.findings.length, 13, 'saved history is not mutated');
+  }
+});
+
+test('visuals and review break equal-severity ties in passage order even for unsorted History', () => {
+  const value = analysis({ findings: [
+    { id: 'later', kind: 'missing_note', referenceNoteId: 'n3' },
+    { id: 'earlier', kind: 'missing_note', referenceNoteId: 'n0' },
+  ] });
+  assert.deepEqual(feedbackEntries(value, passage).map(entry => entry.finding.id), ['earlier', 'later']);
+});
+
+test('bar grouping cannot put a small timing error ahead of another missed note', () => {
+  const value = enriched({ findings: [
+    { id: 'first-missing', kind: 'missing_note', referenceNoteId: 'n0' },
+    { id: 'same-bar-timing', kind: 'timing', referenceNoteId: 'n0', detectedNoteId: 'd1', timingDeltaMs: 160 },
+    { id: 'later-missing', kind: 'missing_note', referenceNoteId: 'n3' },
+  ] });
+  assert.deepEqual(feedbackEntries(value, passage).map(entry => entry.finding.id),
+    ['first-missing', 'later-missing', 'same-bar-timing']);
+});

@@ -6,6 +6,7 @@ import { reviewData } from '../src/feedback.ts'
 import { PASSAGES } from '../src/passages.ts'
 import { calculateDisplaySegments } from '../../shared/segments.ts'
 import { replaySteps, rulerNotes } from '../src/review/art.ts'
+import { feedbackEntries } from '../../shared/feedback.ts'
 
 function attempt(scenario = 'mistakes') {
   const store = new SessionStore({ getItem: () => null, setItem() {} })
@@ -15,6 +16,29 @@ function attempt(scenario = 'mistakes') {
   const analysis = fixtureAnalysis(started, scenario)
   return { ...started, analysis, coaching: scenario === 'mistakes' ? fixtureCoaching({ ...started, analysis }) : null }
 }
+
+test('glasses show ten important mistakes while phone and saved analysis retain all twenty-one', () => {
+  for (const schemaVersion of ['1', '2']) {
+    const record = attempt()
+    const passage = PASSAGES[0]
+    record.coaching = null
+    record.analysis.findings = Array.from({ length: 20 }, (_, i) => ({
+      id: `timing-${i}`, kind: 'timing', referenceNoteId: passage.notes[0].id,
+      detectedNoteId: 'detected-1', timingDeltaMs: 160 + i * 10,
+    }))
+    record.analysis.findings.push({ id: 'missed', kind: 'missing_note', referenceNoteId: passage.notes[1].id })
+    if (schemaVersion === '2') Object.assign(record.analysis, { schemaVersion,
+      ...calculateDisplaySegments(passage, record.analysis.findings, record.analysis.detectedNotes,
+        record.analysis.attemptTempoBpm, record.analysis.alignment) })
+    const saved = JSON.stringify(record)
+    const { views } = reviewData(record, passage)
+    assert.equal(new Set(views.map(view => view.findingId)).size, 10)
+    assert.deepEqual(views.map(view => view.findingId), ['missed',
+      ...Array.from({ length: 9 }, (_, i) => `timing-${19 - i}`)])
+    assert.equal(feedbackEntries(record.analysis, passage).length, 21)
+    assert.equal(JSON.stringify(record), saved)
+  }
+})
 
 test('saved analysis cards use exact finding IDs for beats, keys, and authored fingers', () => {
   const data = reviewData(attempt(), PASSAGES[0])

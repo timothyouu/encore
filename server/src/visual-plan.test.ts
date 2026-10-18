@@ -59,6 +59,16 @@ test('validated plan is bounded, sorted and tied to measured note IDs', () => {
   assert.ok(result.cards.every(card => card.evidence.source === 'analysis'));
 });
 
+test('visuals and coach focus rank a missing note above 300 ms timing and larger offsets above smaller ones', () => {
+  const value = analysis({ findings: [
+    { id: 'small', kind: 'timing', referenceNoteId: 'P01-N03', detectedNoteId: 'timed', timingDeltaMs: 160 },
+    { id: 'large', kind: 'timing', referenceNoteId: 'P01-N03', detectedNoteId: 'timed', timingDeltaMs: -300 },
+    { id: 'missing', kind: 'missing_note', referenceNoteId: 'P01-N02' },
+  ] });
+  const plan = buildVisualPlan(value, passage);
+  assert.deepEqual(plan.cards.map(card => card.id), ['missing', 'large', 'small']);
+});
+
 test('uncertain audio overrides findings without invented quality meters or blame', () => {
   const result = buildVisualPlan(analysis({ status: 'uncertain' }), passage);
   assert.ok(validateVisualPlan(result));

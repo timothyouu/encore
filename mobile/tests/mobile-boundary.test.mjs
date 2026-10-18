@@ -19,7 +19,7 @@ function sourceFiles(directory) {
 }
 
 const sharedTypes = new Set(['contracts.ts', 'visual-contract.ts'].map(name => resolve(mobile, '../shared', name)));
-const sharedRuntime = new Set(['visual-plan.ts', 'segments.ts', 'feedback.ts'].map(name => resolve(mobile, '../shared', name)));
+const sharedRuntime = new Set(['visual-plan.ts', 'segments.ts', 'feedback.ts', 'finding-priority.ts'].map(name => resolve(mobile, '../shared', name)));
 function assertPhoneOnlySource(content, path, visited = new Set()) {
   if (visited.has(path)) return;
   visited.add(path);
@@ -113,6 +113,7 @@ test('only reviewed pure helpers and import-free authored passage data can cross
   const path = join(sourceRoot, 'fixture.ts');
   assert.doesNotThrow(() => assertPhoneOnlySource("import { PASSAGES } from '../../shared/passages.ts';", path));
   assert.doesNotThrow(() => assertPhoneOnlySource("import { feedbackEntries } from '../../shared/feedback.ts';", path));
+  assert.doesNotThrow(() => assertPhoneOnlySource("import { compareFindingImportance } from '../../shared/finding-priority.ts';", path));
   assert.doesNotThrow(() => assertPhoneOnlySource("import { analysisSegmentsValid } from '../../shared/segments.ts';", path));
   assert.throws(() => assertPhoneOnlySource("import { helper } from '../../shared/other.ts';", path), { name: 'AssertionError' });
   assert.throws(() => assertPhoneOnlySource("import { helper } from '../../g2/src/passages.ts';", path), { name: 'AssertionError' });

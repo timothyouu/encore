@@ -159,18 +159,28 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
       case 'sheet': {
         if (!record || !passage) return null
         const { views, tag } = reviewData(record, passage)
+        const entries = store.entries()
+        const entryIndices = views.map(view => entries.findIndex(entry =>
+          entry.finding.id === view.findingId && (entry.segment?.id ?? null) === (view.segment?.id ?? null)))
+        const initialIndex = Math.max(0, entryIndices.indexOf(state.findingIndex))
+        const phase = state.screen === 'sheet' ? state.sheetOrigin : state.screen
         return reviewScreen({
           views,
           tag,
-          initialIndex: state.findingIndex,
-          phase: state.screen === 'sheet' ? state.sheetOrigin : state.screen,
+          initialIndex,
+          phase,
           history: state.historyOrigin,
           onPlayAgain: playAgain,
           onNavigate: delta => {
             if (store.state.attemptId !== record.attemptId) return
+            const position = initialIndex * 2 + (phase === 'guide' ? 1 : 0)
+            const next = Math.max(0, Math.min(views.length * 2 - 1, position + delta))
+            const entryIndex = entryIndices[Math.floor(next / 2)]
+            if (next === position || entryIndex === undefined || entryIndex < 0) return
             batch(() => {
               store.closeSheet()
-              store.moveFeedback(delta)
+              store.selectEntry(entryIndex)
+              if (next % 2) store.showGuide()
             })
           },
           keyboardContext: view => {

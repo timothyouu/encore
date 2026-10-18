@@ -1,5 +1,6 @@
 import type { AnalysisResult, DetectedNote, Finding, Passage, ReferenceNote } from './contracts.ts';
 import type { VisualCard, VisualKind, VisualNote, VisualPlan } from './visual-contract.ts';
+import { topFindings } from './finding-priority.ts';
 
 export const VISUAL_KINDS = {
   wrong_note: { priority: 3, variants: ['pitch', 'octave', 'accidental', 'self_fix'], availability: 'analysis' },
@@ -253,8 +254,8 @@ export function buildVisualPlan(analysis: AnalysisResult, passage: Passage, _sel
       cue: 'Check the microphone and try again.',
       evidence: { source: 'analysis', measurement: 'audio_quality', findingIds: [], referenceNoteIds: [], detectedNoteIds: [] } }] };
   }
-  const cards = analysis.findings.map(finding => cardForFinding(analysis, passage, finding))
-    .filter((card): card is VisualCard => card !== null && validateVisualCard(card))
-    .sort((a, b) => a.priority - b.priority || a.focus.startBeat - b.focus.startBeat || a.id.localeCompare(b.id));
+  const cards = topFindings(analysis, passage)
+    .map(finding => cardForFinding(analysis, passage, finding))
+    .filter((card): card is VisualCard => card !== null && validateVisualCard(card));
   return { ...empty, cards: cards.slice(0, 3) };
 }

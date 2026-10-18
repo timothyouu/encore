@@ -570,8 +570,24 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
         add(node('div', 'comparison-cell heard'), node('span', 'subtle', 'Heard'), node('strong', '', detected ? noteName(detected.midiPitch) : '—')));
     }
     const metrics = node('div', 'metrics-card');
+    const allMistakes = node('details', 'all-mistakes');
+    const mistakeList = node('div', 'all-mistakes-list');
+    mistakeList.setAttribute('role', 'region');
+    mistakeList.setAttribute('aria-label', 'All saved mistakes');
+    mistakeList.tabIndex = 0;
+    for (const item of findings) {
+      const index = entries.findIndex(entry => entry.finding.id === item.id);
+      const entry = entries[index];
+      const button = control('', 'all-mistakes-item', () => store.selectEntry(index));
+      button.setAttribute('aria-pressed', String(item.id === finding.id));
+      add(button, node('strong', '', `${locationLabel(item, entry?.segment ?? null, analysis.schemaVersion === '1')} · ${findingTitle(item)}`),
+        node('span', 'subtle', detailFor(item, passage, record)));
+      mistakeList.append(button);
+    }
+    add(allMistakes, node('summary', '', `All mistakes (${findings.length})`), mistakeList);
     add(metrics, node('strong', '', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched`), node('p', 'subtle', `${findings.filter((item) => item.kind === 'wrong_note').length} wrong · ${findings.filter((item) => item.kind === 'timing').length} timing · ${findings.filter((item) => item.kind === 'duration').length} hold · ${findings.filter((item) => item.kind === 'missing_note').length} missing · ${findings.filter((item) => item.kind === 'extra_note').length} extra`));
     add(page, barNavigation(entries, analysis.schemaVersion === '1'), carousel(entries, passage), issue, comparison, score(passage, segment || analysis.schemaVersion === '1' ? reference : undefined, finding.kind === 'extra_note' && segment ? findingBeat(finding, passage, record) : undefined, segment), metrics, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('View correction →', 'primary-action', () => store.showGuide()), resultNav());
+    metrics.after(allMistakes);
     if (reference) issue.dataset.referenceNoteId = reference.id;
     return page;
   }
