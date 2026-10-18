@@ -1,5 +1,5 @@
 import { ListContainerProperty, ListItemContainerProperty } from '@evenrealities/even_hub_sdk'
-import { HEADER_Y, HINT_Y, MARGIN_X, SCREEN_W, splitRow, text } from '../layout'
+import { HEADER_Y, HINT_Y, MARGIN_X, SCREEN_W, splitRow } from '../layout'
 import type { Passage } from '../passages'
 import type { Screen } from './screen'
 
@@ -25,7 +25,7 @@ export function selectionScreen({ passages, onOpen, onExit }: SelectionOptions):
 
     page: () => ({
       textObject: [
-        text({ id: 1, name: 'title', x: MARGIN_X, y: HEADER_Y, width: 400, content: 'Choose a passage' }),
+        ...splitRow(5, 'head', HEADER_Y, 'Choose a passage', 'hold  settings'),
         ...splitRow(3, 'hint', HINT_Y, 'tap  open', '2× tap  exit'),
       ],
       listObject: [
