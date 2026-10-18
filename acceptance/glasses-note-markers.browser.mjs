@@ -44,6 +44,24 @@ for(const octave of [0,2]){
   window.results.push({phase,octave,ellipses:[...ellipses],crosses:[...crosses],expected:{x:153,y:92.75}});
  }
 }
+// Extreme microphone pitches and jitter must not create context Xs/ledgers.
+window.extraResults=[];
+for(const kind of ['extra_note','missing_note'])for(const pitch of [21,108]){
+ const card=structuredClone(examples.examples.find(e=>e.name===kind+'-'+(kind==='extra_note'?'extra':'missing')).plan.cards[0]);
+ const focal=kind==='extra_note'?'d4.5':null;
+ card.evidence={...card.evidence,source:'analysis',referenceNoteIds:focal?[]:['r5'],detectedNoteIds:focal?[focal]:[]};
+ if(focal)card.detected.notes.find(n=>n.id===focal).midiPitch=pitch;
+ // Add an unrelated extreme transcription; it is context, never a marker.
+ card.detected.notes.push({id:'context-noise',midiPitch:pitch,onsetBeat:4.25,durationBeats:.1});
+ for(const layer of ['played','both','written']){
+  ellipses=[];crosses=[];
+  const png=await renderReplayFrame(card,{art:'staff',layer,hold:'end'});
+  const image=document.createElement('img');image.src=URL.createObjectURL(new Blob([png],{type:'image/png'}));
+  const section=document.createElement('section');section.innerHTML='<h2>'+kind+' · '+layer+' · detected '+pitch+'</h2>';section.append(image);document.querySelector('main').append(section);
+  const rasterHash=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',png))).map(n=>n.toString(16).padStart(2,'0')).join('');
+  window.extraResults.push({kind,layer,pitch,rasterHash,ellipses:[...ellipses],crosses:[...crosses]});
+ }
+}
 window.galleryFrames=0;
 for(const example of examples.examples)for(const card of example.plan.cards){
  const staticPng=await renderCardArt(card);if(staticPng.length<100)throw Error('empty static art');window.galleryFrames++;
@@ -69,9 +87,20 @@ try{
   assert.ok(row.ellipses.some(n=>n.x===row.expected.x&&n.y===row.expected.y),'reference note rendered');
   assert.deepEqual(row.crosses,row.phase==='guide'?[]:[row.expected], 'X stays on the reference note despite changed played pitch/time');
  }
+ const extraResults=await page.evaluate(()=>window.extraResults);
+ assert.equal(extraResults.length,12);
+ for(const row of extraResults){
+  assert.equal(row.ellipses.length,row.kind==='extra_note'?2:3,'written score remains visible');
+  const expectedCount=row.kind==='extra_note'&&row.layer!=='written'?1:0;
+  assert.equal(row.crosses.length,expectedCount,'only extra event has an X; missing/context notes do not');
+  for(const marker of row.crosses)assert.equal(marker.y,26,'extra event uses lane, never ledger pitch');
+ }
+ const low=extraResults.filter(row=>row.pitch===21);
+ const high=extraResults.filter(row=>row.pitch===108);
+ assert.deepEqual(low.map(row=>({crosses:row.crosses,notes:row.ellipses,rasterHash:row.rasterHash})),high.map(row=>({crosses:row.crosses,notes:row.ellipses,rasterHash:row.rasterHash})),'extreme detected pitches cannot alter score or markers');
  assert.ok(await page.evaluate(()=>window.galleryFrames)>50);
  assert.deepEqual(errors,[]);
  await page.screenshot({path:join(out,'glasses-note-markers.png'),fullPage:true});
- await writeFile(join(out,'evidence.json'),JSON.stringify({status:'passed',input:'canvas fixture, not hardware',results,errors},null,2));
- console.log(JSON.stringify({status:'passed',frames:6,wholeBarVisible:true,referenceMarkersAligned:true,guideRemovesMarks:true,galleryFrames:await page.evaluate(()=>window.galleryFrames),errors}));
+ await writeFile(join(out,'evidence.json'),JSON.stringify({status:'passed',input:'canvas fixture, not hardware',results,extraResults,errors},null,2));
+ console.log(JSON.stringify({status:'passed',frames:6+extraResults.length,wholeBarVisible:true,referenceMarkersAligned:true,guideRemovesMarks:true,galleryFrames:await page.evaluate(()=>window.galleryFrames),errors}));
 }finally{await browser?.close();await server.close();}

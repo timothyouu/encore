@@ -115,6 +115,14 @@ export function validateVisualCard(value: unknown): value is VisualCard {
   };
   const needed = metricKeys[kind];
   if (Object.keys(metrics).length !== needed.length || needed.some(metric => !Object.hasOwn(metrics, metric))) return false;
+  // A measured card represents one finding, not all context in its bar.
+  // Broad ID lists would turn correct context notes into mistake markers.
+  if (evidence.source === 'analysis' && kind !== 'unclear_audio') {
+    if (evidence.findingIds.length !== 1 || evidence.referenceNoteIds.length > 1 ||
+        evidence.detectedNoteIds.length > 1) return false;
+    if (kind === 'missing_note' && evidence.detectedNoteIds.length !== 0) return false;
+    if (kind === 'extra_note' && evidence.referenceNoteIds.length !== 0) return false;
+  }
   const hasReference = evidence.referenceNoteIds.length > 0;
   const hasDetected = evidence.detectedNoteIds.length > 0;
   if (kind === 'wrong_note' && (!hasReference || !hasDetected)) return false;

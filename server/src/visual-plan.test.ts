@@ -169,3 +169,23 @@ test('model may choose an allowed component/action only for the primary finding'
   assert.equal(secondary.fallbackReason, 'invalid_response');
   assert.equal(secondary.visualPlan?.cards[0].id, 'missing-finding');
 });
+
+
+test('analysis JSON identifies one mistake, never context notes as additional markers', () => {
+  const plan = buildVisualPlan(analysis(), passage);
+  for (const original of plan.cards) {
+    assert.ok(validateVisualCard(original));
+    const broad = structuredClone(original);
+    broad.evidence.findingIds.push('unrelated-finding');
+    assert.equal(validateVisualCard(broad), false);
+    for (const side of ['expected', 'detected'] as const) {
+      const changed = structuredClone(original);
+      const ids = side === 'expected' ? changed.evidence.referenceNoteIds : changed.evidence.detectedNoteIds;
+      const context = changed[side].notes.find(note => !ids.includes(note.id));
+      if (context) {
+        ids.push(context.id);
+        assert.equal(validateVisualCard(changed), false, original.kind + '/' + side);
+      }
+    }
+  }
+});

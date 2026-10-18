@@ -21,7 +21,81 @@
         "kind": { "enum": ["wrong_note", "missing_note", "extra_note", "timing", "duration", "unclear_audio"] },
         "evidence": { "properties": { "source": { "const": "analysis" } } },
         "variant": { "not": { "enum": ["self_fix", "swapped_order", "noisy", "quiet"] } }
-      } } } } } },
+      }, "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "wrong_note",
+                  "missing_note",
+                  "extra_note",
+                  "timing",
+                  "duration"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "properties": {
+                  "findingIds": {
+                    "minItems": 1,
+                    "maxItems": 1
+                  },
+                  "referenceNoteIds": {
+                    "maxItems": 1
+                  },
+                  "detectedNoteIds": {
+                    "maxItems": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "missing_note"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "properties": {
+                  "detectedNoteIds": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "extra_note"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "evidence": {
+                "properties": {
+                  "referenceNoteIds": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      ] } } } } },
     { "if": { "properties": { "source": { "const": "fixture" } } },
       "then": { "properties": { "cards": { "items": { "properties": {
         "evidence": { "properties": { "source": { "const": "fixture" } } }

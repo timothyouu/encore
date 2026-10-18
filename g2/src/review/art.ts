@@ -159,9 +159,8 @@ function ledgers(ctx: CanvasRenderingContext2D, x: number, midi: number) {
   for (let ledger = 12; ledger <= step; ledger += 2) ctx.fillRect(x - 11, STAFF_BOTTOM - (ledger - 2) * HALF_SPACE, 22, 1.5)
 }
 
-// Wrong-note pictures retain the score: played/both annotate its faulty note,
-// written shows the clean correction. Other cards reveal played events or
-// written notes according to the replay layer.
+// Every phase retains the written score. Only wrong written notes get a
+// notehead X; extra events use a separate lane. Written is the clean correction.
 export type Layer = 'both' | 'played' | 'written'
 
 const byOnset = (a: VisualNote, b: VisualNote) => a.onsetBeat - b.onsetBeat
@@ -172,7 +171,6 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   const beatX = windowX(card)
   const flaggedSides = flaggedNotes(card)
   const refIds = new Set(flaggedSides.expected.map(note => note.id))
-  const detIds = new Set(flaggedSides.detected.map(note => note.id))
   const flagged: VisualNote[] = [...flaggedSides.expected, ...flaggedSides.detected]
 
   // Wrong-note marks annotate the written score. Detected pitch/time stays
@@ -200,28 +198,12 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
     label(ctx, segment.label, (from + to) / 2, 9, DIM, 10)
   }
 
-  if (layer === 'played' && !annotateScore) {
-    // What was heard, as ×, in the order it sounded. A missed note leaves an
-    // empty dashed slot once the reveal has passed its beat.
-    const heard = [...card.detected.notes].sort(byOnset).slice(0, reveal)
-    for (const note of heard) {
-      const nx = x(note.onsetBeat)
-      ledgers(ctx, nx, note.midiPitch)
-      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
-    }
-    if (card.kind === 'missing_note' && card.variant === 'missing') {
-      const reached = reveal >= card.detected.notes.length ? Infinity : heard.at(-1)?.onsetBeat ?? -Infinity
-      for (const note of flaggedSides.expected) if (note.onsetBeat <= reached) dashedSlot(ctx, x(note.onsetBeat))
-    }
-    return
-  }
-
   // Expected: solid notes, with names underneath; a missing one sits in a dashed
   // slot (shown before its note drops in, while the written notes are revealed).
   const writtenInOrder = [...card.expected.notes].sort(byOnset)
   for (const [order, note] of writtenInOrder.entries()) {
     const missingSlot = card.kind === 'missing_note' && refIds.has(note.id)
-    if (order >= reveal) {
+    if (layer === 'written' && order >= reveal) {
       if (missingSlot) dashedSlot(ctx, x(note.onsetBeat, note.id))
       continue
     }
@@ -242,13 +224,13 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer:
   }
   if (layer === 'written') return
 
-  // Detected (only the unpaired notes): ×.
-  if (!annotateScore && !(card.kind === 'missing_note' && card.variant === 'missing')) {
-    for (const note of card.detected.notes.filter(n => detIds.has(n.id))) {
-      const nx = x(note.onsetBeat, note.id)
-      ledgers(ctx, nx, note.midiPitch)
-      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
-    }
+  // An extra event has no written notehead. Give it its own lane above
+  // the staff instead of fabricating ledger lines at a transcribed pitch.
+  // The legend/keyboard retain the measured pitch; context notes never get Xs.
+  if (card.kind === 'extra_note' || card.kind === 'rest_violation') {
+    const extras = flaggedSides.detected.slice(0, reveal)
+    if (extras.length) label(ctx, 'EXTRA', 16, 12, DIM, 9, 'left')
+    for (const note of extras) cross(ctx, x(note.onsetBeat), 26)
   }
 }
 
