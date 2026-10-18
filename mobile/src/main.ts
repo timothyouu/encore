@@ -4,6 +4,13 @@ import { PhoneCapture, validateEndpoints } from './capture.ts';
 import { mountConnection } from './connection.ts';
 import { DisplaySettingsStore } from './settings.ts';
 import { createIndexedDbPersistence, type PhonePersistence } from './storage.ts';
+import { beginTelemetrySpan, endTelemetrySpan, initializeSentry, type TelemetrySpan } from './telemetry.ts';
+
+initializeSentry({
+  VITE_SENTRY_ENABLED: import.meta.env.VITE_SENTRY_ENABLED,
+  VITE_SENTRY_DSN: import.meta.env.VITE_SENTRY_DSN,
+  VITE_SENTRY_ENVIRONMENT: import.meta.env.VITE_SENTRY_ENVIRONMENT,
+});
 
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Encore app root is missing');
@@ -33,6 +40,7 @@ let mode: 'demo' | 'phone' = 'phone';
 let phone: PhoneCapture | undefined;
 let captureLimit: ReturnType<typeof setTimeout> | undefined;
 const pending = new Set<ReturnType<typeof setTimeout>>();
+const demoTraces = new Set<TelemetrySpan>();
 root.addEventListener('encore:scenario', (event: Event) => {
   const value: unknown = (event as CustomEvent<{ scenario: unknown }>).detail?.scenario;
   if (value === 'mistakes' || value === 'clean' || value === 'uncertain' || value === 'error') scenario = value;
@@ -50,16 +58,23 @@ function stop(): void {
   if (!record) return;
   clearTimeout(captureLimit);
   const selectedScenario = activeScenario;
+  const demoTrace = beginTelemetrySpan('demo.stop_to_result', undefined, 'demo');
+  demoTraces.add(demoTrace);
   // Demo driver: no microphone is used and no audio is uploaded.
   const timer = setTimeout(() => {
     pending.delete(timer);
-    if (selectedScenario === 'error') {
-      store.fail(record.attemptId, 'analysis', 'Demo analysis service unavailable. Your completed recording is still saved.');
-      return;
-    }
-    if (store.applyAnalysis(record.attemptId, fixtureAnalysis(record, selectedScenario))) {
-      const saved = store.records.find(item => item.attemptId === record.attemptId);
-      if (saved?.analysis?.status === 'ok') store.applyCoaching(record.attemptId, fixtureCoaching(saved));
+    try {
+      if (selectedScenario === 'error') {
+        store.fail(record.attemptId, 'analysis', 'Demo analysis service unavailable. Your completed recording is still saved.');
+        return;
+      }
+      if (store.applyAnalysis(record.attemptId, fixtureAnalysis(record, selectedScenario))) {
+        const saved = store.records.find(item => item.attemptId === record.attemptId);
+        if (saved?.analysis?.status === 'ok') store.applyCoaching(record.attemptId, fixtureCoaching(saved));
+      }
+    } finally {
+      endTelemetrySpan(demoTrace, record.processingStatus === 'result' ? 'ok' : 'error');
+      demoTraces.delete(demoTrace);
     }
   }, 900);
   pending.add(timer);
@@ -102,6 +117,8 @@ const unsubscribeSettings = settings.subscribe(() => connection.setVisible(!sett
 window.addEventListener('pagehide', () => {
   clearTimeout(captureLimit);
   for (const timer of pending) clearTimeout(timer);
+  for (const trace of demoTraces) endTelemetrySpan(trace, 'interrupted');
+  demoTraces.clear();
   store.interrupt();
   unsubscribeSettings(); phone?.dispose(); connection.dispose(); unmount();
 }, { once: true });

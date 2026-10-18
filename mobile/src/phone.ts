@@ -4,6 +4,7 @@ import { resolveVisualPlan, visibleFindings } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
+import { markTelemetryErrorReported, measureTelemetry, recordTelemetryFailure } from './telemetry.ts';
 import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, type MistakeVisualization } from './visualization.ts';
 
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
@@ -681,7 +682,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let lastScreen = store.state.screen;
   const paperViews: ReturnType<typeof mountPaperVisualization>[] = [];
   function clearPaperViews(): void { for (const view of paperViews.splice(0)) view.destroy(); }
-  function render(): void {
+  function renderContent(): void {
     if (settings.isOpen && settingsLayer) return;
     clearPaperViews();
     const screenChanged = lastScreen !== store.state.screen;
@@ -719,6 +720,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     timer = undefined;
     if (screen === 'recording' && record) timer = window.setInterval(() => updateTime(record), 1000);
     if (settings.isOpen) syncSettingsLayer();
+  }
+
+  function render(): void {
+    try { measureTelemetry('app.render', renderContent); }
+    catch (cause) {
+      markTelemetryErrorReported(cause);
+      recordTelemetryFailure('render', 'render_failed', 'app');
+      throw cause;
+    }
   }
 
   function onKeyDown(event: KeyboardEvent): void {

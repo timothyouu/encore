@@ -2,6 +2,8 @@ import { passages } from './passages.ts';
 import { HISTORY_CAP, type AttemptRecord, type SessionStore } from './session.ts';
 import { normalizeBlob, bytesToBase64, type NormalizedAudio } from './audio-normalization.ts';
 import type { PhonePersistence } from './storage.ts';
+import { beginTelemetrySpan, endTelemetrySpan, recordTelemetryFailure,
+  type FailureCode, type TelemetryName, type TelemetryOutcome, type TelemetrySpan } from './telemetry.ts';
 
 export type CaptureEndpoints = { upload: string; analysis: string; coaching: string };
 
@@ -19,6 +21,15 @@ export function requestTimeoutMs(stage: 'normalization' | 'upload' | 'analysis' 
 const MIME_TYPES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
 
 class InvalidResponseError extends Error {}
+class InvalidJsonError extends Error {}
+class ServiceStatusError extends Error {}
+
+function failureCode(cause: unknown): FailureCode {
+  if (cause instanceof InvalidJsonError) return 'invalid_json';
+  if (cause instanceof InvalidResponseError) return 'invalid_response';
+  if (cause instanceof ServiceStatusError) return 'service_error';
+  return 'request_failed';
+}
 type Artifact = { artifactId: string; audioUrl: string; expiresAt: string; sha256: string; attemptId: string };
 
 function validEndpoint(value: string): boolean {
@@ -74,6 +85,8 @@ export class PhoneCapture {
   private disposed = false;
   private activeAttemptId: string | null = null;
   private rejectRecording: ((error: Error) => void) | null = null;
+  private trace: TelemetrySpan | null = null;
+  private stepTrace: TelemetrySpan | null = null;
   private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; artifact?: Artifact; savedAt?: number }>();
   private retryExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly store: SessionStore;
@@ -108,6 +121,27 @@ export class PhoneCapture {
   }
 
   private changed(): void { this.onChange?.(); }
+
+  private beginTrace(): void {
+    this.endTrace('interrupted');
+    this.trace = beginTelemetrySpan('phone.stop_to_result');
+  }
+
+  private startStep(name: TelemetryName): void {
+    this.endStep('interrupted');
+    this.stepTrace = beginTelemetrySpan(name, this.trace);
+  }
+
+  private endStep(outcome: TelemetryOutcome): void {
+    endTelemetrySpan(this.stepTrace, outcome);
+    this.stepTrace = null;
+  }
+
+  private endTrace(outcome: TelemetryOutcome): void {
+    this.endStep(outcome);
+    endTelemetrySpan(this.trace, outcome);
+    this.trace = null;
+  }
 
   private memoryBytes(): number {
     let bytes = 0;
@@ -153,6 +187,7 @@ export class PhoneCapture {
   private interruptCapture(reason: string): void {
     if (!this.stream && this.store.state.screen !== 'recording') return;
     this.generation += 1;
+    this.endTrace('interrupted');
     this.rejectRecording?.(new Error(reason));
     this.rejectRecording = null;
     try { if (this.recorder?.state === 'recording') this.recorder.stop(); } catch { /* already stopped */ }
@@ -169,7 +204,10 @@ export class PhoneCapture {
   };
 
   private readonly onRecorderError = (): void => {
-    if (this.recording || this.rejectRecording) this.interruptCapture('Recording failed.');
+    if (this.recording || this.rejectRecording) {
+      recordTelemetryFailure('capture', 'capture_failed', 'phone', this.trace);
+      this.interruptCapture('Recording failed.');
+    }
   };
 
   async start(): Promise<void> {
@@ -192,6 +230,7 @@ export class PhoneCapture {
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       this.error = 'Microphone recording is unavailable in this browser.';
+      recordTelemetryFailure('capture', 'microphone_unavailable');
       this.changed();
       return;
     }
@@ -230,6 +269,8 @@ export class PhoneCapture {
       if (generation !== this.generation || this.disposed) return;
       this.clearCapture();
       if (this.activeAttemptId) this.store.interrupt();
+      if (!(cause instanceof DOMException && (cause.name === 'NotAllowedError' || cause.name === 'AbortError')))
+        recordTelemetryFailure('capture', 'capture_failed');
       this.error = message(cause);
     } finally {
       if (generation === this.generation) {
@@ -243,6 +284,9 @@ export class PhoneCapture {
     if (this.disposed || this.busy || !this.recording || !this.recorder || !this.stream) return;
     this.busy = true;
     this.recording = false;
+    this.beginTrace();
+    this.startStep('phone.recorder_stop');
+    let recorderPending = true;
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
     const generation = this.generation;
@@ -267,22 +311,34 @@ export class PhoneCapture {
         try { recorder.stop(); } catch (cause) { rejectStop(cause instanceof Error ? cause : new Error('Could not stop recording.')); }
       });
       if (generation !== this.generation || this.disposed) return;
+      recorderPending = false;
+      this.endStep('ok');
       this.clearCapture();
       const record = this.store.stop();
-      if (!record || !attemptId || record.attemptId !== attemptId) return;
+      if (!record || !attemptId || record.attemptId !== attemptId) {
+        this.endTrace('interrupted');
+        return;
+      }
       if (blob.size === 0) {
-        this.fail(record, 'capture', 'No audio was recorded.');
+        this.fail(record, 'capture', 'No audio was recorded.', 'empty_audio');
         return;
       }
       this.remember(record.attemptId, { blob });
       await this.process(record, generation);
     } catch (cause) {
       if (generation !== this.generation || this.disposed) return;
+      if (recorderPending) recordTelemetryFailure('capture', 'recorder_stop_failed', 'phone', this.trace);
       this.clearCapture();
       this.store.interrupt();
       this.error = message(cause);
+      this.endTrace('error');
     } finally {
       if (generation === this.generation) {
+        if (this.trace) {
+          const record = this.store.records.find(item => item.attemptId === attemptId);
+          this.endTrace(record?.processingStatus === 'result' ? 'ok' :
+            record?.processingStatus === 'error' ? 'error' : 'interrupted');
+        }
         this.busy = false;
         this.activeAttemptId = null;
         this.changed();
@@ -297,11 +353,11 @@ export class PhoneCapture {
     try {
       const response = await fetch(url, { method: 'POST', body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin', signal: controller.signal });
-      if (!response.ok) throw new Error(`Service returned HTTP ${response.status}.`);
+      if (!response.ok) throw new ServiceStatusError(`Service returned HTTP ${response.status}.`);
       try {
         return await response.json() as unknown;
       } catch {
-        throw new InvalidResponseError('Service returned invalid JSON.');
+        throw new InvalidJsonError('Service returned invalid JSON.');
       }
     } finally {
       clearTimeout(timeout);
@@ -309,42 +365,60 @@ export class PhoneCapture {
     }
   }
 
-  private fail(record: AttemptRecord, stage: 'capture' | 'normalization' | 'upload' | 'analysis' | 'coaching', detail: string): void {
+  private fail(record: AttemptRecord, stage: 'capture' | 'normalization' | 'upload' | 'analysis' | 'coaching', detail: string, code: FailureCode): void {
     this.error = detail;
-    this.store.fail(record.attemptId, stage, detail);
+    recordTelemetryFailure(stage, code, 'phone', this.trace);
+    try { this.store.fail(record.attemptId, stage, detail); }
+    finally { this.endTrace('error'); }
     this.changed();
   }
 
   private async process(record: AttemptRecord, generation: number): Promise<void> {
-    const passage = passages.find((item) => item.id === record.passageId && item.version === record.passageVersion);
-    if (!passage) { this.fail(record, 'analysis', 'The selected passage is unavailable.'); return; }
+    const passage = passages.find(item => item.id === record.passageId && item.version === record.passageVersion);
+    if (!passage) { this.fail(record, 'analysis', 'The selected passage is unavailable.', 'passage_unavailable'); return; }
     const saved = this.saved.get(record.attemptId);
-    if (!saved) return;
+    if (!saved) {
+      this.fail(record, 'normalization', 'Saved audio is unavailable.', 'normalization_failed');
+      return;
+    }
     if (Date.now() - (saved.savedAt ?? 0) > RETRY_TTL_MS) {
       this.saved.delete(record.attemptId); this.scheduleMemoryExpiry();
-      this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.');
+      this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.', 'normalization_failed');
       return;
     }
     if (!saved.normalized) {
       this.store.setProcessingStage(record.attemptId, 'normalization');
       this.requestStage = 'normalization';
+      this.startStep('phone.normalization');
       try {
         if (!saved.blob) throw new Error('Audio is unavailable for normalization.');
         saved.normalized = await normalizeBlob(saved.blob);
+        if (generation !== this.generation || this.disposed) return;
         saved.savedAt ??= Date.now();
+        this.endStep('ok');
+      } catch (cause) {
+        if (generation !== this.generation || this.disposed) return;
+        this.endStep('error');
+        this.fail(record, 'normalization', message(cause), 'normalization_failed');
+        return;
       }
-      catch (cause) { if (generation === this.generation) this.fail(record, 'normalization', message(cause)); return; }
     }
     if (generation !== this.generation || this.disposed) return;
     const normalized = saved.normalized;
     if (this.persistence && !this.persistence.hasAudio(record.attemptId)) {
+      this.startStep('phone.audio_persist');
       try {
         await this.persistence.saveAudio({ attemptId: record.attemptId, ...normalized, savedAt: saved.savedAt ?? Date.now() });
+        if (generation !== this.generation || this.disposed) return;
         saved.blob = undefined;
+        this.endStep('ok');
       } catch {
+        if (generation !== this.generation || this.disposed) return;
+        this.endStep('error');
+        recordTelemetryFailure('storage', 'storage_failed', 'phone', this.trace);
         this.store.warnStorage(this.persistence.warning ?? 'Recording could not be saved for retry. It remains available only in this open session.');
         if (this.persistence.warning?.includes('expired')) {
-          this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.');
+          this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.', 'normalization_failed');
           return;
         }
       }
@@ -358,8 +432,9 @@ export class PhoneCapture {
     let uploaded = false;
     if (!artifact || Date.parse(artifact.expiresAt) <= Date.now() + 1_000) {
       this.store.setProcessingStage(record.attemptId, 'upload');
+      this.requestStage = 'upload';
+      this.startStep('phone.upload_request');
       try {
-        this.requestStage = 'upload';
         const response = await this.post(this.endpoints.upload, {
           metadata: { attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
             attemptTempoBpm: passage.tempoBpm, sourceSampleRate: normalized.sourceSampleRate,
@@ -367,59 +442,86 @@ export class PhoneCapture {
             durationSec: normalized.durationSec, captureSource: record.captureSource === 'test' ? 'test' : 'phone' },
           wavBase64: bytesToBase64(normalized.wav),
         });
+        if (generation !== this.generation || this.disposed) return;
+        this.endStep('ok');
+        this.startStep('phone.upload_validation');
         if (!artifactValid(response, record.attemptId)) throw new InvalidResponseError('Upload returned a mismatched or invalid artifact.');
         artifact = response;
         saved.artifact = artifact;
         uploaded = true;
+        this.endStep('ok');
       } catch (cause) {
-        if (generation === this.generation) this.fail(record, 'upload', `Upload failed: ${message(cause)}`);
+        if (generation !== this.generation || this.disposed) return;
+        this.endStep('error');
+        this.fail(record, 'upload', `Upload failed: ${message(cause)}`, failureCode(cause));
         return;
       }
     }
     if (generation !== this.generation || this.disposed) return;
     if (!record.analysis || uploaded) {
       this.store.setProcessingStage(record.attemptId, 'analysis');
+      this.requestStage = 'analysis';
+      this.startStep('phone.analysis_request');
       try {
-        this.requestStage = 'analysis';
         const analysis = await this.post(this.endpoints.analysis, { artifactId: artifact.artifactId,
           attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion });
         if (generation !== this.generation || this.disposed) return;
+        this.endStep('ok');
+        this.startStep('phone.analysis_validation');
         if (!this.store.applyAnalysis(record.attemptId, analysis, uploaded && record.analysis !== null))
           throw new InvalidResponseError('The analysis response was invalid.');
+        this.endStep(record.analysis?.status === 'error' ? 'error' : 'ok');
       } catch (cause) {
-        if (/HTTP (404|410)/.test(message(cause))) saved.artifact = undefined;
-        if (generation === this.generation) this.fail(record, 'analysis', `Analysis failed: ${message(cause)}`);
+        if (generation !== this.generation || this.disposed) return;
+        this.endStep('error');
+        if (cause instanceof ServiceStatusError && /HTTP (404|410)/.test(cause.message)) saved.artifact = undefined;
+        this.fail(record, 'analysis', `Analysis failed: ${message(cause)}`, failureCode(cause));
         return;
       }
     }
     if (record.analysis?.status !== 'ok') {
-      if (record.processingStatus === 'result') await this.releaseAudio(record.attemptId);
+      if (record.analysis?.status === 'error') {
+        recordTelemetryFailure('analysis', 'service_error', 'phone', this.trace);
+        this.endTrace('error');
+      } else if (record.processingStatus === 'result') {
+        await this.releaseAudio(record.attemptId);
+      }
       return;
     }
     this.store.setProcessingStage(record.attemptId, 'coaching');
+    this.requestStage = 'coaching';
+    this.startStep('phone.coaching_request');
     try {
-      this.requestStage = 'coaching';
       const coaching = await this.post(this.endpoints.coaching, { artifactId: artifact.artifactId,
         passageId: record.passageId, passageVersion: record.passageVersion, analysis: record.analysis });
       if (generation !== this.generation || this.disposed) return;
-      if (!this.store.applyCoaching(record.attemptId, coaching)) {
-        this.fail(record, 'coaching', 'The coaching response was invalid.');
-      } else {
-        await this.releaseAudio(record.attemptId);
-      }
+      this.endStep('ok');
+      this.startStep('phone.coaching_validation');
+      if (!this.store.applyCoaching(record.attemptId, coaching))
+        throw new InvalidResponseError('The coaching response was invalid.');
+      this.endStep('ok');
+      await this.releaseAudio(record.attemptId);
     } catch (cause) {
-      if (/HTTP (404|410)/.test(message(cause))) saved.artifact = undefined;
-      if (generation === this.generation) this.fail(record, 'coaching', `Coaching failed: ${message(cause)}`);
+      if (generation !== this.generation || this.disposed) return;
+      this.endStep('error');
+      if (cause instanceof ServiceStatusError && /HTTP (404|410)/.test(cause.message)) saved.artifact = undefined;
+      this.fail(record, 'coaching', `Coaching failed: ${message(cause)}`, failureCode(cause));
     }
   }
 
   private async releaseAudio(attemptId: string): Promise<void> {
+    const generation = this.generation;
+    const trace = this.trace;
     this.saved.delete(attemptId);
     this.scheduleMemoryExpiry();
     if (!this.persistence?.hasAudio(attemptId)) { this.changed(); return; }
     try { await this.persistence.deleteAudio(attemptId); }
-    catch { this.store.warnStorage('A completed recording could not be removed from local retry storage.'); }
-    this.changed();
+    catch {
+      if (generation !== this.generation || this.disposed) return;
+      recordTelemetryFailure('storage', 'storage_failed', 'phone', trace);
+      this.store.warnStorage('A completed recording could not be removed from local retry storage.');
+    }
+    if (generation === this.generation && !this.disposed) this.changed();
   }
 
   async processWavBlob(blob: Blob): Promise<void> {
@@ -442,10 +544,16 @@ export class PhoneCapture {
       if (!record) return;
       this.activeAttemptId = record.attemptId;
       this.store.stop();
+      this.beginTrace();
       this.remember(record.attemptId, { blob });
       await this.process(record, generation);
     } finally {
-      if (generation === this.generation) { this.busy = false; this.activeAttemptId = null; this.changed(); }
+      if (generation === this.generation) {
+        const record = this.store.records.find(item => item.attemptId === this.activeAttemptId);
+        this.endTrace(record?.processingStatus === 'result' ? 'ok' :
+          record?.processingStatus === 'error' ? 'error' : 'interrupted');
+        this.busy = false; this.activeAttemptId = null; this.changed();
+      }
     }
   }
 
@@ -473,9 +581,14 @@ export class PhoneCapture {
       }
       if (generation !== this.generation || this.disposed || !this.store.beginRetry(attemptId)) return;
       this.error = null; this.activeAttemptId = attemptId;
+      this.beginTrace();
       await this.process(record, generation);
     } finally {
-      if (generation === this.generation) { this.busy = false; this.activeAttemptId = null; this.changed(); }
+      if (generation === this.generation) {
+        this.endTrace(record.processingStatus === 'result' ? 'ok' :
+          record.processingStatus === 'error' ? 'error' : 'interrupted');
+        this.busy = false; this.activeAttemptId = null; this.changed();
+      }
     }
   }
   canRetry(attemptId: string): boolean {
@@ -489,6 +602,7 @@ export class PhoneCapture {
   cancel(): void {
     if (!this.busy && !this.recording) return;
     this.generation += 1;
+    this.endTrace('cancelled');
     this.request?.abort();
     this.request = null;
     this.rejectRecording?.(new Error('Recording canceled.'));

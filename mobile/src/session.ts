@@ -2,6 +2,7 @@ import { groundedVisualPlan } from './paper-evidence.ts';
 import { passages, type Passage } from './passages.ts';
 import type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
 import type { PhonePersistence } from './storage.ts';
+import { beginTelemetrySpan, endTelemetrySpan, measureTelemetry, recordTelemetryFailure } from './telemetry.ts';
 export type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
 
 export type AttemptRecord = {
@@ -219,19 +220,24 @@ export class SessionStore {
   private persist(): void {
     const snapshot = JSON.stringify({ version: 1, records: this.records });
     if (this.persistence) {
+      const span = beginTelemetrySpan('app.history_persist', undefined, 'app');
       void this.persistence.save(STORAGE_KEY, snapshot).then(() => {
+        endTelemetrySpan(span, 'ok');
         if (this.storageWarning?.startsWith('History could not be saved')) {
           this.storageWarning = null; this.emit();
         }
       }, () => {
+        endTelemetrySpan(span, 'error');
+        recordTelemetryFailure('history', 'storage_failed', 'app');
         this.storageWarning = 'History could not be saved on this device. Changes may last only for this session.';
         this.emit();
       });
       return;
     }
     try {
-      this.storage?.setItem(STORAGE_KEY, snapshot);
+      measureTelemetry('app.history_persist', () => this.storage?.setItem(STORAGE_KEY, snapshot));
     } catch {
+      recordTelemetryFailure('history', 'storage_failed', 'app');
       this.storageWarning = 'History could not be saved on this device.';
     }
   }

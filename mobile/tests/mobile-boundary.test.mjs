@@ -29,8 +29,9 @@ function assertPhoneOnlySource(content, path, visited = new Set()) {
     assert.notEqual(path, sharedPassages, 'shared passage data must have no imports');
     assert.doesNotMatch(specifier, /(?:^|\/)g2(?:\/|$)|(?:^|\/)display(?:\.[jt]s)?$/i, `${relative(mobile, path)} imports ${specifier}`);
     if (!specifier.startsWith('.')) {
-      assert.equal(path, join(mobile, 'vite.config.ts'), `${relative(mobile, path)} imports external package ${specifier}`);
-      assert.equal(specifier, 'vite');
+      const allowed = (path === join(mobile, 'vite.config.ts') && specifier === 'vite') ||
+        (path === join(sourceRoot, 'telemetry.ts') && specifier === '@sentry/browser');
+      assert.ok(allowed, `${relative(mobile, path)} imports external package ${specifier}`);
       continue;
     }
     const target = resolve(dirname(path), specifier);
@@ -85,6 +86,12 @@ test('phone entrypoint and build config cannot load a glasses bridge', () => {
   for (const path of [...sourceFiles(sourceRoot), join(mobile, 'vite.config.ts')]) {
     assertPhoneOnlySource(readFileSync(path, 'utf8'), path);
   }
+});
+
+test('only the telemetry module may import Sentry', () => {
+  assert.throws(() => assertPhoneOnlySource("import * as Sentry from '@sentry/browser';", join(sourceRoot, 'capture.ts')), { name: 'AssertionError' });
+  assert.doesNotThrow(() => assertPhoneOnlySource("import * as Sentry from '@sentry/browser';", join(sourceRoot, 'telemetry.ts')));
+  assert.throws(() => assertPhoneOnlySource("import * as Other from '@sentry/core';", join(sourceRoot, 'telemetry.ts')), { name: 'AssertionError' });
 });
 
 test('boundary rejects an SDK display adapter and native bridge routes', () => {
