@@ -3,7 +3,7 @@ import type { SessionStore } from './session.ts';
 export type Connection = { mode: 'demo' | 'phone'; analysis: string; coaching: string };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
-export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null): { message(value: string | null): void; dispose(): void } {
+export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null): { message(value: string | null): void; setVisible(visible: boolean): void; dispose(): void } {
   const panel = document.createElement('details');
   panel.className = 'connection-settings';
   panel.style.cssText = 'max-width:390px;margin:0 auto 24px;padding:16px 24px;font:14px/1.5 system-ui;color:#625F58;box-sizing:border-box;';
@@ -47,6 +47,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
     for (const input of [mode, analysis, coaching]) input.disabled = apply.disabled;
   });
   return {
+    setVisible(visible): void { panel.hidden = !visible; },
     message(value): void { status.textContent = value ?? ''; if (value) panel.open = true; },
     dispose(): void { unsubscribe(); panel.remove(); },
   };

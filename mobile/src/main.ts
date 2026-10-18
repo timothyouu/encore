@@ -3,13 +3,16 @@ import { mountPhone } from './phone.ts';
 import { PhoneCapture, validateEndpoints } from './capture.ts';
 import { mountConnection } from './connection.ts';
 import { connectDisplay } from './display.ts';
+import { DisplaySettingsStore } from './settings.ts';
 
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Encore app root is missing');
-const store = new SessionStore({
+const storage = {
   getItem: (key: string): string | null => window.localStorage.getItem(key),
   setItem: (key: string, value: string): void => window.localStorage.setItem(key, value),
-});
+};
+const store = new SessionStore(storage);
+const settings = new DisplaySettingsStore(storage);
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
 let scenario: Scenario = 'mistakes';
 let activeScenario: Scenario = 'mistakes';
@@ -22,6 +25,7 @@ root.addEventListener('encore:scenario', (event: Event) => {
   if (value === 'mistakes' || value === 'clean' || value === 'uncertain' || value === 'error') scenario = value;
 });
 function start(): void {
+  if (settings.isOpen) return;
   if (mode === 'phone') { void phone?.start(); return; }
   if (!store.start()) return;
   activeScenario = scenario;
@@ -51,14 +55,15 @@ function cancel(): void {
   clearTimeout(captureLimit);
   if (mode === 'phone') phone?.cancel(); else store.cancel();
 }
-const display = connectDisplay(store, { start, stop, cancel, getMode: () => mode });
-const unmount = mountPhone(root, store, { start, stop, cancel, exit: () => { void display.exit(); }, getMode: () => mode });
+const display = connectDisplay(store, { start, stop, cancel, getMode: () => mode }, { settings, canOpenSettings: () => !phone?.busy });
+const unmount = mountPhone(root, store, { start, stop, cancel, exit: () => { void display.exit(); }, getMode: () => mode, isBusy: () => Boolean(phone?.busy) }, settings);
 const connection = mountConnection(store, root, next => {
   if (phone?.busy || phone?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
   if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter both complete HTTPS endpoints (or HTTP localhost). URLs cannot include passwords or fragments.';
   phone?.dispose(); phone = undefined;
   mode = next.mode;
   if (mode === 'phone') phone = new PhoneCapture(store, next, () => {
+    root.dispatchEvent(new CustomEvent('encore:mode-change'));
     connection.message(phone?.error ?? (phone?.busy && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));
     permissionCancel.hidden = !(phone?.busy && !phone.recording && store.state.screen === 'ready');
   });
@@ -70,9 +75,10 @@ permissionCancel.type = 'button'; permissionCancel.hidden = true; permissionCanc
 permissionCancel.style.cssText = 'margin:12px auto;min-height:44px;padding:12px 24px;border:1px solid #625F58;border-radius:24px;';
 permissionCancel.addEventListener('click', () => phone?.cancel());
 root.after(permissionCancel);
+const unsubscribeSettings = settings.subscribe(() => connection.setVisible(!settings.isOpen));
 window.addEventListener('pagehide', () => {
   clearTimeout(captureLimit);
   for (const timer of pending) clearTimeout(timer);
   store.interrupt();
-  phone?.dispose(); display.dispose(); connection.dispose(); unmount();
+  unsubscribeSettings(); phone?.dispose(); display.dispose(); connection.dispose(); unmount();
 }, { once: true });
