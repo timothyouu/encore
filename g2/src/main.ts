@@ -2,7 +2,7 @@ import { status } from './status'
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { Glasses } from './glasses'
 import { filterInputs, toInput } from './input'
-import { PASSAGES } from './passages'
+import { PASSAGES, type Passage } from './passages'
 import { mountUploadSettings } from './phone'
 import { Recorder, type Take } from './recorder'
 import { readyScreen } from './screens/ready'
@@ -38,24 +38,34 @@ async function main() {
     show(
       selectionScreen({
         passages: PASSAGES,
-        onOpen: passage =>
-          show(
-            readyScreen({
-              passage,
-              sheetMusic: () => settings.showSheetMusicWhilePlaying,
-              onTake: showSaving,
-              onBack: showSelection,
-            }),
-          ),
+        onOpen: showReady,
         onExit: () => glasses.requestExit(),
       }),
     )
   }
 
-  // Until Analyzing (04) exists, a finished take is uploaded and then the
-  // player returns to selection, as after any result (spec §4).
-  function showSaving(take: Take) {
-    show(savingScreen({ take, upload: () => uploadTake(uploadUrl, take), onDone: showSelection }))
+  function showReady(passage: Passage) {
+    show(
+      readyScreen({
+        passage,
+        sheetMusic: () => settings.showSheetMusicWhilePlaying,
+        onTake: take => showSaving(passage, take),
+        onBack: showSelection,
+      }),
+    )
+  }
+
+  // Until Analyzing (04) exists, a finished take is uploaded, then the player
+  // continues to selection (spec §4); if it wasn't saved, back to Ready.
+  function showSaving(passage: Passage, take: Take) {
+    show(
+      savingScreen({
+        take,
+        upload: () => uploadTake(uploadUrl, take),
+        onSaved: showSelection,
+        onFailed: () => showReady(passage),
+      }),
+    )
   }
 
   function toggleSheetMusic() {

@@ -8,14 +8,18 @@ const MESSAGE = { id: 1, name: 'message' }
 type SavingOptions = {
   take: Take
   upload(): Promise<UploadResult>
-  onDone(): void
+  // Saved: continue to passage selection, as after any result.
+  onSaved(): void
+  // Not saved: return to where the player was (Ready for the same passage).
+  onFailed(): void
 }
 
 // Interim stand-in for 04 · Analyzing until analysis exists: uploads the take
 // and says whether it was saved. Upload problems are worded as such, never as
-// musical feedback (spec §8). Tap afterwards returns to passage selection.
-export function savingScreen({ take, upload, onDone }: SavingOptions): Screen {
-  let done = false
+// musical feedback (spec §8). Afterwards, tap continues to selection if the
+// take was saved, or back to Ready (tap or double tap) if it wasn't.
+export function savingScreen({ take, upload, onSaved, onFailed }: SavingOptions): Screen {
+  let result: UploadResult | null = null
 
   return {
     name: 'saving',
@@ -29,20 +33,22 @@ export function savingScreen({ take, upload, onDone }: SavingOptions): Screen {
     }),
 
     enter({ glasses, isActive }) {
-      upload().then(result => {
-        done = true
+      upload().then(outcome => {
+        result = outcome
         if (!isActive()) return
         glasses.updateText(
           MESSAGE,
-          result.ok
+          outcome.ok
             ? `Take saved · ${take.durationSec.toFixed(1)}s`
-            : `Couldn't save the take.\n${result.reason}`,
+            : `Couldn't save the take.\n${outcome.reason}`,
         )
       })
     },
 
     onInput(input) {
-      if (done && input.kind === 'tap') onDone()
+      if (!result) return
+      if (result.ok && input.kind === 'tap') onSaved()
+      else if (!result.ok && (input.kind === 'tap' || input.kind === 'doubleTap')) onFailed()
     },
   }
 }

@@ -49,5 +49,5 @@ Produces an `.ehpk` file.
 | 01 | Selection | Native list (5 rows), tap to open, double tap to exit; no hints |
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● starts the G2 mic. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and uploads, `2× discard` throws the take away; 30s cap |
-| (04) | Saving | Interim until Analyzing: uploads the take, says saved / couldn't save; tap → selection |
+| (04) | Saving | Interim until Analyzing: uploads the take; saved → tap → selection; couldn't save → tap or double tap → back to Ready |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |
