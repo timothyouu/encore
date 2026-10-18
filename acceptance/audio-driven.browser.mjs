@@ -1,4 +1,4 @@
-// Locked browser acceptance for the phone microphone path. Run from the repository root.
+// Locked browser acceptance for the recording path. Run from the repository root.
 // Chromium receives a generated WAV through its fake media device; this is not physical microphone verification.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
@@ -192,7 +192,7 @@ async function microphoneFlow(browser, url) {
     assert.deepEqual(evidence.calls, ['/api/recordings', '/api/analyze', '/api/coach']);
     assert.match(await page.locator('.result-page').innerText(), /A4|1 thing to revisit/);
     assert.match(await page.locator('.result-page').innerText(), /7 of 8 reference notes matched/);
-    assert.equal(await page.locator('.demo-banner').innerText(), 'Phone microphone · service connection unverified');
+    assert.equal(await page.locator('.demo-banner').count(), 0);
     const tracks = await page.evaluate(() => window.__acceptance);
     assert.equal(tracks.capturedTracks, 1);
     assert.ok(tracks.stopped >= 1, 'stopping capture must stop microphone track');
@@ -200,7 +200,7 @@ async function microphoneFlow(browser, url) {
     assert.equal(tracks.closed, tracks.contexts, 'stopping must close meter and decoder contexts');
     await page.screenshot({ path: join(repo, '.run/recorded-result.png') });
     await page.getByRole('button', { name: 'View past results' }).click();
-    assert.match(await page.locator('.history-page').innerText(), /First Steps[\s\S]*Phone mic[\s\S]*Result/);
+    assert.match(await page.locator('.history-page').innerText(), /First Steps[\s\S]*Legacy[\s\S]*Result/);
     await page.reload();
     console.error('acceptance: reloaded');
     await page.getByRole('button', { name: /View history/ }).click();

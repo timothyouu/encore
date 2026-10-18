@@ -682,8 +682,10 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const shell = node('div', 'encore-shell');
     shell.append(header());
     const source = record ? record.captureSource ?? 'demo' : 'phone';
-    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? `G2 source · ${deviceStatus()}` : 'Service connection unverified');
-    demo.setAttribute('role', 'status'); shell.append(demo);
+    if (source !== 'phone') {
+      const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : `G2 source · ${deviceStatus()}`);
+      demo.setAttribute('role', 'status'); shell.append(demo);
+    }
     if (store.storageWarning) shell.append(node('div', 'storage-warning', store.storageWarning));
     if (screen === 'library') shell.append(library());
     else if (screen === 'ready' && passage) shell.append(ready(passage));
