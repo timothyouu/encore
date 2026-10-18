@@ -37,6 +37,121 @@ def scored(passage: dict[str, Any], notes: list[dict[str, Any]], audio_quality: 
 
 
 class ScoringTests(unittest.TestCase):
+    def test_clear_all_wrong_pitches_use_first_attack_and_report_wrong_notes(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage, offset=5)
+        for note in notes:
+            note["midiPitch"] += 1
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["alignment"], {"offsetSec": 5, "reliable": True})
+        self.assertEqual([f["kind"] for f in result["findings"]], ["wrong_note"] * 8)
+        self.assertIn("rhythm_anchored_comparison", result["audioQuality"]["warnings"])
+        self.assertIsNone(result["metrics"]["medianAbsTimingErrorMs"])
+
+    def test_clear_wrong_phrase_keeps_missing_beat_locations(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for note in notes:
+            note["midiPitch"] += 1
+        del notes[5]
+        del notes[2]
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([f["referenceNoteId"] for f in result["findings"] if f["kind"] == "missing_note"],
+                         ["P01-N03", "P01-N06"])
+        self.assertEqual(sum(f["kind"] == "wrong_note" for f in result["findings"]), 6)
+
+    def test_weak_wrong_pitches_do_not_turn_noise_into_missing_note_claims(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for note in notes:
+            note["midiPitch"] += 1
+            note["detectorScore"] = 0.2
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "uncertain")
+        self.assertEqual(result["findings"], [])
+
+    def test_two_clear_attacks_are_insufficient_to_grade_a_wrong_phrase(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)[:2]
+        for note in notes:
+            note["midiPitch"] += 1
+        self.assertEqual(scored(passage, notes)["status"], "uncertain")
+
+    def test_noise_and_silence_gates_still_block_wrong_phrase(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for note in notes:
+            note["midiPitch"] += 1
+        for q in (quality(clipped=True), quality(gaps=True)):
+            result = scored(passage, notes, q)
+            self.assertEqual(result["status"], "uncertain")
+            self.assertEqual(result["findings"], [])
+
+    def test_fragmented_piano_phrase_reports_wrong_and_missing_notes(self) -> None:
+        passage = PASSAGES["P01"]
+        events = [(64, .62, .65, .70), (64, 1.28, 1.52, .46),
+                  (67, 1.95, .62, .70), (67, 2.57, .43, .69),
+                  (67, 3.0, .95, .61), (65, 3.94, .37, .67),
+                  (65, 4.31, .30, .57), (65, 4.61, 1.50, .61),
+                  (65, 6.11, .49, .46), (65, 6.60, .24, .51),
+                  (60, 8.47, .39, .71), (62, 8.84, .30, .71)]
+        notes = [{"id": f"d{i}", "midiPitch": pitch, "onsetSec": onset,
+                  "durationSec": duration, "detectorScore": confidence}
+                 for i, (pitch, onset, duration, confidence) in enumerate(events)]
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("missing_note", [f["kind"] for f in result["findings"]])
+        self.assertIn("wrong_note", [f["kind"] for f in result["findings"]])
+        self.assertTrue(all(f["kind"] in ("wrong_note", "missing_note") for f in result["findings"]))
+        self.assertIsNone(result["metrics"]["medianAbsTimingErrorMs"])
+
+    def test_same_note_pairing_at_two_offsets_is_not_ambiguous_audio(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for index in (1, 3, 5, 7):
+            notes[index]["onsetSec"] += 0.25
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metrics"]["matchedNotes"], 8)
+        self.assertEqual([f["kind"] for f in result["findings"]], ["timing"] * 4)
+        self.assertNotIn("ambiguous_alignment", result["audioQuality"]["warnings"])
+
+    def test_slower_phrase_matches_notes_without_erasing_timing_errors(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for index, note in enumerate(notes):
+            note["onsetSec"] += index * 0.20
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metrics"]["matchedNotes"], 8)
+        self.assertAlmostEqual(result["alignment"]["offsetSec"], 0.8)
+        self.assertIn("tempo_adjusted_matching", result["audioQuality"]["warnings"])
+        self.assertEqual(len(result["findings"]), 7)
+        self.assertEqual(result["findings"][0]["referenceNoteId"], "P01-N08")
+        self.assertAlmostEqual(result["findings"][0]["timingDeltaMs"], 1400)
+
+    def test_faster_phrase_still_reports_early_onsets(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for index, note in enumerate(notes):
+            note["onsetSec"] -= index * 0.20
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["metrics"]["matchedNotes"], 8)
+        self.assertEqual(result["findings"][0]["timingDeltaMs"], -1400)
+
+    def test_two_complete_repetitions_are_genuinely_ambiguous(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        notes += [{**note, "id": note["id"] + "-repeat", "onsetSec": note["onsetSec"] + 10}
+                  for note in performed(passage)]
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "uncertain")
+        self.assertIn("ambiguous_alignment", result["audioQuality"]["warnings"])
+        self.assertEqual(result["findings"], [])
+
     def test_long_leading_silence_does_not_change_comparison(self) -> None:
         passage = PASSAGES["P01"]
         short = scored(passage, performed(passage, offset=0.8))

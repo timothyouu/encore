@@ -62,3 +62,11 @@ analysis/.venv/bin/python -m analysis.calibration_smoke --url http://127.0.0.1:8
 ```
 
 Both modes verify detection against known notes; neither establishes performance with physical glasses or an acoustic piano. The original normalized WAV and its timestamps are preserved.
+
+## Wrong-phrase comparison
+
+Scoring `1.4.0-demo` retains pitch-based alignment for recognizable passages. When that fails, a bounded beat-based fallback anchors to the first strong attack and compares strong detections against the selected tempo. It requires several strong attacks spanning at least 60% of the reference onset range, rejects recordings spanning multiple full takes, and gates silence, clipping and reported gaps as before. Simultaneous harmonic detections cannot establish extra attack positions.
+
+Fallback findings are wrong/missing notes only. It preserves raw detector events but withholds extra-note, timing and duration accusations and timing-summary metrics for this less certain correspondence. A `rhythm_anchored_comparison` warning identifies the method. Confidence, duration and beat-window thresholds are provisional detector-event heuristics, not a piano/noise classifier or physical-device calibration. Missing opening notes cannot be uniquely inferred if pitch anchors are entirely absent; in that case the selected convention treats the first strong played attack as the entrance.
+
+The backend change works with the existing 0.1.2 client package. Saved earlier results retain their prior analysis; make a new recording to use updated scoring.

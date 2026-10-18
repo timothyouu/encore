@@ -5,10 +5,13 @@ from io import BytesIO
 import unittest
 from typing import Any
 import wave
+import json
+from contextlib import redirect_stdout
 
 from fastapi import HTTPException
 
-from analysis.service import AttemptMetadata, _inspect_wav
+from analysis.service import AttemptMetadata, _inspect_wav, _report_result
+from analysis.tests.test_scoring import PASSAGES, performed, scored
 
 
 def metadata(**changes: Any) -> AttemptMetadata:
@@ -48,6 +51,20 @@ def wav_frames(frames: bytes) -> bytes:
 
 
 class AudioValidationTests(unittest.TestCase):
+    def test_diagnostics_explain_result_without_logging_note_events_or_private_fields(self) -> None:
+        result = scored(PASSAGES["P01"], performed(PASSAGES["P01"]))
+        result["privateToken"] = "never-print-this"
+        from io import StringIO
+        captured = StringIO()
+        with redirect_stdout(captured):
+            self.assertIs(_report_result(result), result)
+        summary = json.loads(captured.getvalue())
+        self.assertEqual(summary["detectedNoteCount"], 8)
+        self.assertEqual(summary["status"], "ok")
+        self.assertNotIn("detectedNotes", summary)
+        self.assertNotIn("midiPitch", captured.getvalue())
+        self.assertNotIn("never-print-this", captured.getvalue())
+
     def test_quiet_entrance_is_not_diluted_by_leading_silence(self) -> None:
         silence = bytes(22050 * 2)
         quiet_note = (100).to_bytes(2, "little", signed=True) * 2205

@@ -53,6 +53,13 @@ def main() -> None:
     wrong = deepcopy(passage)
     for index in (1, 3, 5, 7):
         wrong["notes"][index]["midiPitch"] += 1
+    slow, fast, uneven = deepcopy(passage), deepcopy(passage), deepcopy(passage)
+    for note in slow["notes"]:
+        note["onsetBeat"] *= 1.2
+    for note in fast["notes"]:
+        note["onsetBeat"] *= 0.8
+    for index in (1, 3, 5, 7):
+        uneven["notes"][index]["onsetBeat"] += 0.25
     noise = np.random.default_rng(20261018).normal(0, 0.01, len(clean)).astype(np.float32)
     time = np.arange(len(clean)) / SAMPLE_RATE
     cases = {
@@ -61,6 +68,9 @@ def main() -> None:
         "background_noise": clean + noise,
         "room_hum": clean + 0.012 * np.sin(2 * np.pi * 50 * time) + noise * 0.3,
         "four_wrong_notes": samples_for(wrong),
+        "slow_tempo": samples_for(slow),
+        "fast_tempo": samples_for(fast),
+        "uneven_timing": samples_for(uneven),
         "noise_only": noise,
         "silence": np.zeros_like(clean),
     }
@@ -89,6 +99,9 @@ def main() -> None:
             assert result["status"] == "ok" and result["metrics"]["matchedNotes"] >= 6, (label, result)
             if label == "room_hum":
                 assert not any(f["kind"] == "extra_note" for f in result["findings"]), result
+            if label in ("slow_tempo", "fast_tempo", "uneven_timing"):
+                assert result["metrics"]["matchedNotes"] == 8, (label, result)
+                assert any(f["kind"] == "timing" for f in result["findings"]), (label, result)
         report.append({"case": label, "status": result["status"],
                        "matchedNotes": result["metrics"]["matchedNotes"], "detectedNotes": len(notes),
                        "findingKinds": [finding["kind"] for finding in result["findings"]],

@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -22,7 +23,7 @@ from starlette.datastructures import UploadFile
 from starlette.requests import Request as StarletteRequest
 from starlette.types import Message
 
-from analysis.scoring import score_notes
+from analysis.scoring import SCORING_VERSION, score_notes
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_AUDIO_SECONDS = 30.0
@@ -228,7 +229,7 @@ def health() -> JSONResponse:
     return JSONResponse(
         status_code=200 if loaded else 503,
         content={"status": "ok" if loaded else "unavailable", "modelLoaded": loaded,
-                 "detectorVersion": DETECTOR_VERSION},
+                 "detectorVersion": DETECTOR_VERSION, "scoringVersion": SCORING_VERSION},
     )
 
 
@@ -244,7 +245,7 @@ async def analyze(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail="Unknown passage ID or version")
     quality, audible = _inspect_wav(wav_bytes, metadata)
     if not audible or quality["clipped"] or quality["hasDropouts"]:
-        return score_notes(passage, metadata.attemptId, metadata.attemptTempoBpm, [], quality, DETECTOR_VERSION, audible)
+        return _report_result(score_notes(passage, metadata.attemptId, metadata.attemptTempoBpm, [], quality, DETECTOR_VERSION, audible))
     if not _ADMISSION.acquire(blocking=False):
         raise HTTPException(status_code=503, detail="Analysis busy; retry same attempt ID")
     future = asyncio.get_running_loop().run_in_executor(_EXECUTOR, _predict_admitted, wav_bytes)
@@ -254,12 +255,46 @@ async def analyze(request: Request) -> dict[str, Any]:
         result = score_notes(passage, metadata.attemptId, metadata.attemptTempoBpm, [], quality, DETECTOR_VERSION, True)
         result["status"] = "error"
         result["audioQuality"]["warnings"].append("analysis_timeout")
-        return result
+        return _report_result(result)
     except Exception:
         result = score_notes(passage, metadata.attemptId, metadata.attemptTempoBpm, [], quality, DETECTOR_VERSION, True)
         result["status"] = "error"
         result["audioQuality"]["warnings"].append("detector_failed")
-        return result
-    return score_notes(
+        return _report_result(result)
+    return _report_result(score_notes(
         passage, metadata.attemptId, metadata.attemptTempoBpm, detected, quality, DETECTOR_VERSION, audible
-    )
+    ), wav_bytes, metadata)
+
+
+def _report_result(result: dict[str, Any], wav_bytes: bytes | None = None,
+                   metadata: AttemptMetadata | None = None) -> dict[str, Any]:
+    """Log redacted counts; optionally keep a private numeric analysis snapshot."""
+    print(json.dumps({
+        "event": "analysis_result", "attemptId": result["attemptId"], "passageId": result["passageId"],
+        "status": result["status"], "warnings": result["audioQuality"]["warnings"],
+        "detectorVersion": result["detectorVersion"], "scoringVersion": result["scoringVersion"],
+        "detectedNoteCount": len(result["detectedNotes"]), "metrics": result["metrics"],
+        "alignmentReliable": result["alignment"]["reliable"],
+    }), flush=True)
+    debug_dir = os.environ.get("ENCORE_ANALYSIS_DEBUG_DIR")
+    if debug_dir and not result["attemptId"].startswith(("calibration-", "origin-check-")):
+        directory = Path(debug_dir).resolve()
+        run_directory = Path(__file__).resolve().parents[1] / ".run"
+        if directory.parent == run_directory.resolve():
+            # Explicit local debugging only: keep one private result, never WAV
+            # bytes or external telemetry. Normal service runs save nothing.
+            try:
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with tempfile.NamedTemporaryFile(mode="w", dir=directory, delete=False) as output:
+                    snapshot = dict(result)
+                    if wav_bytes is not None and metadata is not None:
+                        from analysis.audio_diagnostics import signal_summary
+                        snapshot["captureDiagnostics"] = {
+                            "metadata": metadata.model_dump(), **signal_summary(wav_bytes),
+                        }
+                    json.dump(snapshot, output)
+                    temporary = output.name
+                os.replace(temporary, directory / "last-analysis.json")
+            except OSError:
+                print(json.dumps({"event": "analysis_debug_unavailable"}), flush=True)
+    return result

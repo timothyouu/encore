@@ -10,7 +10,7 @@ from math import ceil, isfinite
 from statistics import median
 from typing import Any
 
-SCORING_VERSION = "1.2.1-demo"
+SCORING_VERSION = "1.4.0-demo"
 MIN_PITCH_ANCHOR_FRACTION = 0.35
 MIN_PAIR_COVERAGE = 0.60
 MIN_EXTRA_NOTE_SCORE = 0.35
@@ -40,7 +40,8 @@ def _pair_cost(reference: dict[str, Any], detected: dict[str, Any], offset: floa
     return pitch_cost + 0.7 * abs(delta) / beat_sec
 
 
-def _align(reference: list[dict[str, Any]], detected: list[dict[str, Any]], offset: float, beat_sec: float) -> Pairing:
+def _align(reference: list[dict[str, Any]], detected: list[dict[str, Any]], offset: float, beat_sec: float,
+           sequence_only: bool = False, rhythm_only: bool = False) -> Pairing:
     rows = len(reference) + 1
     cols = len(detected) + 1
     costs = [[float("inf")] * cols for _ in range(rows)]
@@ -56,7 +57,16 @@ def _align(reference: list[dict[str, Any]], detected: list[dict[str, Any]], offs
             if j:
                 options.append((costs[i][j - 1] + SKIP_COST, paths[i][j - 1], 1))
             if i and j:
-                pair_cost = _pair_cost(reference[i - 1], detected[j - 1], offset, beat_sec)
+                if sequence_only:
+                    pair_cost = float(reference[i - 1]["midiPitch"] != detected[j - 1]["midiPitch"])
+                else:
+                    pair_cost = _pair_cost(reference[i - 1], detected[j - 1], offset, beat_sec)
+                    if rhythm_only and abs(detected[j - 1]["onsetSec"] -
+                                           (reference[i - 1]["onsetBeat"] * beat_sec + offset)) > 0.35 * beat_sec:
+                        pair_cost = None
+                    if rhythm_only and pair_cost is not None:
+                        pair_cost = 0.7 * abs(detected[j - 1]["onsetSec"] -
+                                              (reference[i - 1]["onsetBeat"] * beat_sec + offset)) / beat_sec
                 if pair_cost is not None:
                     options.append((costs[i - 1][j - 1] + pair_cost, paths[i - 1][j - 1] + ((i - 1, j - 1),), 0))
             cost, path, _ = min(options, key=lambda option: (option[0], option[2]))
@@ -74,6 +84,73 @@ def _candidate_offsets(reference: list[dict[str, Any]], detected: list[dict[str,
             offset = played["onsetSec"] - expected["onsetBeat"] * beat_sec
             candidates.add(round(offset, 3))
     return sorted(candidates)
+
+
+def _matching_beats(reference: list[dict[str, Any]], detected: list[dict[str, Any]], target_beat: float) -> list[float]:
+    """Allow a clearly recognizable phrase to be matched at its performed speed.
+
+    This changes correspondence only. Findings still use the requested tempo and
+    the first played-note offset, so slow/fast playing remains a timing error.
+    """
+    sequence = _align(reference, detected, 0, target_beat, sequence_only=True)
+    anchors = [(reference[i]["onsetBeat"], detected[j]["onsetSec"]) for i, j in sequence.pairs
+               if reference[i]["midiPitch"] == detected[j]["midiPitch"]]
+    # Require stronger phrase evidence for tempo adaptation than ordinary grading.
+    if (len(anchors) < max(3, ceil(len(reference) * 0.60))
+            or len(anchors) < ceil(len(detected) * 0.40)
+            or len(sequence.pairs) < ceil(len(reference) * 0.80)):
+        return [target_beat]
+    slopes = [(later_sec - earlier_sec) / (later_beat - earlier_beat)
+              for earlier_beat, earlier_sec in anchors for later_beat, later_sec in anchors
+              if later_beat - earlier_beat >= 1 and later_sec > earlier_sec]
+    if not slopes:
+        return [target_beat]
+    performed_beat = median(slopes)
+    if not 0.5 * target_beat <= performed_beat <= 2.0 * target_beat:
+        return [target_beat]
+    entrance = median(onset - beat * performed_beat for beat, onset in anchors)
+    residual = median(abs(onset - (beat * performed_beat + entrance)) for beat, onset in anchors)
+    if residual > max(0.12, performed_beat * 0.20) or abs(performed_beat / target_beat - 1) < 0.08:
+        return [target_beat]
+    return [target_beat, performed_beat]
+
+
+def _rhythmic_fallback(reference: list[dict[str, Any]], detected: list[dict[str, Any]],
+                       beat_sec: float, minimum_score: float = 0.5) -> tuple[float, Pairing] | None:
+    """Match clear attacks by elapsed beats when pitch identity cannot anchor them.
+
+    Use the first strong attack as the entrance. Weak/harmonic events cannot
+    establish correspondence, and a recording spanning multiple takes is rejected.
+    """
+    strong = [(j, note) for j, note in enumerate(detected)
+              if note.get("detectorScore", 0) >= minimum_score and note.get("durationSec", 0) >= 0.18
+              and (note.get("detectorScore", 0) >= 0.55 or
+                   min(n["midiPitch"] for n in reference) - 24 <= note["midiPitch"]
+                   <= max(n["midiPitch"] for n in reference) + 24)]
+    if len(strong) < max(3, ceil(len(reference) * 0.375)):
+        return None
+    # Keep lower-pitched fundamentals when a simultaneous octave is also detected.
+    attacks = [(j, note) for j, note in strong if not any(
+        other["midiPitch"] < note["midiPitch"]
+        and (note["midiPitch"] - other["midiPitch"]) in (12, 19, 24, 28, 31, 36)
+        and abs(other["onsetSec"] - note["onsetSec"]) < 0.08
+        for _, other in strong)]
+    if len(attacks) < 3:
+        return None
+    offset = attacks[0][1]["onsetSec"] - reference[0]["onsetBeat"] * beat_sec
+    span = attacks[-1][1]["onsetSec"] - attacks[0][1]["onsetSec"]
+    expected_span = (reference[-1]["onsetBeat"] - reference[0]["onsetBeat"]) * beat_sec
+    if span < expected_span * 0.60 or span > expected_span + 3 * beat_sec:
+        return None
+    candidate = _align(reference, [note for _, note in attacks], offset, beat_sec, rhythm_only=True)
+    if len(candidate.pairs) < max(3, ceil(len(reference) * 0.375)):
+        return None
+    pairs = tuple((i, attacks[j][0]) for i, j in candidate.pairs)
+    # All inferred attacks must have a plausible single-note beat location.
+    if any(abs(detected[j]["onsetSec"] - (reference[i]["onsetBeat"] * beat_sec + offset))
+           > 0.35 * beat_sec for i, j in pairs):
+        return None
+    return offset, Pairing(candidate.cost, pairs)
 
 
 def _base_result(
@@ -137,38 +214,63 @@ def score_notes(
         return result
     beat_sec = 60.0 / tempo_bpm
     reference = passage["notes"]
-    candidates = _candidate_offsets(reference, detected, beat_sec)
-    if not candidates:
-        result["audioQuality"]["warnings"].append("no_pitch_anchor")
-        return result
-    ranked = sorted(
-        ((offset, _align(reference, detected, offset, beat_sec)) for offset in candidates),
-        key=lambda item: (item[1].cost, -len(item[1].pairs), abs(item[0])),
-    )
-    offset, best = ranked[0]
-    ambiguous = any(
-        abs(other_offset - offset) >= MIN_OFFSET_SEPARATION_BEATS * beat_sec
-        and other.cost - best.cost <= AMBIGUITY_COST_MARGIN
-        for other_offset, other in ranked[1:]
-    )
-    pitch_anchors = sum(
-        reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs
-    )
-    enough_coverage = len(best.pairs) >= ceil(len(reference) * MIN_PAIR_COVERAGE)
-    if ambiguous or not enough_coverage or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION)):
-        result["audioQuality"]["warnings"].append("ambiguous_alignment" if ambiguous else "too_few_pitch_anchors")
-        return result
-    # Infer note identity before anchoring: a missed opening note or a leading
-    # extra must not shift every later reference note. Keep the original WAV clock.
-    first_reference, first_detected = best.pairs[0]
-    offset = detected[first_detected]["onsetSec"] - reference[first_reference]["onsetBeat"] * beat_sec
-    best = _align(reference, detected, offset, beat_sec)
-    pitch_anchors = sum(reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs)
-    if (len(best.pairs) < ceil(len(reference) * MIN_PAIR_COVERAGE)
-            or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION))):
-        result["audioQuality"]["warnings"].append("too_few_pitch_anchors")
-        return result
+    candidates = [(offset, matching_beat) for matching_beat in _matching_beats(reference, detected, beat_sec)
+                  for offset in _candidate_offsets(reference, detected, matching_beat)]
+    def pitch_alignment() -> tuple[float, float, Pairing] | None:
+        if not candidates:
+            result["audioQuality"]["warnings"].append("no_pitch_anchor")
+            return None
+        ranked = sorted(
+            ((offset, matching_beat, _align(reference, detected, offset, matching_beat))
+             for offset, matching_beat in candidates),
+            key=lambda item: (item[2].cost, -len(item[2].pairs), abs(item[1] - beat_sec), abs(item[0])),
+        )
+        offset, matching_beat, best = ranked[0]
+        ambiguous = any(
+            other.pairs != best.pairs
+            and (abs(other_offset - offset) >= MIN_OFFSET_SEPARATION_BEATS * beat_sec
+                 or abs(other_beat - matching_beat) >= 0.08 * beat_sec)
+            and other.cost - best.cost <= AMBIGUITY_COST_MARGIN
+            for other_offset, other_beat, other in ranked[1:]
+        )
+        pitch_anchors = sum(
+            reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs
+        )
+        enough_coverage = len(best.pairs) >= ceil(len(reference) * MIN_PAIR_COVERAGE)
+        if ambiguous or not enough_coverage or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION)):
+            result["audioQuality"]["warnings"].append("ambiguous_alignment" if ambiguous else "too_few_pitch_anchors")
+            return None
+        # Infer note identity before anchoring: a missed opening note or a leading
+        # extra must not shift every later reference note. Keep the original WAV clock.
+        first_reference, first_detected = best.pairs[0]
+        offset = detected[first_detected]["onsetSec"] - reference[first_reference]["onsetBeat"] * beat_sec
+        matching_offset = detected[first_detected]["onsetSec"] - reference[first_reference]["onsetBeat"] * matching_beat
+        best = _align(reference, detected, matching_offset, matching_beat)
+        pitch_anchors = sum(reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs)
+        if (len(best.pairs) < ceil(len(reference) * MIN_PAIR_COVERAGE)
+                or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION))):
+            result["audioQuality"]["warnings"].append("too_few_pitch_anchors")
+            return None
+        return offset, matching_beat, best
+
+    selected_alignment = pitch_alignment()
+    rhythmic = False
+    if selected_alignment is None:
+        fallback = (_rhythmic_fallback(reference, detected, beat_sec)
+                    or _rhythmic_fallback(reference, detected, beat_sec, minimum_score=0.4))
+        if fallback is None:
+            return result
+        offset, best = fallback
+        matching_beat = beat_sec
+        rhythmic = True
+        result["audioQuality"]["warnings"] = [warning for warning in result["audioQuality"]["warnings"]
+            if warning not in ("no_pitch_anchor", "too_few_pitch_anchors", "ambiguous_alignment")]
+        result["audioQuality"]["warnings"].append("rhythm_anchored_comparison")
+    else:
+        offset, matching_beat, best = selected_alignment
     result["alignment"] = {"offsetSec": offset, "reliable": True}
+    if abs(matching_beat / beat_sec - 1) >= 0.08:
+        result["audioQuality"]["warnings"].append("tempo_adjusted_matching")
     result["status"] = "ok"
     matched_detected = {j for _, j in best.pairs}
     findings: list[dict[str, Any]] = []
@@ -189,14 +291,17 @@ def score_notes(
             continue
         correct_pitch_count += 1
         delta_ms = (played["onsetSec"] - expected["onsetBeat"] * beat_sec - offset) * 1000.0
-        errors_ms.append(abs(delta_ms))
-        if abs(delta_ms) > TIMING_FINDING_SEC * 1000.0:
+        if not rhythmic:
+            errors_ms.append(abs(delta_ms))
+        if not rhythmic and abs(delta_ms) > TIMING_FINDING_SEC * 1000.0:
             findings.append({
                 "kind": "timing",
                 "referenceNoteId": expected["id"],
                 "detectedNoteId": played["id"],
                 "timingDeltaMs": round(delta_ms, 1),
             })
+        if rhythmic:
+            continue
         duration = played.get("durationSec")
         confidence = played.get("detectorScore")
         if (not isinstance(duration, (int, float)) or not isfinite(duration) or duration <= 0
@@ -216,6 +321,9 @@ def score_notes(
             })
     for j, played in enumerate(detected):
         if j not in matched_detected:
+            if rhythmic:
+                # Unpaired detector fragments are not proven extra key strikes.
+                continue
             # A short event between aligned repeats may be a detector split or
             # a real quick strike. Keep it visible and withhold musical claims.
             duration = played.get("durationSec")
