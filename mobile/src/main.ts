@@ -2,7 +2,7 @@ import { startPhoneApp } from './app.ts';
 
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Encore app root is missing');
-// The standalone phone build has no host source: Demo and Phone microphone only.
+// The standalone phone build uses its microphone; a G2 source is supplied only by a host.
 const app = await startPhoneApp(root, {
   storage: {
     getItem: (key: string): string | null => window.localStorage.getItem(key),

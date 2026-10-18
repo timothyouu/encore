@@ -18,7 +18,7 @@ g2/index.html (Even Hub WebView)
 
 - Imports flow **g2 → mobile only**. `mobile/` still never imports the SDK, `g2/`, or a native bridge, and its boundary test stays unchanged.
 - Every glasses side effect (containers, images, text, gestures, mic, Even storage) lives in `g2/`.
-- The standalone mobile app (`mobile/`, :5174) keeps working as a phone-only build with Demo and Phone-mic sources.
+- The standalone mobile app (`mobile/`, :5176) keeps working as a phone-only build with the Phone-mic source.
 
 ## Ownership
 
@@ -35,8 +35,8 @@ g2/index.html (Even Hub WebView)
 
 1. `SessionStore.start('g2')` creates a record whose `captureSource` is `'g2'`. It's pure data: the store never touches a device.
 2. `PhoneCapture.processRecording(record, blob)` runs a completed attempt from another source through the phone's own pipeline: normalization to 22.05 kHz mono WAV, one upload, analysis, coaching, the retry window and History storage. The host gets it as `submit` and never touches the network itself. The server accepts `captureSource: 'g2'` on uploads, as the analysis service already does.
-3. `mountPhone` actions accept `getMode(): 'demo' | 'phone' | 'g2'` and an optional `deviceStatus(): string | null`. Without one, the UI keeps saying "Glasses integration not connected".
-4. `mountConnection` accepts the list of recording sources to offer. The standalone app offers Demo and Phone. The G2 host adds G2 microphone.
+3. `mountPhone` actions accept `getMode(): 'phone' | 'g2'` and an optional `deviceStatus(): string | null`. Without one, the UI keeps saying "Glasses integration not connected".
+4. `mountConnection` accepts the list of recording sources to offer. The standalone app offers Phone. The G2 host adds G2 microphone.
 
 ## State map
 

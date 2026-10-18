@@ -1,5 +1,6 @@
 import './paper-renderer.css';
 import { mountPaperVisualization } from './paper-renderer.ts';
+import { WAVEFORM_BARS } from './audio-meter.ts';
 import { resolveVisualPlan } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
@@ -10,9 +11,8 @@ import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, ty
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from './feedback.ts';
 
-type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Mode = 'demo' | 'phone' | 'g2';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null };
+type Mode = 'phone' | 'g2';
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
 // deviceStatus comes from a host that owns a real device connection; the phone-only app has none.
 const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
@@ -192,15 +192,17 @@ function durationLabel(note?: ReferenceNote): string {
 
 export function mountPhone(root: HTMLElement, store: SessionStore, actions: Actions, settings: DisplaySettingsStore = new DisplaySettingsStore()): () => void {
   let query = '';
-  let scenario: Scenario = 'mistakes';
   let cancelOpen = false;
   let settingsLayer: HTMLElement | null = null;
   let settingsScrollY = 0;
   let timer: number | undefined;
+  let waveformFrame: number | undefined;
+  let waveformBars: HTMLElement[] = [];
+  let waveformStatus: HTMLElement | null = null;
   let recordingTime: HTMLElement | null = null;
   let touchStart: number | null = null;
   let focusReturnSelector = '.recording-page .secondary-action';
-  const mode = (): Mode => actions.getMode?.() ?? 'demo';
+  const mode = (): Mode => actions.getMode?.() ?? 'phone';
   const deviceStatus = (): string => actions.deviceStatus?.() ?? NO_DEVICE;
   const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement => notation(passage, selected, extraBeat, settings.value);
 
@@ -282,7 +284,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     add(intro, node('h1', '', 'Settings'), status);
     body.append(intro);
     const value = settings.value;
-    body.append(settingsSwitch('Show sheet music on glasses', 'See the sheet music while you play.', value.showSheetMusicWhilePlaying, () => settings.update({ showSheetMusicWhilePlaying: !value.showSheetMusicWhilePlaying })));
+    body.append(settingsSwitch('Show sheet music while recording', 'Show the reference score on this phone while you play.', value.showSheetMusicWhilePlaying, () => settings.update({ showSheetMusicWhilePlaying: !value.showSheetMusicWhilePlaying })));
     const sizeSection = node('section', 'settings-size');
     const sizeLabel = node('h2', '', 'Sheet music size');
     sizeLabel.id = 'sheet-size-label';
@@ -398,23 +400,10 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
-    const selector = node('label', 'scenario-label', 'Demo result');
-    if (mode() === 'demo') {
-      const select = node('select'); select.setAttribute('aria-label', 'Demo result scenario');
-      for (const [value, label] of [['mistakes', 'Mistakes'], ['clean', 'Clean'], ['uncertain', 'Unclear audio'], ['error', 'Processing error']] as const) {
-        const option = node('option', '', label); option.value = value; select.append(option);
-      }
-      select.value = scenario;
-      select.addEventListener('change', () => {
-        scenario = select.value as Scenario;
-        root.dispatchEvent(new CustomEvent('encore:scenario', { detail: { scenario }, bubbles: true }));
-      });
-      selector.append(select);
-    }
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const start = control('Start recording →', 'primary-action', actions.start);
     const testUpload = node('label', 'test-wav-label', 'Use a test WAV recording');
-    if (actions.importWav && mode() === 'phone') {
+    if (actions.importWav) {
       const file = node('input');
       file.type = 'file'; file.accept = '.wav,audio/wav';
       file.setAttribute('aria-label', 'Import test WAV for this passage');
@@ -425,7 +414,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       });
       add(testUpload, file, node('span', 'subtle', 'Labeled as test audio in results and History.'));
     }
-    add(page, top, heading(passage.title, 'Listen, then play the phrase'), preview, source, mode() === 'demo' ? selector : null, actions.importWav && mode() === 'phone' ? testUpload : null, node('div', 'grow'), start);
+    add(page, top, heading(passage.title, 'Read the score, then play the phrase'), preview, source, actions.importWav ? testUpload : null, node('div', 'grow'), start);
     return page;
   }
 
@@ -440,24 +429,43 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     recordingTime = node('span', 'recording-time', '00:00');
     const indicator = add(node('div', 'recording-indicator'), dot, node('span', '', 'Recording'), recordingTime);
     add(core, node('h1', 'recording-passage-title', passage.title), indicator);
+    if (source === 'phone') {
+      const bars = node('div', 'recording-bars');
+      bars.setAttribute('aria-hidden', 'true');
+      waveformBars = [];
+      for (let index = 0; index < WAVEFORM_BARS; index += 1) {
+        const bar = node('span', 'recording-bar');
+        bar.style.height = '2px';
+        waveformBars.push(bar);
+        bars.append(bar);
+      }
+      waveformStatus = node('p', 'waveform-status', 'Live audio level unavailable; recording continues.');
+      waveformStatus.setAttribute('role', 'status');
+      core.append(bars, waveformStatus);
+    }
     if (settings.value.showSheetMusicWhilePlaying && source !== 'demo') {
       const preview = add(node('div', 'recording-score'), score(passage));
       preview.setAttribute('aria-label', 'Static reference sheet music while recording');
       core.append(preview);
-    } else if (source === 'demo') {
-      const bars = node('div', 'recording-bars');
-      bars.setAttribute('aria-hidden', 'true');
-      for (const height of [4, 6, 8, 14, 24, 36, 48, 38, 24, 14, 10, 18, 30, 46, 62, 52, 34, 20, 12, 8, 12, 22, 38, 56, 66, 52, 36, 24, 16, 10, 18, 30, 40, 32, 22, 14, 8, 6, 4, 4]) {
-        const bar = node('span', 'recording-bar'); bar.style.height = `${height}px`; bars.append(bar);
-      }
-      core.append(bars);
     }
-    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture and decorative waveform; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Phone microphone · reference sheet music is static'));
+    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Phone microphone · live audio level; reference sheet music is static'));
     add(page, core, control('Stop & analyze', 'primary-action', actions.stop), control('Cancel', 'secondary-action', openDialog));
     if (record) updateTime(record);
     return page;
   }
 
+  function updateWaveform(): void {
+    const levels = actions.getWaveform?.() ?? null;
+    const bars = root.querySelector<HTMLElement>('.recording-bars');
+    if (bars) bars.hidden = levels === null;
+    if (waveformStatus) waveformStatus.hidden = levels !== null;
+    if (levels) {
+      for (const [index, bar] of waveformBars.entries()) {
+        bar.style.height = `${2 + Math.round((levels[index] ?? 0) * 94)}px`;
+      }
+    }
+    waveformFrame = window.requestAnimationFrame(updateWaveform);
+  }
   function updateTime(record: AttemptRecord): void {
     const seconds = Math.max(0, Math.floor((Date.now() - Date.parse(record.startedAt)) / 1000));
     if (recordingTime) recordingTime.textContent = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
@@ -472,7 +480,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const detail = stage === 'normalization' ? 'Normalizing the saved recording.' : stage === 'upload' ? 'Sending the normalized WAV to the configured server.' : stage === 'analysis' ? 'Checking detected notes against this passage.' : stage === 'coaching' ? 'Preparing a cue from the saved analysis.' : 'Your recording is saved. Preparing the result…';
     add(center, indicator, heading(title, passage?.title), node('p', 'subtle', detail));
     if (store.state.historyOrigin) page.append(control('‹ Back to history', 'back-link', () => store.showHistory()));
-    add(page, center, node('p', 'fine-print', (currentRecord()?.captureSource ?? mode()) === 'demo' ? 'Demo analysis uses a prepared local result.' : 'A service error will be shown at the stage where it occurs.'));
+    add(page, center, node('p', 'fine-print', currentRecord()?.captureSource === 'demo' ? 'Demo analysis uses a prepared local result.' : 'A service error will be shown at the stage where it occurs.'));
     return page;
   }
 
@@ -651,6 +659,10 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   function renderContent(): void {
     if (settings.isOpen && settingsLayer) return;
     clearPaperViews();
+    if (waveformFrame !== undefined) window.cancelAnimationFrame(waveformFrame);
+    waveformFrame = undefined;
+    waveformBars = [];
+    waveformStatus = null;
     const screenChanged = lastScreen !== store.state.screen;
     lastScreen = store.state.screen;
     const record = currentRecord();
@@ -658,8 +670,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const screen = store.state.screen;
     const shell = node('div', 'encore-shell');
     shell.append(header());
-    const source = record ? record.captureSource ?? 'demo' : mode();
-    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? 'G2 source · hardware connection unverified' : 'Phone microphone · service connection unverified');
+    const source = record ? record.captureSource ?? 'demo' : 'phone';
+    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? `G2 source · ${deviceStatus()}` : 'Phone microphone · service connection unverified');
     demo.setAttribute('role', 'status'); shell.append(demo);
     if (store.storageWarning) shell.append(node('div', 'storage-warning', store.storageWarning));
     if (screen === 'library') shell.append(library());
@@ -684,7 +696,10 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     if (screenChanged) window.scrollTo({ top: 0, behavior: 'instant' });
     if (timer !== undefined) window.clearInterval(timer);
     timer = undefined;
-    if (screen === 'recording' && record) timer = window.setInterval(() => updateTime(record), 1000);
+    if (screen === 'recording' && record) {
+      timer = window.setInterval(() => updateTime(record), 1000);
+      if (waveformBars.length && typeof window.requestAnimationFrame === 'function') updateWaveform();
+    }
     if (settings.isOpen) syncSettingsLayer();
   }
 
@@ -739,6 +754,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     root.removeEventListener('keydown', onKeyDown);
     root.removeEventListener('encore:mode-change', render);
     if (timer !== undefined) window.clearInterval(timer);
+    if (waveformFrame !== undefined) window.cancelAnimationFrame(waveformFrame);
     root.replaceChildren();
   };
 }

@@ -1,14 +1,14 @@
 import type { SessionStore } from './session.ts';
 import type { CaptureEndpoints } from './capture.ts';
 
-export type RecordingSource = 'demo' | 'phone' | 'g2';
+export type RecordingSource = 'phone' | 'g2';
 export type Connection = { mode: RecordingSource; upload: string; analysis: string; coaching: string };
-const SOURCE_LABELS: Record<RecordingSource, string> = { demo: 'Demo (simulated)', phone: 'Phone microphone', g2: 'G2 microphone' };
+const SOURCE_LABELS: Record<RecordingSource, string> = { phone: 'Phone microphone', g2: 'G2 microphone' };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
 export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null,
   options: { sources?: RecordingSource[]; defaults: CaptureEndpoints; locked?: boolean; onSessionToken?: (token: string) => void }): { message(value: string | null): void; setVisible(visible: boolean): void; dispose(): void } {
-  const sources = options.sources ?? ['demo', 'phone'];
+  const sources = options.sources ?? ['phone'];
   const panel = document.createElement('details');
   panel.className = 'connection-settings';
   panel.style.cssText = 'max-width:390px;margin:0 auto 24px;padding:16px 24px;font:14px/1.5 system-ui;color:#625F58;box-sizing:border-box;';
@@ -19,7 +19,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   const form = document.createElement('form');
   form.style.cssText = 'display:grid;gap:12px;';
   const explanation = document.createElement('p');
-  explanation.textContent = 'Phone recording sends normalized WAV audio through upload, analysis, and coaching. Demo uses simulated results and is labeled separately. Raw audio is not saved in History.';
+  explanation.textContent = 'Phone recording sends your normalized WAV audio through upload, analysis, and coaching. Results and history use that recorded analysis. Raw audio is not saved in History.';
   form.append(explanation);
   const modeLabel = document.createElement('label');
   modeLabel.textContent = 'Recording source';
@@ -29,7 +29,8 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
     const option = document.createElement('option'); option.value = value; option.textContent = SOURCE_LABELS[value]; mode.append(option);
   }
   mode.value = 'phone';
-  modeLabel.append(mode); form.append(modeLabel);
+  modeLabel.append(mode);
+  if (sources.length > 1) form.append(modeLabel);
   function field(label: string, placeholder: string): HTMLInputElement {
     const wrapper = document.createElement('label'); wrapper.textContent = label;
     const input = document.createElement('input'); input.type = 'text'; input.inputMode = 'url'; input.placeholder = placeholder; input.setAttribute('aria-label', label); input.autocomplete = 'off';
@@ -54,7 +55,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   form.addEventListener('submit', event => {
     event.preventDefault();
     if (apply.disabled) return;
-    const error = change({ mode: sources.find(source => source === mode.value) ?? 'demo', upload: upload.value.trim(), analysis: analysis.value.trim(), coaching: coaching.value.trim() });
+    const error = change({ mode: sources.find(source => source === mode.value) ?? 'phone', upload: upload.value.trim(), analysis: analysis.value.trim(), coaching: coaching.value.trim() });
     status.textContent = error ?? 'Connection applied. Choose a passage to begin.';
     if (!error) panel.open = false;
   });

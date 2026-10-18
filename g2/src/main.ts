@@ -30,7 +30,7 @@ async function main() {
   try { indexedDB = window.indexedDB; status(indexedDB ? 'WebView IndexedDB API exposed; persistence pending hydrate' : 'WebView IndexedDB API unavailable') }
   catch { status('WebView IndexedDB unavailable', 'error') }
   status(`build ${import.meta.env.VITE_ENCORE_BUILD_ID || 'development'} · WebView origin ${window.location.origin}`)
-  status(service ? `service ${service.origin}` : 'service not packaged; Demo only until configured')
+  status(service ? `service ${service.origin}` : 'service not packaged; configure endpoints before recording')
   let glasses: Glasses | null = null
   // The bridge being ready is not proof the glasses are connected (spec §9).
   const app = await startPhoneApp(root, {
