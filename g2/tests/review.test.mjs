@@ -202,6 +202,18 @@ test('review: swipe down shows the next card in place; swipe up goes back; no re
   assert.equal(bridge.callsTo('updateImageRawData').length, 3)
 })
 
+test('menu-style redraw keeps the selected card instead of rebuilding card one', async () => {
+  const { screen, ctx, bridge } = review(twoCards())
+  await settle()
+  screen.onInput({ kind: 'swipeDown' })
+  await settle()
+  ctx.redraw()
+  await settle()
+  assert.equal(textByName(bridge).title, 'Beat 6 · late')
+  assert.equal(textByName(bridge).counter, '2 / 2')
+  assert.equal(sentArt(bridge).at(-1), 'S')
+})
+
 test('review: fast swipes only send the card that is still on screen', async () => {
   const cards = [card('missing_note-missing'), card('wrong_note-pitch'), card('timing-late')]
   cards.forEach((c, i) => (c.id = `c${i}`))
@@ -231,6 +243,20 @@ test('every kind replays what was played, then the fix; unclear audio has nothin
   for (const { name } of examples.examples) {
     for (const step of replaySteps(card(name))) assert.ok(step.caption, name)
   }
+})
+
+test('validated key context is supplemental and the replay still ends on the existing correction', () => {
+  for (const name of ['missing_note-missing', 'extra_note-extra', 'timing-early', 'duration-short']) {
+    const plain = replaySteps(card(name))
+    const withContext = replaySteps(card(name), true)
+    assert.equal(withContext.length, plain.length + 1, name)
+    assert.equal(withContext.filter(step => step.art === 'context').length, 1, name)
+    assert.deepEqual(withContext.at(-1), plain.at(-1), name)
+    assert.ok(withContext.findIndex(step => step.art === 'context') < withContext.findIndex(step => step.layer === 'written'), name)
+  }
+  assert.equal(replaySteps(card('wrong_note-pitch'), true).filter(step => step.art === 'context').length, 0)
+  assert.deepEqual(replaySteps(card('unclear_audio-noisy'), true), [])
+  assert.ok(replaySteps(card('missing_note-missing'), true).length <= 2 * 4 + 1)
 })
 
 test('staff replays reveal notes one at a time, at most four steps per phase', () => {
@@ -265,6 +291,43 @@ test('replay: tap reveals what was played, then what is written, ends on the fix
   assert.deepEqual(captions, ['what you played', 'what you played', "what's written", "what's written", "what's written", 'tap  replay'])
   const progress = bridge.callsTo('textContainerUpgrade').filter(u => u.containerName === 'next').map(u => u.content.trim())
   assert.deepEqual(progress, ['●○○○○', '●●○○○', '●●●○○', '●●●●○', '●●●●●', ''])
+})
+
+test('menu-style redraw after replay preserves the final correction frame', async () => {
+  const { screen, ctx, bridge } = review([card('wrong_note-pitch')])
+  await settle()
+  screen.onInput({ kind: 'tap' })
+  await settle(80)
+  assert.equal(sentArt(bridge).at(-1), 'W')
+  ctx.redraw()
+  await settle()
+  assert.equal(sentArt(bridge).at(-1), 'W')
+  assert.equal(textByName(bridge).replay, 'tap  replay')
+})
+
+test('replay dwell begins after the image arrives, even on a slow bridge', async () => {
+  const { screen, bridge } = review([card('duration-short')], { frameDwellMs: 120 })
+  await settle()
+  let release
+  let block = true
+  bridge.updateImageRawData = async update => {
+    bridge.record('updateImageRawData', update)
+    if (block) {
+      block = false
+      await new Promise(resolve => { release = resolve })
+    }
+    return 'success'
+  }
+  screen.onInput({ kind: 'tap' })
+  await settle()
+  await new Promise(resolve => setTimeout(resolve, 150))
+  assert.deepEqual(sentArt(bridge), ['S', 'P'])
+  release()
+  await settle()
+  assert.deepEqual(sentArt(bridge), ['S', 'P'])
+  await new Promise(resolve => setTimeout(resolve, 140))
+  await settle()
+  assert.deepEqual(sentArt(bridge).slice(0, 3), ['S', 'P', 'W'])
 })
 
 test('replay: swiping away and back shows the comparison card again', async () => {

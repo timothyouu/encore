@@ -1,10 +1,16 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
+import { orderedFindings } from '../../mobile/src/feedback.ts'
+import { resolveMistakeVisualization } from '../../mobile/src/visualization.ts'
+import type { VisualCard } from '../../shared/visual-contract.ts'
+import type { CoachingResult } from '../../shared/contracts.ts'
+import { reviewData } from './feedback.ts'
 import type { Glasses } from './glasses.ts'
 import type { Input } from './input.ts'
 import { PASSAGES } from './passages.ts'
+import type { ReplayStep } from './review/art.ts'
+import type { CardView } from './review/model.ts'
 import { readyScreen, type ReadyScreen } from './screens/ready.ts'
-import type { CoachingResult } from '../../shared/contracts.ts'
 import { analyzingScreen } from './screens/analyzing.ts'
 import { problemScreen } from './screens/problem.ts'
 import { reviewScreen } from './screens/review.ts'
@@ -25,12 +31,14 @@ type ControllerOptions = {
   menu(screen: Screen): MenuContainerProperty | undefined
   onExit(): void
   renderTiles?: (passage: (typeof PASSAGES)[number]) => Promise<StaffTiles>
+  renderArt?: (card: VisualCard) => Promise<Uint8Array>
+  renderFrame?: (card: VisualCard, step: ReplayStep) => Promise<Uint8Array>
+  frameDwellMs?: number
+  gallery?: { coaching: CoachingResult; views: CardView[] }
 }
 
 // One glasses page per session state (CONTRACT.md state map). Ready and
 // Recording share a key so recording swaps text in place instead of rebuilding.
-// G2 has no Guide state (spec §4): the phone's review, guide and sheet views of
-// one attempt are all one Review page, which pages its own cards.
 function keyOf(state: SessionState): string {
   switch (state.screen) {
     case 'library':
@@ -42,47 +50,38 @@ function keyOf(state: SessionState): string {
     case 'review':
     case 'guide':
     case 'sheet':
-      return `review:${state.attemptId}`
+      return `review:${state.attemptId}:${state.findingIndex}`
     default:
       return `${state.screen}:${state.attemptId}`
   }
 }
 
-type Stage = SessionStore['processingStage']
-
-// The same words the phone uses for each processing stage.
-function stageText(stage: Stage, demo: boolean): string {
+function stageText(stage: SessionStore['processingStage'], demo: boolean): string {
   if (demo) return 'Demo · prepared result'
   return stage === 'normalization' ? 'Saving WAV' : stage === 'upload' ? 'Uploading recording'
     : stage === 'analysis' ? 'Analyzing notes' : stage === 'coaching' ? 'Preparing coaching' : ''
 }
 
-// Unclear audio is a result without coaching; Review shows it as one card
-// rather than as an error (trust before detail, spec §2).
-function unclearCoaching(attemptId: string): CoachingResult {
-  return {
-    schemaVersion: '1', attemptId, coachingSource: 'analysis_only',
-    cue: 'Try again from passage selection.', evidenceFindingIds: [],
-    visual: { kind: 'none', referenceNoteIds: [], poseIds: [], mistakes: [] },
-    summary: { where: 'Audio unclear', what: "I couldn't hear that clearly.", next: 'Try again from passage selection.' },
-  }
-}
-
 // Mirrors the phone session (mobile SessionStore) on the glasses and turns
 // glasses gestures into the same session calls the phone buttons make. The
 // store is the only source of truth; this file owns every glasses side effect.
-export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles }: ControllerOptions) {
+export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles, renderArt, renderFrame, frameDwellMs, gallery }: ControllerOptions) {
   let current: Screen | null = null
   let currentKey = ''
+  let pageGeneration = 0
+  let disposed = false
+  let galleryActive = Boolean(gallery)
   // Set while a multi-step store change runs, so only its end state is drawn.
   let holding = false
 
   function show(screen: Screen) {
+    current?.dispose?.()
     current = screen
+    const generation = ++pageGeneration
     status(`screen → ${screen.name}`)
     // Failures are already reported by the glasses queue.
     glasses.showPage({ ...screen.page(), menuObject: menu(screen) }).catch(() => {})
-    screen.enter?.({ glasses, isActive: () => current === screen, redraw: () => show(screen) })
+    screen.enter?.({ glasses, isActive: () => current === screen && pageGeneration === generation && !disposed, redraw: () => show(screen) })
   }
 
   function batch(change: () => void) {
@@ -105,6 +104,18 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
     switch (state.screen) {
       case 'library':
       case 'history':
+        if (state.screen === 'library' && galleryActive && gallery) {
+          return reviewScreen({
+            ...gallery,
+            demo: true,
+            onPlayAgain: () => {
+              galleryActive = false
+              currentKey = ''
+              sync()
+            },
+            renderArt, renderFrame, frameDwellMs,
+          })
+        }
         return selectionScreen({
           passages: PASSAGES,
           onOpen: chosen =>
@@ -143,36 +154,61 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
         return screen
       }
       case 'processing':
-        return analyzingScreen(stageText(store.processingStage, (record?.captureSource ?? 'demo') === 'demo'))
+        return analyzingScreen(stageText(store.processingStage, record?.captureSource === 'demo'))
       case 'review':
       case 'guide':
       case 'sheet': {
-        if (!record) return null
-        // Tap is replay on Review; double tap is Play again.
+        if (!record || !passage) return null
+        const { views, tag } = reviewData(record, passage)
+        const findingId = orderedFindings(record, passage)[state.findingIndex]?.id
+        const matched = findingId ? views.findIndex(view => view.card?.evidence.findingIds.includes(findingId)) : -1
         return reviewScreen({
-          coaching: record.coaching ?? unclearCoaching(record.attemptId),
-          demo: (record.captureSource ?? 'demo') === 'demo',
+          views,
+          tag,
+          initialIndex: matched < 0 ? 0 : matched,
           onPlayAgain: playAgain,
+          onCardChange: view => {
+            if (store.state.attemptId !== record.attemptId) return
+            const findings = orderedFindings(record, passage)
+            const target = findings.findIndex(finding => view.card?.evidence.findingIds.includes(finding.id))
+            batch(() => {
+              store.closeSheet()
+              store.showReview()
+              if (target >= 0) store.moveFinding(target - store.state.findingIndex)
+              // A swipe already changed the current Review in place. Adopt its
+              // new store key so the store emission does not rebuild it.
+              currentKey = keyOf(store.state)
+            })
+          },
+          keyboardContext: view => {
+            const card = view.card
+            if (!card || card.evidence.source !== 'analysis' || card.evidence.findingIds.length !== 1) return null
+            if (!['missing_note', 'extra_note', 'timing', 'duration'].includes(card.kind)) return null
+            const finding = orderedFindings(record, passage).find(item => item.id === card.evidence.findingIds[0])
+            return finding && finding.kind === card.kind ? resolveMistakeVisualization(record, passage, finding) : null
+          },
+          renderArt,
+          renderFrame,
+          frameDwellMs,
         })
       }
       case 'error':
-        return problemScreen({
-          reason: record?.error?.message ?? 'Something went wrong.',
-          onPlayAgain: playAgain,
-        })
+        return problemScreen({ reason: record?.error?.message ?? 'Something went wrong.', onPlayAgain: playAgain })
     }
   }
 
   function sync() {
     if (holding) return
     const state = store.state
-    const key = keyOf(state)
+    if (state.screen !== 'library') galleryActive = false
+    const key = galleryActive ? 'gallery' : keyOf(state)
     if (key === currentKey && current) {
-      // Same page: Ready ↔ Recording and the Analyzing stage change in place.
+      // Same page: only Ready ↔ Recording changes in place.
       if (key.startsWith('ready:')) (current as ReadyScreen).setRecording(state.screen === 'recording')
-      else if (key.startsWith('processing:')) {
+      if (key.startsWith('processing:')) {
         const record = store.records.find(item => item.attemptId === state.attemptId)
-        ;(current as ReturnType<typeof analyzingScreen>).setStage(stageText(store.processingStage, (record?.captureSource ?? 'demo') === 'demo'))
+        const analyzing = current as ReturnType<typeof analyzingScreen>
+        analyzing.setStage(stageText(store.processingStage, record?.captureSource === 'demo'))
       }
       return
     }
@@ -196,17 +232,11 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
     redraw() {
       if (current) show(current)
     },
-    // Show a screen outside the session (the dev demo gallery) until the
-    // session next changes or resync() is called.
-    preview(screen: Screen) {
-      currentKey = 'preview'
-      show(screen)
-    },
-    resync() {
-      currentKey = ''
-      sync()
-    },
     dispose() {
+      disposed = true
+      pageGeneration++
+      current?.dispose?.()
+      current = null
       unsubscribe()
     },
   }

@@ -42,6 +42,7 @@ test('a G2 take becomes one completed g2 attempt handed to the phone pipeline as
   assert.equal(store.count(), 1)
   assert.equal(submitted.length, 1)
   assert.equal(submitted[0].record.attemptId, store.records[0].attemptId)
+  assert.equal(new DataView((await submitted[0].audio.arrayBuffer())).getUint32(24, true), 16000)
   assert.equal(submitted[0].record.captureStatus, 'completed')
   assert.equal(submitted[0].audio.type, 'audio/wav')
   const bytes = new Uint8Array(await submitted[0].audio.arrayBuffer())
@@ -98,13 +99,53 @@ test('cancel while the mic is starting leaves no attempt and turns the mic back 
   assert.deepEqual(micStates(bridge), [true, false])
 })
 
-test('an empty take is a capture error, not a musical result, and is not submitted', async () => {
+test('mic-off without confirmation interrupts and never submits a take', async () => {
+  const { store, capture, bridge, submitted } = setup()
+  const original = bridge.audioControl.bind(bridge)
+  bridge.audioControl = (isOpen, source) => isOpen ? original(isOpen, source) : Promise.resolve(false)
+  await record(capture)
+  await capture.stop()
+  assert.equal(store.records[0].captureStatus, 'interrupted')
+  assert.equal(store.count(), 0)
+  assert.equal(submitted.length, 0)
+  assert.match(capture.error, /stop was not confirmed/)
+})
+
+test('an empty take is canceled, not counted, and is not submitted', async () => {
   const { store, capture, submitted } = setup()
   await capture.start()
   await capture.stop()
-  assert.equal(store.records[0].processingStatus, 'error')
-  assert.equal(store.records[0].error.stage, 'capture')
-  assert.equal(store.count(), 1)
+  assert.equal(store.records[0].captureStatus, 'canceled')
+  assert.equal(store.count(), 0)
+  assert.equal(submitted.length, 0)
+})
+
+test('odd-byte PCM is canceled before a completed attempt is counted', async () => {
+  const { store, capture, submitted } = setup()
+  await capture.start()
+  Recorder.feed(new Uint8Array([1, 2, 3]))
+  await capture.stop()
+  assert.equal(store.records[0].captureStatus, 'canceled')
+  assert.equal(store.count(), 0)
+  assert.equal(submitted.length, 0)
+  assert.match(capture.error, /Invalid PCM byte count/)
+})
+
+test('cancel during pending mic-off never submits or counts the take', async () => {
+  const { store, capture, bridge, submitted } = setup()
+  const original = bridge.audioControl.bind(bridge)
+  let release
+  bridge.audioControl = (isOpen, source) => isOpen ? original(isOpen, source) :
+    new Promise(resolve => { release = async () => resolve(await original(isOpen, source)) })
+  await record(capture)
+  const stopping = capture.stop()
+  await settle()
+  capture.cancel()
+  assert.equal(store.count(), 0)
+  assert.equal(submitted.length, 0)
+  await release()
+  await stopping
+  assert.equal(store.records[0].captureStatus, 'canceled')
   assert.equal(submitted.length, 0)
 })
 

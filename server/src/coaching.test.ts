@@ -323,3 +323,67 @@ test('explicit model, bounded JSON output and one provider call are preserved on
     assert.equal(requests[0].config?.maxOutputTokens, 512);
   }
 });
+
+test('API aliases retain bearer, CORS, JSON errors and safe request observations', async () => {
+  const events: import('./http.js').RequestObservation[] = [];
+  const bytes = wav();
+  const server = createCoachServer({ library, chooser: null, token: 'test-token', allowedOrigin: 'https://approved.example',
+    observeRequest: event => { events.push(event); } ,
+    fetchImpl: (async () => new Response(JSON.stringify(analysis()), { status: 200 })) as typeof fetch });
+  const base = await serve(server);
+  const endpoint = (path: string, body: unknown, origin = 'https://approved.example', authorized = true): Promise<Response> =>
+    fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json', origin,
+      ...(authorized ? { authorization: 'Bearer test-token' } : {}) }, body: JSON.stringify(body) });
+  try {
+    const preflight = await fetch(base + '/api/recordings', { method: 'OPTIONS', headers: { origin: 'https://approved.example' } });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), 'https://approved.example');
+    assert.deepEqual(await (await endpoint('/api/not-a-route', {})).json(), { error: 'not_found' });
+    assert.equal((await endpoint('/api/recordings', {}, 'https://wrong.example')).status, 403);
+    assert.equal((await endpoint('/api/recordings', {}, 'https://approved.example', false)).status, 401);
+    const uploaded = await endpoint('/api/recordings', { metadata, wavBase64: bytes.toString('base64') });
+    assert.equal(uploaded.status, 200);
+    const artifact = await uploaded.json() as { artifactId: string };
+    const audio = await fetch(base + '/api/recordings/' + artifact.artifactId + '/audio', {
+      headers: { origin: 'https://approved.example', authorization: 'Bearer test-token' } });
+    assert.equal(audio.status, 200);
+    assert.deepEqual(Buffer.from(await audio.arrayBuffer()), bytes);
+    const analyzed = await endpoint('/api/analyze', { artifactId: artifact.artifactId,
+      attemptId: metadata.attemptId, passageId: 'P01', passageVersion: '1' });
+    assert.equal(analyzed.status, 200);
+    const measured = await analyzed.json() as AnalysisResult;
+    const coached = await endpoint('/api/coach', { artifactId: artifact.artifactId,
+      passageId: 'P01', passageVersion: '1', analysis: measured });
+    assert.equal(coached.status, 200);
+    assert.equal(events.find(event => event.path === '/api/recordings' && event.status === 200)?.attemptId, metadata.attemptId);
+    assert.deepEqual(events.filter(event => event.status === 200 && event.stage).map(event => event.stage),
+      ['upload', 'audio', 'analysis', 'coaching']);
+    for (const event of events) {
+      assert.deepEqual(Object.keys(event).sort(), ['attemptId', 'durationMs', 'method', 'origin', 'path', 'stage', 'status'].filter(key => key in event).sort());
+      assert.ok(event.durationMs >= 0);
+      assert.ok(!JSON.stringify(event).includes('test-token'));
+    }
+  } finally { await close(server); }
+});
+test('API completed attempt tombstone blocks chargeable replay but allows a fresh attempt', async () => {
+  let now = 1_000;
+  let upstreamCalls = 0;
+  const server = createCoachServer({ library, chooser: null, now: () => now,
+    fetchImpl: (async () => { upstreamCalls++; return new Response(JSON.stringify(analysis()), { status: 200 }); }) as typeof fetch });
+  const base = await serve(server);
+  const body = { metadata, wavBase64: wav().toString('base64') };
+  try {
+    const first = await (await post(base, '/api/recordings', body)).json() as { artifactId: string };
+    const measured = await (await post(base, '/api/analyze', { artifactId: first.artifactId,
+      attemptId: metadata.attemptId, passageId: 'P01', passageVersion: '1' })).json() as AnalysisResult;
+    assert.equal((await post(base, '/api/coach', { artifactId: first.artifactId,
+      passageId: 'P01', passageVersion: '1', analysis: measured })).status, 200);
+    now += 60_001;
+    assert.equal((await post(base, '/api/recordings', body)).status, 410);
+    assert.equal((await post(base, '/api/recordings', { ...body,
+      metadata: { ...metadata, attemptTempoBpm: 70 } })).status, 409);
+    assert.equal((await post(base, '/api/recordings', { ...body,
+      metadata: { ...metadata, attemptId: 'fresh-attempt' } })).status, 200);
+    assert.equal(upstreamCalls, 1);
+  } finally { await close(server); }
+});

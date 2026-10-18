@@ -21,6 +21,7 @@ export type Take = {
   // Bytes received per wall-clock second of capture; ~32000 if the format holds.
   measuredBytesPerSec: number
   chunkCount: number
+  clippedSampleCount: number
   wav: Uint8Array<ArrayBuffer>
 }
 
@@ -31,7 +32,7 @@ function newAttemptId() {
 // One explicitly started capture (spec §5: one attempt ID per capture).
 // Audio frames reach `push` from the app's event listener while active.
 export class Recorder {
-  readonly attemptId = newAttemptId()
+  attemptId: string = newAttemptId()
   private readonly startedAt = new Date()
   private firstChunkAt = 0
   private lastChunkAt = 0
@@ -64,8 +65,14 @@ export class Recorder {
       Recorder.current = null
       throw new Error('glasses microphone did not start')
     }
-    status(`recording ${recorder.attemptId} (${passage.id})`)
+    status(`glasses microphone active (${passage.id}; assumed 16 kHz mono PCM16)`)
     return recorder
+  }
+
+  bindAttemptId(attemptId: string): void {
+    if (!this.active) throw new Error('Cannot bind a completed take.')
+    this.attemptId = attemptId
+    status(`recording ${attemptId} (${this.passage.id})`)
   }
 
   private push(pcm: Uint8Array) {
@@ -88,11 +95,20 @@ export class Recorder {
     const durationSec = this.bytes / BYTES_PER_SECOND
     const wallSec = (this.lastChunkAt - this.firstChunkAt) / 1000
     const measuredBytesPerSec = wallSec > 0.5 ? Math.round(this.bytes / wallSec) : 0
+    const wav = pcmToWav(this.chunks, G2_PCM)
+    const samples = new DataView(wav.buffer)
+    let clippedSampleCount = 0
+    for (let offset = 44; offset + 1 < wav.length; offset += 2) {
+      if (Math.abs(samples.getInt16(offset, true)) >= 32760) clippedSampleCount++
+    }
     status(
       `take ${this.attemptId}: ${durationSec.toFixed(1)}s, ${this.chunks.length} chunks, ` +
-        `${measuredBytesPerSec || '?'} B/s measured (expect ${BYTES_PER_SECOND})`,
+        `${measuredBytesPerSec || '?'} B/s measured (expect ${BYTES_PER_SECOND}), ` +
+        `${clippedSampleCount} near-limit samples`,
     )
     if (this.bytes % 2) status('odd PCM byte count: format may not be 16-bit', 'error')
+    if (measuredBytesPerSec && measuredBytesPerSec < BYTES_PER_SECOND * 0.8)
+      status('measured byte rate is low; capture timing or missing frames are possible', 'error')
 
     return {
       attemptId: this.attemptId,
@@ -104,7 +120,8 @@ export class Recorder {
       durationSec,
       measuredBytesPerSec,
       chunkCount: this.chunks.length,
-      wav: pcmToWav(this.chunks, G2_PCM),
+      clippedSampleCount,
+      wav,
     }
   }
 
@@ -114,13 +131,17 @@ export class Recorder {
     this.active = false
     Recorder.current = null
     this.chunks = []
-    await this.micOff()
+    try { await this.micOff() } catch { /* diagnostic already shown; no take is retained */ }
     status(`discarded ${this.attemptId}`)
   }
 
   private async micOff() {
-    await this.glasses
+    const confirmed = await this.glasses
       .enqueue('mic off', () => this.glasses.bridge.audioControl(false))
-      .catch(() => status('microphone did not confirm stop', 'error'))
+      .catch(() => false)
+    if (!confirmed) {
+      status('microphone did not confirm stop', 'error')
+      throw new Error('microphone stop was not confirmed')
+    }
   }
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RecordingMetadata } from './contracts.js';
-import { ArtifactStore, HARD_TTL_MS, RETRY_GRACE_MS, parseRecording } from './recordings.js';
+import { ArtifactStore, AttemptConflictError, HARD_TTL_MS, PurgedAttemptError, RETRY_GRACE_MS, parseRecording } from './recordings.js';
 
 const metadata: RecordingMetadata = {
   attemptId: 'a1', passageId: 'P01', passageVersion: '1', attemptTempoBpm: 60,
@@ -9,7 +9,7 @@ const metadata: RecordingMetadata = {
   encoding: 'pcm_s16le', durationSec: 1, captureSource: 'test'
 };
 
-test('idle timer purges completed WAV after fixed grace without extending upload expiry', () => {
+test('completed WAV purge retains same attempt tombstone until fixed hard expiry', () => {
   let now = 1_000;
   const timers: { due: number; cancelled: boolean; run: () => void }[] = [];
   const store = new ArtifactStore(() => now, (run, delayMs) => {
@@ -40,7 +40,10 @@ test('idle timer purges completed WAV after fixed grace without extending upload
   assert.equal(artifact.purgeAt, 3_000 + RETRY_GRACE_MS, 'late coach response cannot renew grace');
   advance(30_001);
   assert.equal(store.get(first.artifactId), undefined);
-  assert.equal(store.put(metadata, bytes, 'http://127.0.0.1').artifactId === first.artifactId, false);
+  assert.throws(() => store.put(metadata, bytes, 'http://127.0.0.1'), PurgedAttemptError);
+  assert.throws(() => store.put({ ...metadata, attemptTempoBpm: 70 }, bytes, 'http://127.0.0.1'), AttemptConflictError);
+  advance(1_000 + HARD_TTL_MS - now);
+  assert.notEqual(store.put(metadata, bytes, 'http://127.0.0.1').artifactId, first.artifactId);
   store.dispose();
   assert.equal(timers.some(timer => !timer.cancelled), false);
 });

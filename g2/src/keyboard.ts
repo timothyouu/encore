@@ -1,8 +1,6 @@
 import { keyboardRange, type MistakeVisualization } from '../../mobile/src/visualization.ts'
 
-// The keyboard schematic for Guide (spec §4, §6): a one-board strip marking
-// the expected and heard keys from the validated finding, monochrome like the
-// staff tiles. 288px wide so one image container carries the whole board.
+// Compact supplemental keyboard frame for a validated Review finding.
 export const KEYS_W = 288
 export const KEYS_H = 96
 
@@ -17,12 +15,12 @@ const KEY_H_WITH_BARS = 34
 const BAR_W = KEYS_W - 96
 
 export type KeyRect = { pitch: number; x: number; y: number; w: number; h: number }
-export type KeyMarker = { x: number; filled: boolean }
+export type KeyMarker = { x: number; role: 'expected' | 'played' }
 
 export type KeysLayout = {
   whites: KeyRect[]
   blacks: KeyRect[]
-  // A circle above the key: open marks the expected key, filled the heard key.
+  // Positions of the expected and heard marks; drawing uses solid/× to match Review.
   markers: KeyMarker[]
   // Note names under the marked keys.
   labels: { x: number; text: string }[]
@@ -51,13 +49,13 @@ export function keyboardLayout(visual: MistakeVisualization): KeysLayout | null 
   const markers: KeyMarker[] = []
   const labels: { x: number; text: string }[] = []
   const labeled = new Set<number>()
-  for (const { event, filled } of [
-    { event: visual.expected, filled: false },
-    { event: visual.played, filled: true },
+  for (const { event, role } of [
+    { event: visual.expected, role: 'expected' as const },
+    { event: visual.played, role: 'played' as const },
   ]) {
     const key = event && keyOf(event.midiPitch)
     if (!event || !key) continue
-    markers.push({ x: key.x + key.w / 2, filled })
+    markers.push({ x: key.x + key.w / 2, role })
     if (!labeled.has(event.midiPitch)) {
       labeled.add(event.midiPitch)
       labels.push({ x: key.x + key.w / 2, text: event.label })
@@ -101,18 +99,20 @@ function toPng(element: HTMLCanvasElement): Promise<Uint8Array> {
   })
 }
 
-// The board: white keys are outlines, black keys filled dim, so a solid key or
-// a circle marker stands out as a finding mark, not as keyboard decoration.
-export async function renderKeyboard(visual: MistakeVisualization): Promise<Uint8Array | null> {
+// Draw into either a compact image or the Review replay's 288×144 art frame.
+// A solid mark is the written key; × is what the microphone heard.
+export function drawKeyboardSchematic(ctx: CanvasRenderingContext2D, visual: MistakeVisualization, offsetY = 0): boolean {
   const layout = keyboardLayout(visual)
-  if (!layout) return null
-  const { element, ctx } = canvas(KEYS_W, KEYS_H)
+  if (!layout) return false
+  ctx.save()
+  ctx.translate(0, offsetY)
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, KEYS_W, KEYS_H)
 
+  const expectedPitch = visual.expected?.midiPitch
   const playedPitch = visual.played?.midiPitch
   for (const key of layout.whites) {
-    if (key.pitch === playedPitch) {
+    if (key.pitch === expectedPitch) {
       ctx.fillStyle = INK
       ctx.fillRect(key.x + 0.75, key.y, key.w - 1.5, key.h)
     } else {
@@ -122,20 +122,36 @@ export async function renderKeyboard(visual: MistakeVisualization): Promise<Uint
     }
   }
   for (const key of layout.blacks) {
-    ctx.fillStyle = key.pitch === playedPitch ? INK : LINE
+    ctx.fillStyle = key.pitch === expectedPitch ? INK : LINE
     ctx.fillRect(key.x, key.y, key.w, key.h)
   }
 
   for (const marker of layout.markers) {
-    ctx.beginPath()
-    ctx.arc(marker.x, MARKER_Y, MARKER_R, 0, Math.PI * 2)
-    if (marker.filled) {
+    const x = marker.x + (expectedPitch === playedPitch ? (marker.role === 'played' ? 7 : -7) : 0)
+    if (marker.role === 'expected') {
+      ctx.beginPath()
+      ctx.arc(x, MARKER_Y, MARKER_R, 0, Math.PI * 2)
       ctx.fillStyle = INK
       ctx.fill()
     } else {
       ctx.strokeStyle = INK
       ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.moveTo(x - MARKER_R, MARKER_Y - MARKER_R)
+      ctx.lineTo(x + MARKER_R, MARKER_Y + MARKER_R)
+      ctx.moveTo(x + MARKER_R, MARKER_Y - MARKER_R)
+      ctx.lineTo(x - MARKER_R, MARKER_Y + MARKER_R)
       ctx.stroke()
+    }
+  }
+  if (playedPitch !== undefined && playedPitch !== expectedPitch) {
+    const played = [...layout.whites, ...layout.blacks].find(key => key.pitch === playedPitch)
+    if (played) {
+      ctx.strokeStyle = INK
+      ctx.lineWidth = 2
+      ctx.setLineDash([4, 3])
+      ctx.strokeRect(played.x + 2, played.y + 2, played.w - 4, played.h - 4)
+      ctx.setLineDash([])
     }
   }
 
@@ -158,6 +174,13 @@ export async function renderKeyboard(visual: MistakeVisualization): Promise<Uint
       ctx.strokeRect(0.75, bar.y + 0.75, bar.frac * BAR_W - 1.5, 8)
     }
   }
+  ctx.restore()
+  return true
+}
 
+export async function renderKeyboard(visual: MistakeVisualization): Promise<Uint8Array | null> {
+  if (!keyboardLayout(visual)) return null
+  const { element, ctx } = canvas(KEYS_W, KEYS_H)
+  drawKeyboardSchematic(ctx, visual)
   return toPng(element)
 }

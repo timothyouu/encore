@@ -1,6 +1,6 @@
-# Phone ↔ G2 integration contract (proposed)
+# Phone ↔ G2 integration contract
 
-**Status:** PROPOSED by the glasses owner on branch `g2/10-phone-integration`. Changes under `mobile/` sit in their own commits and need Timothy's review before merge. Nothing here is hardware-verified until a physical G2 pass is recorded.
+**Status:** Implemented on the integration branch for review. The phone and glasses share one session; physical acceptance is tracked separately in `docs/physical-device-verification.md`. Local or simulated tests do not establish device behavior.
 
 ## Shape
 
@@ -45,21 +45,25 @@ g2/index.html (Even Hub WebView)
 | `library`, `history` | Selection | list select → `showLibrary()` if needed, then `selectPassage(id)`; double tap → exit |
 | `ready` | Ready | tap → host `start()`; double tap → `showLibrary()` |
 | `recording` | Recording (same page as Ready; text swapped in place) | tap → host `stop()`; double tap → discard: `cancel()` then `selectPassage(same id)` |
-| `processing` | Analyzing (stage line follows `processingStage`, updated in place) | none |
-| `review`, `guide`, `sheet` | Review: one page per attempt showing the coaching visual-plan cards (no Guide state on G2, spec §4) | swipe down/up → next/previous card (inside the screen; the store is unchanged); tap → replay the card; double tap → `showLibrary()` |
-| `error` | Problem (upload, analysis or server failure; never a musical claim) | tap or double tap → `showLibrary()` |
+| `processing` | Analyzing | none |
+| `review`, `guide`, `sheet` | Review cards for the same saved attempt | swipe down/up → next/previous card; tap → replay current card; double tap → `showLibrary()` |
+| `error` | Recoverable error | tap or double tap → `showLibrary()` |
 
-Unclear audio is a completed result without coaching; it shows as a single Review card, not as a Problem. Results from the Demo source carry a DEMO label on the glasses.
+Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
 
-Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state, passage or attempt changes; the phone's own Guide, sheet and finding carousel leave the glasses Review where it is (the glasses page their cards independently). Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
+Card paging updates the shared selected finding by validated evidence ID and closes an open phone Sheet overlay before showing Review. Replay is G2 presentation state; neither paging nor replay creates a new attempt. Phone Guide and Sheet remain phone views. G2 combines corrective notes, keys, rhythm, and authored-finger guidance into Review cards and replay. Validated keyboard and hold-duration context from the earlier Guide implementation is available within replay; the latest resting art and final correction frame remain intact. Switching attempts, returning to selection, or leaving a card invalidates its queued images and replay timers. History is read-only and never resubmits audio.
 
 ## Capture rules
 
 - G2 start: turn the mic on first, then call `store.start('g2')`. If the mic fails, nothing is recorded and the phone shows the error.
-- Stop: mic off → `store.stop()` → `submit(record, WAV)` with G2's actual 16 kHz s16 mono PCM; the pipeline resamples and uploads it with `captureSource: 'g2'`. An empty take is a capture error and is not uploaded.
+- Stop: confirmed mic off → validate nonempty, even-byte PCM → `store.stop()` → `submit(record, WAV)`. The SDK format assumption is 16 kHz s16 mono; chunk/byte-rate/clipping diagnostics support physical checks. The pipeline really resamples to 22.05 kHz and uploads with `captureSource: 'g2'`. Empty or malformed capture is canceled before completion and is neither counted nor uploaded.
 - Discard (glasses double tap or phone Cancel): the take is never saved, counted, or submitted.
 - Glasses exit or app close mid-take: mic off, then `store.interrupt()`.
 - Phone and glasses share one 30s cap.
+
+## Network and authentication
+
+The package couples its exact HTTPS service origin with its generated network whitelist. The host supplies absolute `/api/recordings`, `/api/analyze`, and `/api/coach` endpoints to the shared pipeline. The backend aliases these to the same authenticated `/v1` handlers; an API request never falls through to frontend HTML. A session-only bearer token is scoped to the configured origin and expected routes, is never saved or bundled, and is not forwarded through redirects. Configure CORS for the observed WebView origin with explicit operator approval; do not broadly allow origins or assume two WebViews share storage.
 
 ## Settings
 

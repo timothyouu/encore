@@ -64,6 +64,7 @@ export class G2Capture implements CaptureDriver {
         await recorder.discard()
         throw new Error('The passage is no longer ready to record.')
       }
+      recorder.bindAttemptId(record.attemptId)
       this.recorder = recorder
       this.activeAttemptId = record.attemptId
       this.recording = true
@@ -97,18 +98,28 @@ export class G2Capture implements CaptureDriver {
     try {
       const take = await recorder.stop()
       if (generation !== this.generation || this.disposed) return
-      const record = this.store.stop()
-      if (!take || !record || record.attemptId !== this.activeAttemptId) return
-      if (take.wav.length <= 44) {
-        this.error = 'No audio was recorded.'
-        this.store.fail(record.attemptId, 'capture', 'No audio was recorded.')
+      if (!take || take.wav.length <= 44 || (take.wav.length - 44) % 2 !== 0) {
+        this.error = !take || take.wav.length <= 44 ? 'No audio was recorded.' : 'Invalid PCM byte count; record again.'
+        this.store.cancel()
+        status(this.error, 'error')
         return
       }
+      const record = this.store.stop()
+      if (!record || record.attemptId !== this.activeAttemptId || take.attemptId !== record.attemptId) return
+      status(`submit ${record.attemptId}: ${take.chunkCount} chunks, ${take.clippedSampleCount} near-limit samples`)
       // Busy ends here: processing state now belongs to the phone pipeline.
       this.busy = false
       this.activeAttemptId = null
       this.onChange()
       await this.submit(record, new Blob([take.wav], { type: 'audio/wav' }))
+    } catch (cause) {
+      if (generation === this.generation && !this.disposed) {
+        this.error = cause instanceof Error && cause.message.includes('microphone stop')
+          ? 'Glasses microphone stop was not confirmed. Reconnect before recording again.'
+          : 'Recording could not finish.'
+        this.store.interrupt()
+        status(this.error, 'error')
+      }
     } finally {
       if (generation === this.generation) {
         this.busy = false

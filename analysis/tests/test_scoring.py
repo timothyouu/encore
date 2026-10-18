@@ -77,6 +77,40 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result["metrics"]["matchedNotes"], len(notes))
         self.assertEqual(result["findings"], [])
 
+    def test_short_repeat_boundary_event_is_uncertain(self) -> None:
+        passage = PASSAGES["P02"]
+        notes = performed(passage)
+        notes.insert(1, {"id": "fragment", "midiPitch": 64, "onsetSec": 1.66,
+                         "durationSec": 0.14, "detectorScore": 0.52})
+        notes[0]["durationSec"] = 0.88
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "uncertain")
+        self.assertEqual(result["findings"], [])
+        self.assertFalse(result["alignment"]["reliable"])
+        self.assertIn("ambiguous_repeat_boundary", result["audioQuality"]["warnings"])
+        self.assertEqual(len(result["detectedNotes"]), 9)
+
+    def test_intentional_quick_repeat_does_not_become_false_correction(self) -> None:
+        passage = PASSAGES["P02"]
+        notes = performed(passage)
+        notes[0]["durationSec"] = 0.88
+        notes.insert(1, {"id": "quick-repeat", "midiPitch": 64,
+                         "onsetSec": 1.66, "durationSec": 0.14, "detectorScore": 0.8})
+        notes[4]["midiPitch"] = 66
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "uncertain")
+        self.assertEqual(result["findings"], [])
+        self.assertIn("ambiguous_repeat_boundary", result["audioQuality"]["warnings"])
+
+    def test_real_short_extra_note_outside_repeat_join_is_reported(self) -> None:
+        passage = PASSAGES["P02"]
+        notes = performed(passage)
+        notes.append({"id": "extra", "midiPitch": 72, "onsetSec": 8.6,
+                      "durationSec": 0.12, "detectorScore": 0.8})
+        result = scored(passage, notes)
+        self.assertEqual([(finding["kind"], finding.get("detectedNoteId"))
+                          for finding in result["findings"]], [("extra_note", "extra")])
+
     def test_late_note_keeps_global_offset(self) -> None:
         passage = PASSAGES["P01"]
         notes = performed(passage)

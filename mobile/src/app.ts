@@ -33,6 +33,8 @@ export type PhoneAppOptions = {
   hostSource?: { id: 'g2'; create(context: HostSourceContext): CaptureDriver };
   /** Device connection text from the host; omitted, the phone says glasses are not connected. */
   deviceStatus?: () => string | null;
+  /** Host-only protected service; token lives in the host WebView session, never in persistence. */
+  service?: { endpoints: CaptureEndpoints; origin: string; getSessionToken(): string; setSessionToken(token: string): void };
 };
 
 export type PhoneApp = {
@@ -140,11 +142,17 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
     permissionCancel.hidden = !(busy() && !recording() && store.state.screen === 'ready');
   }
   function pipeline(endpoints: CaptureEndpoints): PhoneCapture {
-    return new PhoneCapture(store, endpoints, onChange, persistence);
+    return new PhoneCapture(store, endpoints, onChange, persistence, options.service ? () => {
+      const token = options.service?.getSessionToken();
+      return token ? { token, origin: options.service!.origin } : undefined;
+    } : undefined);
   }
   const connection = mountConnection(store, root, next => {
     if (busy() || recording() || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
     if (next.mode !== 'demo' && !validateEndpoints(next)) return 'Enter valid upload, analysis, and coaching endpoints. Use /api paths, HTTPS, or HTTP localhost.';
+    if (options.service && (next.upload !== options.service.endpoints.upload ||
+        next.analysis !== options.service.endpoints.analysis || next.coaching !== options.service.endpoints.coaching))
+      return 'This G2 package is limited to its approved service origin.';
     if (next.mode === mode && mode !== 'demo' && phone) {
       return phone.updateEndpoints(next) ? null : 'Could not update the connection while recording is active.';
     }
@@ -161,13 +169,14 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
     }
     refresh();
     return null;
-  }, sources);
+  }, { sources, defaults: options.service?.endpoints ?? DEFAULT_ENDPOINTS,
+    locked: Boolean(options.service), onSessionToken: options.service?.setSessionToken });
   const permissionCancel = document.createElement('button');
   permissionCancel.type = 'button'; permissionCancel.hidden = true; permissionCancel.textContent = 'Cancel microphone request';
   permissionCancel.style.cssText = 'margin:12px auto;min-height:44px;padding:12px 24px;border:1px solid #625F58;border-radius:24px;';
   permissionCancel.addEventListener('click', () => { driver?.cancel(); phone?.cancel(); });
   root.after(permissionCancel);
-  phone = pipeline(DEFAULT_ENDPOINTS);
+  phone = pipeline(options.service?.endpoints ?? DEFAULT_ENDPOINTS);
   const unsubscribeSettings = settings.subscribe(() => connection.setVisible(!settings.isOpen));
   let disposed = false;
   return {

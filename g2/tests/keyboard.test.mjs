@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { KEYS_H, keyboardLayout, visualLegend } from '../src/keyboard.ts'
+import { KEYS_H, drawKeyboardSchematic, keyboardLayout, visualLegend } from '../src/keyboard.ts'
 
 // Layout is canvas-free: marks and key geometry can be checked without hardware.
 const wrongNote = {
@@ -28,13 +28,13 @@ test('keyboard layout: black keys sit on the boundaries that have them', () => {
   assert.ok(layout.blacks.every(black => black.x + black.w <= 288))
 })
 
-test('a wrong note marks expected with an open circle and heard with a filled one, both labeled', () => {
+test('a wrong note positions separate solid expected and × heard marks, both labeled', () => {
   const layout = keyboardLayout(wrongNote)
   assert.equal(layout.markers.length, 2)
-  assert.equal(layout.markers.find(marker => !marker.filled).x, layout.whites.find(key => key.pitch === 64).x + layout.whites[0].w / 2)
+  assert.equal(layout.markers.find(marker => marker.role === 'expected').x, layout.whites.find(key => key.pitch === 64).x + layout.whites[0].w / 2)
   // F#4 is a black key: the marker centers on the black key, not a white one.
   const black = layout.blacks.find(key => key.pitch === 66)
-  assert.equal(layout.markers.find(marker => marker.filled).x, black.x + black.w / 2)
+  assert.equal(layout.markers.find(marker => marker.role === 'played').x, black.x + black.w / 2)
   assert.deepEqual(layout.labels.map(label => label.text).sort(), ['E4', 'F#4'])
   assert.equal(layout.bars.length, 0)
 })
@@ -42,14 +42,14 @@ test('a wrong note marks expected with an open circle and heard with a filled on
 test('a missing note marks only the expected key', () => {
   const layout = keyboardLayout({ findingId: 'f2', kind: 'missing_note', expected: { midiPitch: 65, label: 'F4' } })
   assert.equal(layout.markers.length, 1)
-  assert.equal(layout.markers[0].filled, false)
+  assert.equal(layout.markers[0].role, 'expected')
   assert.deepEqual(layout.labels.map(label => label.text), ['F4'])
 })
 
 test('an extra note marks only the heard key', () => {
   const layout = keyboardLayout({ findingId: 'f3', kind: 'extra_note', played: { midiPitch: 67, label: 'G4' } })
   assert.equal(layout.markers.length, 1)
-  assert.equal(layout.markers[0].filled, true)
+  assert.equal(layout.markers[0].role, 'played')
 })
 
 test('a duration finding keeps keys shorter and adds expected vs measured bars', () => {
@@ -83,4 +83,15 @@ test('legend names the marked keys, and the hold comparison for durations', () =
     visualLegend({ findingId: 'f4', kind: 'duration', expected: { midiPitch: 64, label: 'E4' }, duration: { expectedBeats: 2, playedBeats: 1.3 } }),
     'Expected E4 · hold 2 vs 1.3 beats',
   )
+})
+
+test('schematic draws a solid expected dot and crossed heard mark', () => {
+  const calls = []
+  const ctx = new Proxy({}, { get: (_target, method) => (...args) => calls.push([method, ...args]), set: () => true })
+  assert.equal(drawKeyboardSchematic(ctx, wrongNote, 24), true)
+  assert.equal(calls.filter(([method]) => method === 'arc').length, 1)
+  assert.equal(calls.filter(([method]) => method === 'moveTo').length, 2)
+  assert.equal(calls.filter(([method]) => method === 'lineTo').length, 2)
+  assert.ok(calls.some(([method, dash]) => method === 'setLineDash' && dash.length === 2))
+  assert.deepEqual(calls.at(-1), ['restore'])
 })
