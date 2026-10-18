@@ -1,5 +1,5 @@
-import type { Glasses, Page } from '../glasses'
-import type { Input } from '../input'
+import type { Glasses, Page } from '../glasses.ts'
+import type { Input } from '../input.ts'
 
 export type ScreenContext = {
   glasses: Glasses

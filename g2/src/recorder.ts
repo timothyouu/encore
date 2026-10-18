@@ -1,8 +1,8 @@
 import { AudioInputSource } from '@evenrealities/even_hub_sdk'
-import type { Glasses } from './glasses'
-import type { Passage } from './passages'
-import { status } from './status'
-import { pcmToWav, type PcmFormat } from './wav'
+import type { Glasses } from './glasses.ts'
+import type { Passage } from './passages.ts'
+import { status } from './status.ts'
+import { pcmToWav, type PcmFormat } from './wav.ts'
 
 // G2 mic output per the official Even Hub ASR template: s16le, 16 kHz, mono.
 // The SDK does not report it, so each take also records the byte rate it
@@ -39,10 +39,13 @@ export class Recorder {
   private bytes = 0
   private active = true
 
-  private constructor(
-    private readonly glasses: Glasses,
-    private readonly passage: Passage,
-  ) {}
+  private readonly glasses: Glasses
+  private readonly passage: Passage
+
+  private constructor(glasses: Glasses, passage: Passage) {
+    this.glasses = glasses
+    this.passage = passage
+  }
 
   // The app forwards every audio event here; frames outside a take are dropped.
   private static current: Recorder | null = null
