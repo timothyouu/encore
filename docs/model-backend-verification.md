@@ -96,3 +96,19 @@ units (provider JSON, analysis evidence, app integration) were verified. One
 integration correction cycle addressed beat-label drift. Observed account-wide
 weekly usage moved from 78% to 82% between 09:32:18 and 09:42:16 UTC; other account
 activity is not isolated, so this is not attributable task cost or a speed claim.
+
+## Shipping reconciliation
+
+The previous branch had already been merged, so this work was committed on
+`codex/enforce-coaching-json`. Latest `origin/main` at `52c0764` was merged without
+text conflicts, preserving the newer phone and G2 integration. The final diff
+against main changes only the seven files described above; `g2/` matches main.
+
+Post-merge `bash scripts/verify.sh` passed: 31 server tests, 171 phone tests,
+17 analysis tests, 4 Python acceptance tests, 8 Paper contract tests, server
+typecheck, phone typecheck/build, passage synchronization and G2 boundary check.
+Another 13 storage/shipping integration tests passed with the existing `tsx`
+loader. Those integration tests initially lacked the local G2 SDK; linking the
+existing dependency directory from `encore-audio-driven` after confirming the
+lockfiles were identical resolved the setup issue without installing packages.
+No live Gemini request or physical-device test was repeated for this shipping step.
