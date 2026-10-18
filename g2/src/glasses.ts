@@ -1,7 +1,10 @@
 import {
   CreateStartUpPageContainer,
+  ImageRawDataUpdate,
+  ImageRawDataUpdateResult,
   RebuildPageContainer,
   TextContainerProperty,
+  TextContainerUpgrade,
   type EvenAppBridge,
   type ImageContainerProperty,
   type ListContainerProperty,
@@ -101,6 +104,40 @@ export class Glasses {
         throw new Error('rebuildPageContainer failed')
       }
     })
+  }
+
+  // Image sends take ~0.5–2s over BLE and must never overlap; the queue
+  // guarantees that. `stillWanted` is checked right before sending so a frame
+  // queued for a screen the player already left is dropped.
+  updateImage(container: { id: number; name: string }, imageData: Uint8Array, stillWanted: () => boolean) {
+    return this.enqueue(`image ${container.name}`, async () => {
+      if (!stillWanted()) return
+      const result = await this.bridge.updateImageRawData(
+        new ImageRawDataUpdate({ containerID: container.id, containerName: container.name, imageData }),
+      )
+      if (result !== ImageRawDataUpdateResult.success) {
+        status(`image ${container.name}: ${result}`, 'error')
+      }
+    })
+  }
+
+  // Flicker-free content change; the ID and name must match the live container.
+  updateText(container: { id: number; name: string }, content: string) {
+    return this.enqueue(`text ${container.name}`, async () => {
+      const ok = await this.bridge.textContainerUpgrade(
+        new TextContainerUpgrade({ containerID: container.id, containerName: container.name, content }),
+      )
+      if (!ok) status(`text ${container.name}: update failed`, 'error')
+    })
+  }
+
+  // Even app storage persists across app restarts. It shares the BLE queue.
+  readStorage(key: string): Promise<string> {
+    return this.enqueue(`read ${key}`, () => this.bridge.getLocalStorage(key))
+  }
+
+  writeStorage(key: string, value: string): Promise<boolean> {
+    return this.enqueue(`write ${key}`, () => this.bridge.setLocalStorage(key, value))
   }
 
   // exitMode 1 shows the system confirmation dialog; cleanup happens on SYSTEM_EXIT_EVENT.
