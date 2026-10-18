@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { RecordingMetadata } from './contracts.js';
-import { ArtifactStore, HARD_TTL_MS, RETRY_GRACE_MS } from './recordings.js';
+import { ArtifactStore, HARD_TTL_MS, RETRY_GRACE_MS, parseRecording } from './recordings.js';
 
 const metadata: RecordingMetadata = {
   attemptId: 'a1', passageId: 'P01', passageVersion: '1', attemptTempoBpm: 60,
@@ -58,4 +58,17 @@ test('hard upload expiry purges a pending consumer and releases its attempt ID',
   assert.equal(store.get(first.artifactId), undefined);
   assert.notEqual(store.put(metadata, bytes, 'http://127.0.0.1').artifactId, first.artifactId);
   store.dispose();
+});
+
+test('uploads accept G2 as a capture source and reject unknown sources', () => {
+  const samples = 22050;
+  const wav = Buffer.alloc(44 + samples * 2);
+  wav.write('RIFF', 0, 'ascii'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVE', 8, 'ascii');
+  wav.write('fmt ', 12, 'ascii'); wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(22050, 24); wav.writeUInt32LE(44100, 28); wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
+  wav.write('data', 36, 'ascii'); wav.writeUInt32LE(samples * 2, 40);
+  const library = [{ id: 'P01', version: '1' }] as Parameters<typeof parseRecording>[1];
+  const body = (captureSource: string) => ({ metadata: { ...metadata, captureSource }, wavBase64: wav.toString('base64') });
+  assert.equal(parseRecording(body('g2'), library).metadata.captureSource, 'g2');
+  assert.throws(() => parseRecording(body('glasses'), library), /captureSource invalid/);
 });

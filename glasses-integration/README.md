@@ -6,6 +6,8 @@ The existing `g2/` folder remains the glasses owner's runtime. Do not duplicate 
 
 ## Pending contract
 
+A proposed contract is in [CONTRACT.md](CONTRACT.md) (branch `g2/10-phone-integration`), awaiting review by both owners.
+
 - Exchange validated display preferences: schemaVersion, showSheetMusicWhilePlaying, sheetMusicSize, and showNoteNames.
 - Define device acknowledgement, connection/disconnection, unsupported preferences, and error reporting. A local preference save must never imply successful device application.
 - Agree on transport ownership, lifecycle, gestures and microphone boundaries.

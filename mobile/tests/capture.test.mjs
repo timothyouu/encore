@@ -291,3 +291,40 @@ test('late upload response after cancellation cannot overwrite completed attempt
     assert.equal(session.records[0].analysis, null); capture.dispose();
   } finally { env.restore(); }
 });
+
+test('a host-completed recording (G2) runs the same upload, analysis and coaching, labeled g2', async () => {
+  const session = store(); const calls = [];
+  const env = browser(async (url, options) => {
+    const body = JSON.parse(options.body); calls.push({ url, body });
+    const record = session.records[0];
+    return { ok: true, json: async () => url === endpoints.upload ? artifact(record.attemptId) :
+      url === endpoints.analysis ? fixtureAnalysis(record, 'mistakes') : fixtureCoaching(record) };
+  });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    session.start('g2'); const record = session.stop();
+    await Promise.all([capture.processRecording(record, new Blob(['wav'])), capture.processRecording(record, new Blob(['wav']))]);
+    assert.equal(session.count(), 1); assert.equal(session.records.length, 1);
+    assert.equal(session.state.screen, 'review');
+    assert.deepEqual(calls.map(call => call.url), Object.values(endpoints));
+    assert.equal(calls[0].body.metadata.captureSource, 'g2');
+    assert.equal(calls[0].body.metadata.attemptId, record.attemptId);
+    capture.dispose();
+  } finally { env.restore(); }
+});
+
+test('a host recording that is empty or not completed is never uploaded', async () => {
+  const session = store(); const calls = [];
+  const env = browser(async (url) => { calls.push(url); return { ok: true, json: async () => ({}) }; });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    const recording = session.start('g2');
+    await capture.processRecording(recording, new Blob(['wav']));
+    const completed = session.stop();
+    await capture.processRecording(completed, new Blob([]));
+    assert.equal(calls.length, 0);
+    assert.equal(session.records[0].error.stage, 'capture');
+    assert.equal(session.count(), 1);
+    capture.dispose();
+  } finally { env.restore(); }
+});

@@ -1,6 +1,6 @@
 import './paper-renderer.css';
 import { mountPaperVisualization } from './paper-renderer.ts';
-import { resolveVisualPlan, visibleFindings } from './paper-evidence.ts';
+import { resolveVisualPlan } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
@@ -8,9 +8,13 @@ import { markTelemetryErrorReported, measureTelemetry, recordTelemetryFailure } 
 import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, type MistakeVisualization } from './visualization.ts';
 
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
+import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from './feedback.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
+type Mode = 'demo' | 'phone' | 'g2';
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null };
+// deviceStatus comes from a host that owns a real device connection; the phone-only app has none.
+const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -74,45 +78,6 @@ function statusLabel(record: AttemptRecord): string {
   if (record.analysis?.status === 'error') return 'Analysis unavailable';
   if (record.analysis?.findings.length === 0) return 'No supported mistakes';
   return 'Result';
-}
-
-function findingBeat(finding: Finding, passage: Passage, record: AttemptRecord): number {
-  const reference = passage.notes.find((note) => note.id === finding.referenceNoteId);
-  if (reference) return reference.onsetBeat;
-  const detected = record.analysis?.detectedNotes.find((note) => note.id === finding.detectedNoteId);
-  return detected ? detected.onsetSec * (record.analysis?.attemptTempoBpm ?? passage.tempoBpm) / 60 : Number.MAX_SAFE_INTEGER;
-}
-
-function orderedFindings(record: AttemptRecord, passage: Passage): Finding[] {
-  return record.analysis ? visibleFindings(record.analysis, passage, record.coaching) : [];
-}
-
-function referenceFor(finding: Finding | undefined, passage: Passage): ReferenceNote | undefined {
-  return passage.notes.find((note) => note.id === finding?.referenceNoteId);
-}
-
-function findingTitle(finding: Finding): string {
-  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing', duration: 'Hold duration' }[finding.kind];
-}
-
-function detailFor(finding: Finding, passage: Passage, record: AttemptRecord): string {
-  const reference = referenceFor(finding, passage);
-  const detected = record.analysis?.detectedNotes.find((note) => note.id === finding.detectedNoteId);
-  if (finding.kind === 'wrong_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Heard ${detected ? noteName(detected.midiPitch) : 'another note'}`;
-  if (finding.kind === 'missing_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Not detected`;
-  if (finding.kind === 'extra_note') return `Heard ${detected ? noteName(detected.midiPitch) : 'an extra note'} outside the reference`;
-  if (finding.kind === 'duration') return `${reference ? noteName(reference.midiPitch) : 'Note'} · Hold duration differs from the reference`;
-  const delta = finding.timingDeltaMs ?? 0;
-  return `${reference ? noteName(reference.midiPitch) : 'Note'} · ${Math.abs(Math.round(delta))} ms ${delta >= 0 ? 'late' : 'early'}`;
-}
-
-function correctionFor(finding: Finding, passage: Passage): string {
-  const reference = referenceFor(finding, passage);
-  if (!reference) return 'Listen for the next expected note, then try the passage again.';
-  const beat = reference.onsetBeat + 1;
-  if (finding.kind === 'timing') return `Place ${noteName(reference.midiPitch)} on beat ${beat}.`;
-  if (finding.kind === 'duration') return `Hold ${noteName(reference.midiPitch)} for ${reference.durationBeats} beat${reference.durationBeats === 1 ? '' : 's'}.`;
-  return `Play ${noteName(reference.midiPitch)} on beat ${beat}.`;
 }
 
 function svgElement<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<string, string>): SVGElementTagNameMap[K] {
@@ -235,7 +200,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let recordingTime: HTMLElement | null = null;
   let touchStart: number | null = null;
   let focusReturnSelector = '.recording-page .secondary-action';
-  const mode = (): 'demo' | 'phone' => actions.getMode?.() ?? 'demo';
+  const mode = (): Mode => actions.getMode?.() ?? 'demo';
+  const deviceStatus = (): string => actions.deviceStatus?.() ?? NO_DEVICE;
   const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement => notation(passage, selected, extraBeat, settings.value);
 
   function currentRecord(): AttemptRecord | undefined { return store.records.find((record) => record.attemptId === store.state.attemptId); }
@@ -312,7 +278,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     add(bar, back, node('div', 'wordmark', 'encore'), gear);
     const body = node('div', 'settings-body');
     const intro = node('section', 'settings-intro');
-    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', deviceStatus()));
     add(intro, node('h1', '', 'Settings'), status);
     body.append(intro);
     const value = settings.value;
@@ -432,7 +398,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const selector = node('label', 'scenario-label', 'Demo result');
     if (mode() === 'demo') {
       const select = node('select'); select.setAttribute('aria-label', 'Demo result scenario');
@@ -467,7 +433,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page recording-page');
     const core = node('section', 'recording-core');
     const source = record?.captureSource ?? mode();
-    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', deviceStatus()));
     connectionBadge.setAttribute('role', 'status');
     page.append(connectionBadge);
     const dot = node('span', 'recording-dot'); dot.setAttribute('aria-hidden', 'true');

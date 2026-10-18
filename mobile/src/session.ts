@@ -250,8 +250,9 @@ export class SessionStore {
     this.state = { ...this.state, screen: 'ready', passageId: id, attemptId: null, findingIndex: 0, historyOrigin: false };
     this.emit();
   }
-  start(source: 'demo' | 'phone' | 'test' = 'demo'): AttemptRecord | null {
-    if (this.state.screen !== 'ready' || !['demo', 'phone', 'test'].includes(source)) return null;
+  // 'g2' only labels the record; the store never talks to a device.
+  start(source: 'demo' | 'phone' | 'test' | 'g2' = 'demo'): AttemptRecord | null {
+    if (this.state.screen !== 'ready' || !['demo', 'phone', 'test', 'g2'].includes(source)) return null;
     if (this.records.length >= HISTORY_CAP) {
       this.warnStorage('History is full at 1,000 attempts. Existing results are preserved; a new attempt cannot be recorded.');
       return null;

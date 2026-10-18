@@ -439,7 +439,7 @@ export class PhoneCapture {
           metadata: { attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
             attemptTempoBpm: passage.tempoBpm, sourceSampleRate: normalized.sourceSampleRate,
             sampleRate: normalized.sampleRate, channels: normalized.channels, encoding: normalized.encoding,
-            durationSec: normalized.durationSec, captureSource: record.captureSource === 'test' ? 'test' : 'phone' },
+            durationSec: normalized.durationSec, captureSource: record.captureSource === 'test' || record.captureSource === 'g2' ? record.captureSource : 'phone' },
           wavBase64: bytesToBase64(normalized.wav),
         });
         if (generation !== this.generation || this.disposed) return;
@@ -552,6 +552,43 @@ export class PhoneCapture {
         const record = this.store.records.find(item => item.attemptId === this.activeAttemptId);
         this.endTrace(record?.processingStatus === 'result' ? 'ok' :
           record?.processingStatus === 'error' ? 'error' : 'interrupted');
+        this.busy = false; this.activeAttemptId = null; this.changed();
+      }
+    }
+  }
+
+  /**
+   * Processes an attempt that another capture source already completed (e.g. a
+   * hosting page's G2 microphone): the same normalization, upload, retry window
+   * and history as a phone recording. The caller owns the device; this only
+   * handles the audio bytes.
+   */
+  async processRecording(record: AttemptRecord, blob: Blob): Promise<void> {
+    if (this.disposed || this.busy || this.recording) return;
+    if (record.captureStatus !== 'completed' || record.processingStatus !== 'processing') return;
+    this.pruneMemory();
+    if (blob.size === 0) { this.fail(record, 'capture', 'No audio was recorded.', 'empty_audio'); return; }
+    if (this.saved.size >= RETRY_COUNT_CAP || this.memoryBytes() + blob.size > RETRY_BYTE_CAP ||
+        (this.persistence && !this.persistence.canReserveAudio(MAX_NORMALIZED_WAV_BYTES))) {
+      this.fail(record, 'normalization', 'Recording retry storage is full (24 recordings or 32 MiB). Retry an earlier recording or wait for its 10 minute window to expire.', 'storage_failed');
+      return;
+    }
+    if (!validateEndpoints(this.endpoints)) {
+      this.fail(record, 'upload', 'Configure upload, analysis, and coaching endpoints first.', 'request_failed');
+      return;
+    }
+    this.busy = true;
+    const generation = ++this.generation;
+    this.activeAttemptId = record.attemptId;
+    this.changed();
+    try {
+      this.beginTrace();
+      this.remember(record.attemptId, { blob });
+      await this.process(record, generation);
+    } finally {
+      if (generation === this.generation) {
+        const status = this.store.records.find(item => item.attemptId === record.attemptId)?.processingStatus;
+        this.endTrace(status === 'result' ? 'ok' : status === 'error' ? 'error' : 'interrupted');
         this.busy = false; this.activeAttemptId = null; this.changed();
       }
     }

@@ -51,7 +51,7 @@ export function parseRecording(value: unknown, library: Passage[]): { metadata: 
   const sampleRate = numeric(raw.sampleRate, 'sampleRate', 22050, 22050);
   const channels = numeric(raw.channels, 'channels', 1, 1);
   if (raw.encoding !== 'pcm_s16le') throw new InputError('encoding invalid');
-  if (raw.captureSource !== 'phone' && raw.captureSource !== 'test') throw new InputError('captureSource invalid');
+  if (raw.captureSource !== 'phone' && raw.captureSource !== 'test' && raw.captureSource !== 'g2') throw new InputError('captureSource invalid');
   const metadata: RecordingMetadata = {
     attemptId: parseId(raw.attemptId, 'attemptId'), passageId, passageVersion,
     attemptTempoBpm: numeric(raw.attemptTempoBpm, 'attemptTempoBpm', 30, 240),
