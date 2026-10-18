@@ -50,19 +50,21 @@ test('validated findings retain exact reference and duration evidence', async ()
   const raw = { artifactId: 'artifact-1', passageId: 'P01', passageVersion: '1', analysis: analysis() };
   assert.throws(() => parseCoachRequest({ ...raw, analysis: analysis({ findings: [{ id: 'f1', kind: 'missing_note', referenceNoteId: 'P99-N01' }] }) }, library), InputError);
   const parsed = parseCoachRequest(raw, library);
-  const result = await coach(parsed.request, parsed.passage, wav(), async () => ({ findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' }));
+  const result = await coach(parsed.request, parsed.passage, wav(), async () => ({ findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' }));
   assert.deepEqual(result.visual.mistakes, [{ findingId: 'f1', referenceNoteId: 'P01-N01', detectedNoteId: 'd1' }]);
   assert.equal(result.visual.referenceNoteIds[0], 'P01-N01');
   assert.match(result.cue, /Expected C4, heard C#4/);
   const duration = parseCoachRequest({ ...raw, analysis: analysis({ findings: [{ id: 'f2', kind: 'duration', referenceNoteId: 'P01-N01', detectedNoteId: 'd1', durationDeltaMs: -300 }] }) }, library);
-  const held = await coach(duration.request, duration.passage, wav(), async () => ({ findingId: 'f2', actionId: 'hold_length', visualKind: 'rhythm_strip' }));
+  const held = await coach(duration.request, duration.passage, wav(), async () => ({ findingId: 'f2', actionId: 'hold_length', componentKind: 'duration' }));
   assert.match(held.cue, /300 ms too short/);
-  assert.equal(validateChoice({ findingId: 'invented', actionId: 'slow_key', visualKind: 'keyboard' }, analysis()), null);
+  assert.equal(validateChoice({ findingId: 'invented', actionId: 'slow_key', componentKind: 'wrong_note' }, analysis()), null);
   assert.equal(validateChoice({ findingId: 'f1', actionId: 'claim_fingering', visualKind: 'keyboard' }, analysis()), null);
   assert.equal(validateChoice({ findingId: 'f1', actionId: 'slow_key', visualKind: 'rhythm_strip' }, analysis()), null);
   const noVisual = await coach(parsed.request, parsed.passage, wav(), async () => ({ findingId: 'f1', actionId: 'slow_key', visualKind: 'none' }));
-  assert.deepEqual(noVisual.visual.mistakes, []);
-  assert.deepEqual(noVisual.visual.referenceNoteIds, []);
+  assert.equal(noVisual.coachingSource, 'fallback');
+  assert.equal(noVisual.fallbackReason, 'invalid_response');
+  assert.equal(validateChoice({ findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note', segmentId: 'segment-1' }, analysis()), null);
+  assert.equal(validateChoice({ findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note', cue: 'Invented cue' }, analysis()), null);
 });
 test('uncertain audio suppresses model and visual mistakes', async () => {
   const parsed = parseCoachRequest({ artifactId: 'x', passageId: 'P01', passageVersion: '1', analysis: analysis({ status: 'uncertain' }) }, library);
@@ -91,7 +93,7 @@ test('upload stores actual WAV; analysis and coach each receive identical bytes;
   const chooser = async (_prompt: string, given: Uint8Array): Promise<unknown> => {
     chooserCalls++;
     assert.deepEqual(Buffer.from(given), bytes);
-    return { findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' };
+    return { findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' };
   };
   const server = createCoachServer({ library, chooser, fetchImpl: fetchImpl as typeof fetch, token: 'test-token' });
   const base = await serve(server);
@@ -109,6 +111,10 @@ test('upload stores actual WAV; analysis and coach each receive identical bytes;
     assert.equal(upstreamCalls, 1);
     const measured = await results[0].json() as AnalysisResult;
     assert.equal(results[1].status, 200);
+    assert.equal(measured.schemaVersion, '2');
+    assert.deepEqual(measured.findings[0].location, { barNumber: 1, beatInBar: 1, passageBeat: 0 });
+    assert.deepEqual(measured.findings[0].segmentIds, ['segment-1']);
+    assert.deepEqual(await results[1].json(), measured);
     const coachBody = { artifactId: first.artifactId, passageId: 'P01', passageVersion: '1', analysis: measured };
     const coaching = await Promise.all([post(base, '/v1/coach', coachBody), post(base, '/v1/coach', coachBody)]);
     assert.equal(chooserCalls, 1);
@@ -183,7 +189,7 @@ test('pending coaching cannot return a usable result after hard expiry', async (
     chooser: async () => {
       started?.();
       await blocked;
-      return { findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' };
+      return { findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' };
     } });
   const base = await serve(server);
   try {
@@ -298,7 +304,7 @@ test('Basic Pitch error result can be retried on the same artifact', async () =>
   let calls = 0;
   const fetchImpl = async (): Promise<Response> => {
     calls++;
-    const result = calls === 1 ? analysis({ status: 'error' }) : analysis();
+    const result = calls === 1 ? analysis({ status: 'error', findings: [] }) : analysis();
     return new Response(JSON.stringify(result), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   const server = createCoachServer({ library, chooser: null, fetchImpl: fetchImpl as typeof fetch });

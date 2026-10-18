@@ -1,3 +1,4 @@
+import { analysisSegmentsValid, validBarMap } from '../../shared/segments.ts';
 import type { AnalysisResult, CoachRequest, DetectedNote, Finding, Passage, ReferenceNote } from './contracts.js';
 
 export class InputError extends Error {
@@ -63,14 +64,22 @@ export function parsePassages(value: unknown): Passage[] {
     });
     if (notes.length === 0) fail('passage notes empty');
     unique(notes, 'reference notes');
-    return {
+    const passage: Passage = {
       id: id(p.id, 'passage ID'),
       version: id(p.version, 'passage version'),
       title: string(p.title, 'title', 80),
       tempoBpm: finite(p.tempoBpm, 'tempo', 20, 240),
       beatsPerBar: integer(p.beatsPerBar, 'beats per bar', 1, 12),
-      notes
+      notes,
+      ...(p.bars === undefined ? {} : { bars: array(p.bars, 'bars', 128).map(item => {
+        const bar = record(item, 'bar');
+        return { number: integer(bar.number, 'bar number', -10000, 10000),
+          startBeat: finite(bar.startBeat, 'bar start', 0, 256),
+          endBeat: finite(bar.endBeat, 'bar end', 0, 256) };
+      }) })
     };
+    if (passage.bars !== undefined && !validBarMap(passage)) fail('invalid authored bar map');
+    return passage;
   });
   if (passages.length === 0) fail('passage library empty');
   unique(passages, 'passages');
@@ -83,7 +92,7 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
   const passage = library.find(item => item.id === passageId && item.version === passageVersion);
   if (!passage) fail('unknown passage ID/version');
   const a = record(root.analysis, 'analysis');
-  if (a.schemaVersion !== '1') fail('unsupported analysis schema');
+  if (a.schemaVersion !== '1' && a.schemaVersion !== '2') fail('unsupported analysis schema');
   if (a.passageId !== passageId || a.passageVersion !== passageVersion) fail('analysis passage mismatch');
   const status = a.status;
   if (status !== 'ok' && status !== 'uncertain' && status !== 'insufficient_audio' && status !== 'error') fail('analysis status invalid');
@@ -117,6 +126,9 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
     if (kind === 'timing' && f.timingDeltaMs === undefined) fail('timing finding lacks delta');
     if (kind === 'duration' && (f.durationDeltaMs === undefined || !detectedNoteId)) fail('duration finding lacks delta or detection');
     return {
+      ...(a.schemaVersion === '2' ? {
+        location: f.location as Finding['location'], segmentIds: f.segmentIds as string[]
+      } : {}),
       id: id(f.id, 'finding ID'),
       kind,
       ...(referenceNoteId ? { referenceNoteId } : {}),
@@ -126,12 +138,16 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
     };
   });
   unique(findings, 'findings');
+  if (a.schemaVersion === '1' && (a.displaySegments !== undefined ||
+      (a.findings as Record<string, unknown>[]).some(f => f.location !== undefined || f.segmentIds !== undefined))) {
+    fail('legacy analysis contains segment fields');
+  }
   const expectedNotes = integer(metrics.expectedNotes, 'expected notes', 0, 64);
   if (expectedNotes !== passage.notes.length) fail('expected note count mismatch');
   const matchedNotes = integer(metrics.matchedNotes, 'matched notes', 0, expectedNotes);
   const warnings = array(quality.warnings, 'warnings', 16).map(item => string(item, 'warning', 160));
   const analysis: AnalysisResult = {
-    schemaVersion: '1',
+    schemaVersion: a.schemaVersion,
     attemptId: id(a.attemptId, 'attemptId'),
     passageId,
     passageVersion,
@@ -143,7 +159,9 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
     alignment: { offsetSec: nullableNumber(alignment.offsetSec, 'offsetSec', -120, 120), reliable: boolean(alignment.reliable, 'alignment reliable') },
     detectedNotes,
     findings,
+    ...(a.schemaVersion === '2' ? { displaySegments: a.displaySegments as AnalysisResult['displaySegments'] } : {}),
     metrics: { matchedNotes, expectedNotes, medianAbsTimingErrorMs: nullableNumber(metrics.medianAbsTimingErrorMs, 'median timing error', 0, 120000) }
   };
+  if (!analysisSegmentsValid(analysis, passage)) fail('invalid analysis segments');
   return { request: { artifactId: id(root.artifactId, 'artifactId'), passageId, passageVersion, analysis }, passage };
 }

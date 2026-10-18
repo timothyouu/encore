@@ -82,6 +82,8 @@ function reference(passage: Passage, finding: Finding): ReferenceNote | undefine
 }
 function whereText(passage: Passage, finding: Finding): string {
   const note = reference(passage, finding);
+  if (finding.location) return 'Bar ' + String(finding.location.barNumber) +
+    ', beat ' + String(Number(finding.location.beatInBar.toFixed(2)));
   return note ? 'Beat ' + String(note.onsetBeat + 1) : 'Near an extra note';
 }
 function whatText(analysis: AnalysisResult, passage: Passage, finding: Finding): string {
@@ -102,8 +104,9 @@ function whatText(analysis: AnalysisResult, passage: Passage, finding: Finding):
 }
 function safeResult(analysis: AnalysisResult, passage: Passage, cue: string): CoachingResult {
   return {
-    schemaVersion: '1', attemptId: analysis.attemptId, cue, coachingSource: 'analysis_only',
+    schemaVersion: analysis.schemaVersion, attemptId: analysis.attemptId, cue, coachingSource: 'analysis_only',
     evidenceFindingIds: [],
+    ...(analysis.schemaVersion === '2' ? { primarySegmentId: null } : {}),
     visual: { kind: 'none', referenceNoteIds: [], poseIds: [], mistakes: [] },
     summary: { where: 'Recording', what: cue, next: 'Choose a passage to record again.' },
     visualPlan: buildVisualPlan(analysis, passage)
@@ -129,9 +132,7 @@ export function buildPrompt(request: CoachRequest, passage: Passage): string {
       timingDeltaMs: finding.timingDeltaMs ?? null,
       durationDeltaMs: finding.durationDeltaMs ?? null,
       allowedActions: ACTIONS[finding.kind].map(action => action.id),
-      allowedComponentKinds: [finding.kind],
-      allowedVisualKinds: finding.kind === 'wrong_note' || finding.kind === 'missing_note'
-        ? ['keyboard', 'none'] : ['rhythm_strip', 'none']
+      allowedComponentKinds: [finding.kind]
     };
   });
   return 'You are a concise piano practice coach for a beginner, reviewing one attempt after recording. ' +
@@ -146,16 +147,13 @@ export function buildPrompt(request: CoachRequest, passage: Passage): string {
 export function validateChoice(value: unknown, analysis: AnalysisResult): ModelChoice | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const object = value as Record<string, unknown>;
-  if (Object.keys(object).some(key => !['findingId', 'actionId', 'componentKind', 'visualKind'].includes(key))) return null;
+  if (Object.keys(object).length !== 3 ||
+      !['findingId', 'actionId', 'componentKind'].every(key => Object.hasOwn(object, key))) return null;
   const finding = analysis.findings.find(item => item.id === object.findingId);
-  if (!finding) return null;
+  if (!finding || object.componentKind !== finding.kind) return null;
   const action = ACTIONS[finding.kind].find(item => item.id === object.actionId);
   if (!action) return null;
-  if (object.componentKind !== undefined && object.componentKind !== finding.kind) return null;
-  const visualKind = object.visualKind ?? (finding.kind === 'wrong_note' || finding.kind === 'missing_note' ? 'keyboard' : 'rhythm_strip');
-  const allowed = finding.kind === 'wrong_note' || finding.kind === 'missing_note'
-    ? ['keyboard', 'none'] : ['rhythm_strip', 'none'];
-  if (typeof visualKind !== 'string' || !allowed.includes(visualKind)) return null;
+  const visualKind = finding.kind === 'wrong_note' || finding.kind === 'missing_note' ? 'keyboard' : 'rhythm_strip';
   return { findingId: finding.id, actionId: action.id, visualKind: visualKind as ModelChoice['visualKind'], componentKind: finding.kind };
 }
 export function renderFinding(analysis: AnalysisResult, passage: Passage, choice: ModelChoice): CoachingResult {
@@ -170,7 +168,10 @@ export function renderFinding(analysis: AnalysisResult, passage: Passage, choice
   const cue = full.length <= 120 ? full : where + ': ' + what;
   const referenceNoteIds = choice.visualKind === 'none' || !finding.referenceNoteId ? [] : [finding.referenceNoteId];
   return {
-    schemaVersion: '1',
+    schemaVersion: analysis.schemaVersion,
+    ...(analysis.schemaVersion === '2' ? {
+      primarySegmentId: analysis.displaySegments?.find(segment => segment.findingIds.includes(finding.id))?.id ?? null
+    } : {}),
     attemptId: analysis.attemptId,
     coachingSource: 'gemini',
     cue: cue.slice(0, 120),

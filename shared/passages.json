@@ -5,6 +5,18 @@
     "title": "First Steps",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Adjacent-note accuracy",
     "focus": "Step cleanly to each next key",
     "notes": [
@@ -80,6 +92,18 @@
     "title": "Little Echo",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Repeated onsets",
     "focus": "Play each repeat cleanly",
     "notes": [
@@ -155,6 +179,18 @@
     "title": "Open Windows",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Skipped-key selection",
     "focus": "Land each skip on the right key",
     "notes": [
@@ -230,6 +266,18 @@
     "title": "Hold the Moment",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Durations",
     "focus": "Hold the long notes full length",
     "notes": [
@@ -289,6 +337,18 @@
     "title": "Room to Breathe",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Rests",
     "focus": "Let the rests stay silent",
     "notes": [
@@ -348,6 +408,18 @@
     "title": "Small Climb",
     "tempoBpm": 72,
     "beatsPerBar": 4,
+    "bars": [
+      {
+        "number": 1,
+        "startBeat": 0,
+        "endBeat": 4
+      },
+      {
+        "number": 2,
+        "startBeat": 4,
+        "endBeat": 8
+      }
+    ],
     "purpose": "Steady timing at a faster tempo",
     "focus": "Keep a steady beat at 72",
     "notes": [
