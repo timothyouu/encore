@@ -3,10 +3,14 @@ import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { Glasses } from './glasses'
 import { filterInputs, toInput } from './input'
 import { PASSAGES } from './passages'
+import { mountUploadSettings } from './phone'
+import { Recorder, type Take } from './recorder'
 import { readyScreen } from './screens/ready'
+import { savingScreen } from './screens/saving'
 import type { Screen } from './screens/screen'
 import { selectionScreen } from './screens/selection'
 import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings'
+import { loadUploadUrl, uploadTake } from './upload'
 
 async function main() {
   status('script loaded; waiting for Even bridge…')
@@ -18,6 +22,8 @@ async function main() {
   let current: Screen
   // Read before the first page: every page declares the menu label from it.
   let settings = await loadSettings(glasses)
+  let uploadUrl = await loadUploadUrl(glasses)
+  mountUploadSettings(glasses, uploadUrl, url => (uploadUrl = url))
 
   function show(screen: Screen) {
     current = screen
@@ -25,7 +31,7 @@ async function main() {
     const menuObject = screen.allowsMenu === false ? undefined : sheetMusicMenu(settings)
     // Failures are already reported by the glasses queue.
     glasses.showPage({ ...screen.page(), menuObject }).catch(() => {})
-    screen.enter?.({ glasses, isActive: () => current === screen })
+    screen.enter?.({ glasses, isActive: () => current === screen, redraw: () => show(screen) })
   }
 
   function showSelection() {
@@ -36,14 +42,20 @@ async function main() {
           show(
             readyScreen({
               passage,
-              // Recording (03) is the next screen to build.
-              onRecord: () => status('record: not built yet (next PR)'),
+              sheetMusic: () => settings.showSheetMusicWhilePlaying,
+              onTake: showSaving,
               onBack: showSelection,
             }),
           ),
         onExit: () => glasses.requestExit(),
       }),
     )
+  }
+
+  // Until Analyzing (04) exists, a finished take is uploaded and then the
+  // player returns to selection, as after any result (spec §4).
+  function showSaving(take: Take) {
+    show(savingScreen({ take, upload: () => uploadTake(uploadUrl, take), onDone: showSelection }))
   }
 
   function toggleSheetMusic() {
@@ -56,6 +68,7 @@ async function main() {
 
   const handleInput = filterInputs(input => {
     if (input.kind === 'exit') {
+      current.dispose?.()
       unsubscribe()
       return
     }
@@ -70,6 +83,8 @@ async function main() {
   })
 
   const unsubscribe = glasses.bridge.onEvenHubEvent(event => {
+    // Audio frames skip input handling; the active recorder (if any) keeps them.
+    if (event.audioEvent?.audioPcm) return Recorder.feed(event.audioEvent.audioPcm)
     const input = toInput(event)
     if (input) handleInput(input)
   })
