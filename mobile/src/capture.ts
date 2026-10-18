@@ -1,4 +1,5 @@
 import { passages } from './passages.ts';
+import { AudioMeter } from './audio-meter.ts';
 import { HISTORY_CAP, type AttemptRecord, type SessionStore } from './session.ts';
 import { normalizeBlob, bytesToBase64, type NormalizedAudio } from './audio-normalization.ts';
 import type { PhonePersistence } from './storage.ts';
@@ -77,6 +78,7 @@ export class PhoneCapture {
 
   private stream: MediaStream | null = null;
   private recorder: MediaRecorder | null = null;
+  private meter: AudioMeter | null = null;
   private chunks: Blob[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
   private request: AbortController | null = null;
@@ -121,6 +123,10 @@ export class PhoneCapture {
   }
 
   private changed(): void { this.onChange?.(); }
+
+  getWaveform(): readonly number[] | null {
+    return this.recording ? this.meter?.sample() ?? null : null;
+  }
 
   private beginTrace(): void {
     this.endTrace('interrupted');
@@ -175,6 +181,8 @@ export class PhoneCapture {
   private clearCapture(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
     this.timer = undefined;
+    this.meter?.dispose();
+    this.meter = null;
     this.stream?.getTracks().forEach((track) => track.removeEventListener('ended', this.onTrackEnded));
     stopTracks(this.stream);
     this.stream = null;
@@ -262,6 +270,7 @@ export class PhoneCapture {
       record.captureSource = 'phone';
       this.activeAttemptId = record.attemptId;
       recorder.start();
+      this.meter = AudioMeter.create(stream);
       this.recording = true;
       this.timer = setTimeout(() => { void this.stop(); }, MAX_CAPTURE_MS);
     } catch (cause) {
