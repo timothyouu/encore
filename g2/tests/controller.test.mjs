@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../../mobile/src/session.ts'
 import { startController } from '../src/controller.ts'
+import { demoReview } from '../src/demo.ts'
 import { fakeGlasses, settle, textByName } from './fakes.mjs'
 
 const tiles = async () => ({ left: new Uint8Array([1]), right: new Uint8Array([2]), hasClef: true })
@@ -33,7 +34,6 @@ function setup(options) {
   const { glasses, bridge } = fakeGlasses()
   const store = new SessionStore(memory())
   let exits = 0
-  const feedbackDiagrams = []
   const controller = startController({
     glasses,
     store,
@@ -42,14 +42,17 @@ function setup(options) {
     menu: () => undefined,
     onExit: () => exits++,
     renderTiles: tiles,
-    renderFeedbackTiles: async diagram => { feedbackDiagrams.push(diagram); return { left: new Uint8Array([3]), right: new Uint8Array([4]) } },
+    renderArt: async () => new Uint8Array([83]),
+    renderFrame: async (_card, step) => new Uint8Array([step.layer === 'played' ? 80 : 87]),
+    frameDwellMs: 0,
+    gallery: options?.gallery,
   })
   const input = async (kind, extra = {}) => {
     controller.onInput({ kind, ...extra })
     await settle()
   }
   const pages = () => bridge.callsTo('createStartUpPageContainer').length + bridge.callsTo('rebuildPageContainer').length
-  return { store, bridge, controller, input, pages, feedbackDiagrams, exits: () => exits }
+  return { store, bridge, controller, input, pages, exits: () => exits }
 }
 
 test('glasses start on Selection; picking a passage there opens it on the phone too', async () => {
@@ -62,6 +65,18 @@ test('glasses start on Selection; picking a passage there opens it on the phone 
   assert.equal(controller.current.name, 'ready')
 })
 
+test('explicit DEV gallery presents fixture cards and returns to the shared Library without an attempt', async () => {
+  const { store, controller, input, bridge } = setup({ gallery: demoReview() })
+  await settle()
+  assert.equal(controller.current.name, 'review')
+  assert.match(textByName(bridge).counter, /DEMO/)
+  assert.equal(store.records.length, 0)
+  await input('doubleTap')
+  assert.equal(controller.current.name, 'selection')
+  assert.equal(store.state.screen, 'library')
+  assert.equal(store.records.length, 0)
+})
+
 test('a passage picked on the phone opens Ready on the glasses', async () => {
   const { store, controller, bridge } = setup()
   store.selectPassage('P03')
@@ -70,8 +85,8 @@ test('a passage picked on the phone opens Ready on the glasses', async () => {
   assert.equal(textByName(bridge).titleL, 'Open Windows')
 })
 
-test('full loop from the glasses: record, stop, Review, Guide and back, Play again', async () => {
-  const { store, controller, input, bridge, feedbackDiagrams } = setup()
+test('full loop from the glasses: record, stop, evidence cards, replay, Play again', async () => {
+  const { store, controller, input, bridge } = setup()
   await input('listSelect', { index: 0 })
   await input('tap')
   assert.equal(store.state.screen, 'recording')
@@ -79,19 +94,19 @@ test('full loop from the glasses: record, stop, Review, Guide and back, Play aga
   await input('tap')
   assert.equal(store.state.screen, 'review')
   assert.equal(controller.current.name, 'review')
-  // Same order as the phone (visual plan): the missing note comes first.
-  assert.equal(textByName(bridge).body, 'Beat 6 · Missing note  (1 of 3)\nExpected F4 · Not detected\nPlay F4 on beat 6.')
-  assert.equal(textByName(bridge).titleR, 'Demo · local cue')
+  assert.match(textByName(bridge).title, /Beat 6 · missed note/)
+  assert.match(textByName(bridge).cue, /Finger 4 \(score\)/)
+  assert.match(textByName(bridge).counter, /Demo · local cue/)
+  assert.equal(bridge.callsTo('updateImageRawData').at(-1).containerName, 'art')
   await input('swipeDown')
-  assert.equal(store.state.screen, 'guide')
-  assert.equal(controller.current.name, 'guide')
-  assert.deepEqual(bridge.callsTo('updateImageRawData').slice(-2).map(item => item.containerName), ['diagramL', 'diagramR'])
-  assert.equal(feedbackDiagrams[0].kind, 'keyboard')
-  assert.equal(feedbackDiagrams[0].expected.midiPitch, 65)
-  assert.equal(feedbackDiagrams[0].detected, undefined)
-  await input('swipeUp')
   assert.equal(store.state.screen, 'review')
+  assert.match(textByName(bridge).counter, /2 \/ 3/)
+  await input('swipeUp')
+  assert.match(textByName(bridge).title, /Beat 6 · missed note/)
   await input('tap')
+  assert.equal(store.state.screen, 'review')
+  assert.ok(bridge.callsTo('updateImageRawData').some(update => update.imageData[0] === 80))
+  await input('doubleTap')
   assert.equal(store.state.screen, 'library')
   assert.equal(controller.current.name, 'selection')
   assert.equal(store.count(), 1)
@@ -141,8 +156,8 @@ test('a processing error shows a plain reason; tap returns to Selection', async 
   assert.equal(controller.current.name, 'analyzing')
   store.fail(record.attemptId, 'upload', "Can't reach the server.")
   await settle()
-  assert.equal(controller.current.name, 'error')
-  assert.equal(textByName(bridge).body, "Couldn't finish this take.\nCan't reach the server.")
+  assert.equal(controller.current.name, 'problem')
+  assert.equal(textByName(bridge).reason, "Can't reach the server.")
   await input('tap')
   assert.equal(store.state.screen, 'library')
 })
@@ -169,10 +184,12 @@ test('moving between findings on the phone updates the glasses Review', async ()
   await input('listSelect', { index: 0 })
   await input('tap')
   await input('tap')
+  assert.equal(store.records[0].analysis.findings[0].kind, 'wrong_note')
+  assert.match(textByName(bridge).title, /missed note/)
   store.moveFinding(1)
   await settle()
-  // The coaching cue appears with the finding it cites.
-  assert.equal(textByName(bridge).body, 'Beat 3 · Note mismatch  (2 of 3)\nExpected E4 · Heard F4\nTry the highlighted key, then play the phrase again.')
+  assert.match(textByName(bridge).title, /Beat 3 · wrong note/)
+  assert.match(textByName(bridge).cue, /Finger 3 \(score\)/)
 })
 
 test('double tap on Selection asks to exit', async () => {

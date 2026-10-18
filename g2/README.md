@@ -20,11 +20,13 @@ npm test
 
 Node's built-in test runner on the TypeScript sources (no extra dependencies; relative imports carry `.ts` so Node can resolve them). `tests/fakes.mjs` stands in for the Even bridge, so screens, input, recording, the G2 capture source, the phone↔glasses controller and the glasses queue run without hardware. Staff drawing is covered through `staffLayout()`, the canvas-free layout step.
 
+For a presentation-only fixture gallery in the simulator, open the dev URL with `?demo=review`. It shows all prepared Review cards with a visible DEMO label; double tap returns to the shared Library. It creates no recording and makes no backend or model request. For browser-only raster inspection without an Even bridge, open `/tests/review-browser.html` from the Vite dev server. That fixture displays the same card art and correction replay, without exercising the glasses transport.
+
 ## Phone and glasses together
 
 This page hosts the phone UI from `../mobile/` (`startPhoneApp`) and mirrors its session on the glasses; see [`../glasses-integration/CONTRACT.md`](../glasses-integration/CONTRACT.md). The phone's `SessionStore` is the only source of truth: phone buttons and glasses gestures make the same session calls, and `src/controller.ts` redraws the glasses from it.
 
-To record from the glasses, open **Connection settings** on the hosted phone page and choose **G2 microphone**. This package fixes all three API endpoints to `https://timothylggram.tail51e140.ts.net/api/...`; enter the service bearer token in the password field for this WebView session. The token is never persisted, logged, or bundled. The standalone `mobile/` build retains its own relative `/api/...` defaults. Each take, as G2's actual 16 kHz WAV, goes through the phone's own pipeline (`PhoneCapture.processRecording`): normalized to 22.05 kHz mono, uploaded once with `captureSource: "g2"`, then analyzed and coached, with the same retry window and History as phone recordings. See `../PIPELINE-HANDOFF.md` for running the services. The generated package manifest whitelists only that HTTPS origin. Actual Even WebView `Origin` and CORS behavior still require a physical run; the debug panel shows the observed `location.origin` without logging credentials. **Demo** needs no services and labels its results Demo on both screens.
+To record from the glasses, open **Connection settings** on the hosted phone page and choose **G2 microphone**. This package fixes all three API endpoints to `https://timothylggram.tail51e140.ts.net/api/...`; enter the service bearer token in the password field for this WebView session. The token is never persisted, logged, or bundled. The standalone `mobile/` build retains its own relative `/api/...` defaults. Each take, with captured PCM wrapped as a 16 kHz WAV under the SDK format assumption, goes through the phone's own pipeline (`PhoneCapture.processRecording`): normalized to 22.05 kHz mono, uploaded once with `captureSource: "g2"`, then analyzed and coached, with the same retry window and History as phone recordings. See `../PIPELINE-HANDOFF.md` for running the services. The generated package manifest whitelists only that HTTPS origin. Actual Even WebView `Origin` and CORS behavior still require a physical run; the debug panel shows the observed `location.origin` without logging credentials. **Demo** needs no services and labels its results Demo on both screens.
 
 Glasses diagnostics are in the collapsed **Glasses debug** panel under the phone UI; it opens by itself on any error.
 
@@ -43,7 +45,8 @@ The pack script validates the approved exact origin, generates ignored `app.netw
 | `src/main.ts` | Mounts the phone UI, boots the bridge, routes normalized input to the controller. |
 | `src/controller.ts` | Phone session state → glasses screen; glasses gestures → session calls (CONTRACT.md state map). |
 | `src/g2capture.ts` | The G2 mic as the phone session's capture source: mic on, one `g2` attempt, WAV → analysis → coaching; discard, interrupt, 30s cap. |
-| `src/feedback.ts` / `src/feedback-visual.ts` | Evidence-bound result wording and deterministic keyboard/rhythm diagram tiles. |
+| `src/feedback.ts` | Derives Review cards from the saved attempt's exact validated visual plan; labels source and fallback coaching. |
+| `src/review/` | Evidence-bound card text, authored reference finger cues, keyboard/staff/rhythm art, and timed correction replay. |
 | `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
 | `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `menuItem`; drops duplicates and any tap that belongs to a long press. |
 | `src/settings.ts` | Display settings (spec §5), saved in Even app storage, and the sheet-music system-menu item. |
@@ -63,7 +66,6 @@ The pack script validates the approved exact origin, generates ignored `app.netw
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
 | 04 | Analyzing | Short status; no input, no menu |
-| 05 | Review | Where, what happened, one cue (coaching cue when it cites this finding); `▼ guide` when there is a correction; tap → Selection. Text is evidence-bound; uncertain audio stays neutral |
-| 06 | Guide | The correction and any authored finger; swipe up → Review; tap → Selection. Evidence-bound text and image diagram when a supported finding exists |
+| 05 | Review | One validated finding card at a time with expected/detected legend, exact key or beat art, concise cue, and authored reference finger when supported. Swipe down/up moves between cards; tap replays measured versus written notes and ends on the correction; double tap → Selection. Uncertain audio gets a neutral microphone card without replay. The phone's Guide and Sheet remain phone screens; they mirror the same saved attempt without commanding a second G2 page |
 | — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |

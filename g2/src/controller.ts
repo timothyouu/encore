@@ -1,12 +1,18 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
-import { resultView } from './feedback.ts'
-import { renderFeedbackTiles } from './feedback-visual.ts'
+import { orderedFindings } from '../../mobile/src/feedback.ts'
+import type { VisualCard } from '../../shared/visual-contract.ts'
+import type { CoachingResult } from '../../shared/contracts.ts'
+import { reviewData } from './feedback.ts'
 import type { Glasses } from './glasses.ts'
 import type { Input } from './input.ts'
 import { PASSAGES } from './passages.ts'
+import type { ReplayStep } from './review/art.ts'
+import type { CardView } from './review/model.ts'
 import { readyScreen, type ReadyScreen } from './screens/ready.ts'
-import { analyzingScreen, errorScreen, guideScreen, reviewScreen } from './screens/results.ts'
+import { analyzingScreen } from './screens/analyzing.ts'
+import { problemScreen } from './screens/problem.ts'
+import { reviewScreen } from './screens/review.ts'
 import type { Screen } from './screens/screen.ts'
 import { selectionScreen } from './screens/selection.ts'
 import type { StaffTiles } from './staff.ts'
@@ -24,7 +30,10 @@ type ControllerOptions = {
   menu(screen: Screen): MenuContainerProperty | undefined
   onExit(): void
   renderTiles?: (passage: (typeof PASSAGES)[number]) => Promise<StaffTiles>
-  renderFeedbackTiles?: typeof renderFeedbackTiles
+  renderArt?: (card: VisualCard) => Promise<Uint8Array>
+  renderFrame?: (card: VisualCard, step: ReplayStep) => Promise<Uint8Array>
+  frameDwellMs?: number
+  gallery?: { coaching: CoachingResult; views: CardView[] }
 }
 
 // One glasses page per session state (CONTRACT.md state map). Ready and
@@ -37,11 +46,10 @@ function keyOf(state: SessionState): string {
     case 'ready':
     case 'recording':
       return `ready:${state.passageId}`
-    case 'sheet':
-      return `${state.sheetOrigin}:${state.attemptId}:${state.findingIndex}`
     case 'review':
     case 'guide':
-      return `${state.screen}:${state.attemptId}:${state.findingIndex}`
+    case 'sheet':
+      return `review:${state.attemptId}:${state.findingIndex}`
     default:
       return `${state.screen}:${state.attemptId}`
   }
@@ -50,18 +58,23 @@ function keyOf(state: SessionState): string {
 // Mirrors the phone session (mobile SessionStore) on the glasses and turns
 // glasses gestures into the same session calls the phone buttons make. The
 // store is the only source of truth; this file owns every glasses side effect.
-export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles, renderFeedbackTiles }: ControllerOptions) {
+export function startController({ glasses, store, actions, sheetMusic, menu, onExit, renderTiles, renderArt, renderFrame, frameDwellMs, gallery }: ControllerOptions) {
   let current: Screen | null = null
   let currentKey = ''
+  let pageGeneration = 0
+  let disposed = false
+  let galleryActive = Boolean(gallery)
   // Set while a multi-step store change runs, so only its end state is drawn.
   let holding = false
 
   function show(screen: Screen) {
+    current?.dispose?.()
     current = screen
+    const generation = ++pageGeneration
     status(`screen → ${screen.name}`)
     // Failures are already reported by the glasses queue.
     glasses.showPage({ ...screen.page(), menuObject: menu(screen) }).catch(() => {})
-    screen.enter?.({ glasses, isActive: () => current === screen, redraw: () => show(screen) })
+    screen.enter?.({ glasses, isActive: () => current === screen && pageGeneration === generation && !disposed, redraw: () => show(screen) })
   }
 
   function batch(change: () => void) {
@@ -84,6 +97,18 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
     switch (state.screen) {
       case 'library':
       case 'history':
+        if (state.screen === 'library' && galleryActive && gallery) {
+          return reviewScreen({
+            ...gallery,
+            demo: true,
+            onPlayAgain: () => {
+              galleryActive = false
+              currentKey = ''
+              sync()
+            },
+            renderArt, renderFrame, frameDwellMs,
+          })
+        }
         return selectionScreen({
           passages: PASSAGES,
           onOpen: chosen =>
@@ -122,43 +147,38 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
         return screen
       }
       case 'processing':
-        return passage ? analyzingScreen({ title: passage.title, tag: (record?.captureSource ?? 'demo') === 'demo' ? 'Demo' : '' }) : null
+        return analyzingScreen(store.processingStage ?? '')
       case 'review':
       case 'guide':
       case 'sheet': {
         if (!record || !passage) return null
-        const view = resultView(record, passage, state.findingIndex)
-        const onPlayAgain = playAgain
-        const which = state.screen === 'sheet' ? state.sheetOrigin : state.screen
-        return which === 'review'
-          ? reviewScreen({ view, onGuide: () => store.showGuide(), onPlayAgain })
-          : guideScreen({
-              view,
-              onReview: () =>
-                batch(() => {
-                  store.closeSheet()
-                  store.showReview()
-                }),
-              onPlayAgain,
-              renderTiles: renderFeedbackTiles,
-            })
+        const { views, tag } = reviewData(record, passage)
+        const findingId = orderedFindings(record, passage)[state.findingIndex]?.id
+        const matched = findingId ? views.findIndex(view => view.card?.evidence.findingIds.includes(findingId)) : -1
+        return reviewScreen({
+          views,
+          tag,
+          initialIndex: matched < 0 ? 0 : matched,
+          onPlayAgain: playAgain,
+          renderArt,
+          renderFrame,
+          frameDwellMs,
+        })
       }
       case 'error':
-        return errorScreen({
-          title: passage?.title ?? 'Encore',
-          message: record?.error?.message ?? 'Something went wrong.',
-          onPlayAgain: playAgain,
-        })
+        return problemScreen({ reason: record?.error?.message ?? 'Something went wrong.', onPlayAgain: playAgain })
     }
   }
 
   function sync() {
     if (holding) return
     const state = store.state
-    const key = keyOf(state)
+    if (state.screen !== 'library') galleryActive = false
+    const key = galleryActive ? 'gallery' : keyOf(state)
     if (key === currentKey && current) {
       // Same page: only Ready ↔ Recording changes in place.
       if (key.startsWith('ready:')) (current as ReadyScreen).setRecording(state.screen === 'recording')
+      if (key.startsWith('processing:')) (current as ReturnType<typeof analyzingScreen>).setStage(store.processingStage ?? '')
       return
     }
     const next = screenFor(state)
@@ -182,6 +202,10 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
       if (current) show(current)
     },
     dispose() {
+      disposed = true
+      pageGeneration++
+      current?.dispose?.()
+      current = null
       unsubscribe()
     },
   }

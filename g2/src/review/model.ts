@@ -1,5 +1,5 @@
 import { getTextWidth } from '@evenrealities/pretext'
-import type { CoachingResult } from '../../../shared/contracts.ts'
+import type { CoachingResult, Passage } from '../../../shared/contracts.ts'
 import type { VisualCard, VisualNote } from '../../../shared/visual-contract.ts'
 import { validateVisualPlan } from '../../../shared/visual-plan.ts'
 
@@ -66,6 +66,14 @@ export function unmatched(card: VisualCard) {
 export function flaggedNotes(card: VisualCard) {
   const left = unmatched(card)
   const pick = (notes: VisualNote[], ids: string[]) => notes.filter(note => ids.includes(note.id))
+  // Analysis cards carry the one finding's exact note IDs. Context notes may
+  // have onset jitter and must not steal the highlight or authored finger.
+  if (card.evidence.source === 'analysis') {
+    return {
+      expected: pick(card.expected.notes, card.evidence.referenceNoteIds),
+      detected: pick(card.detected.notes, card.evidence.detectedNoteIds),
+    }
+  }
   return {
     expected: left.expected.length || left.detected.length ? left.expected : pick(card.expected.notes, card.evidence.referenceNoteIds),
     detected: left.expected.length || left.detected.length ? left.detected : pick(card.detected.notes, card.evidence.detectedNoteIds),
@@ -211,15 +219,23 @@ export function cardViews(coaching: CoachingResult): CardView[] {
   return viewsForCards(plan.cards, coaching)
 }
 
-export function viewsForCards(cards: VisualCard[], coaching: Pick<CoachingResult, 'evidenceFindingIds' | 'summary'>): CardView[] {
+export function viewsForCards(cards: VisualCard[], coaching: Pick<CoachingResult, 'evidenceFindingIds' | 'summary'>, passage?: Passage): CardView[] {
   const next = coaching.summary?.next
   return cards.map(card => {
     const coached = card.evidence.findingIds.some(id => coaching.evidenceFindingIds.includes(id))
+    const authored = (card.kind === 'wrong_note' || card.kind === 'missing_note')
+      ? passage?.notes.find(note => note.id === (card.evidence.source === 'analysis'
+        ? card.evidence.referenceNoteIds[0] : flaggedNotes(card).expected[0]?.id))
+      : undefined
+    const baseCue = coached && next && fits(next) ? next : card.cue
+    const finger = authored?.suggestedFinger ? `Finger ${authored.suggestedFinger} (score).` : ''
+    const cue = finger && fits(`${baseCue} ${finger}`) ? `${baseCue} ${finger}`
+      : finger && fits(`${card.cue} ${finger}`) ? `${card.cue} ${finger}` : baseCue
     return {
       card,
       header: header(card),
       legend: legend(card),
-      cue: coached && next && fits(next) ? next : card.cue,
+      cue,
     }
   })
 }

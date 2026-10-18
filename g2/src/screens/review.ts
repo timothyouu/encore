@@ -28,9 +28,11 @@ const NEXT_HINT = padToWidth('▼  next', DOTS_ROOM)
 const FRAME_DWELL_MS = 2000
 
 type ReviewOptions = {
-  coaching: CoachingResult
+  coaching?: CoachingResult
   // Ready-made cards (the dev demo gallery); otherwise built from `coaching`.
   views?: CardView[]
+  tag?: string
+  initialIndex?: number
   // Double tap: back to passage selection (spec §4 "Play again").
   onPlayAgain(): void
   // Fixture results must say so on screen (spec §9).
@@ -53,18 +55,22 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 // cancels a replay.
 export function reviewScreen({
   coaching,
-  views = cardViews(coaching),
+  views = coaching ? cardViews(coaching) : [{ card: null, header: 'Feedback unavailable', legend: ['No validated coaching result', ''], cue: 'Try again.' }],
+  tag = '',
+  initialIndex = 0,
   onPlayAgain,
   demo = false,
   renderArt = renderCardArt,
   renderFrame = renderReplayFrame,
   frameDwellMs = FRAME_DWELL_MS,
 }: ReviewOptions): Screen {
-  let index = 0
+  let index = Math.max(0, Math.min(views.length - 1, initialIndex))
   let context: ScreenContext | null = null
   // Bumped whenever the card changes or a replay starts; stale work stops.
   let generation = 0
   let replaying = false
+  // Keep the last picture delivered to the glasses across an OS-menu redraw.
+  let displayed: { index: number; step: ReplayStep } | null = null
 
   const steps = (i: number) => {
     const card = views[i].card
@@ -72,7 +78,7 @@ export function reviewScreen({
   }
   const counter = (i: number) => {
     const count = views.length > 1 ? `${i + 1} / ${views.length}` : ''
-    return demo ? `DEMO ${count}`.trim() : count
+    return `${tag || (demo ? 'DEMO' : '')} ${count}`.trim()
   }
   const nextHint = (i: number) => (i < views.length - 1 ? NEXT_HINT : '')
   const replayHint = (i: number) => (steps(i).length ? REPLAY_HINT : '')
@@ -99,9 +105,19 @@ export function reviewScreen({
       .catch(error => status(`card art failed: ${String(error)}`, 'error'))
   }
 
+  function sendDisplayed(i: number, still: () => boolean) {
+    const shown = displayed
+    const card = views[i].card
+    if (!shown || shown.index !== i || !card || !context) return sendStatic(i, still)
+    return renderFrame(card, shown.step)
+      .then(png => context?.glasses.updateImage(ART, png, still))
+      .catch(error => status(`replay art failed: ${String(error)}`, 'error'))
+  }
+
   function show(i: number) {
     index = i
     replaying = false
+    displayed = null
     const mine = ++generation
     const ctx = context
     if (!ctx) return
@@ -124,14 +140,14 @@ export function reviewScreen({
     try {
       for (const [n, step] of plan.entries()) {
         if (!current()) return
-        const started = Date.now()
-        await ctx.glasses.updateImage(ART, await renderFrame(card, step), current)
+        const delivered = await ctx.glasses.updateImage(ART, await renderFrame(card, step), current)
+        if (!delivered || !current()) return
+        displayed = { index: i, step }
         // Text lands instantly and images lag over BLE, so the caption follows the picture.
-        ctx.glasses.updateText(REPLAY, step.caption, current)
-        ctx.glasses.updateText(NEXT, dots(n + 1, total), current)
+        await ctx.glasses.updateText(REPLAY, step.caption, current)
+        await ctx.glasses.updateText(NEXT, dots(n + 1, total), current)
         const dwell = step.hold === 'end' ? frameDwellMs : frameDwellMs / 2
-        const remaining = dwell - (Date.now() - started)
-        if (remaining > 0) await wait(remaining)
+        if (current() && dwell > 0) await wait(dwell)
       }
       if (!current()) return
       // Stay on the fix and restore the hints.
@@ -148,29 +164,36 @@ export function reviewScreen({
     name: 'review',
 
     page: () => {
-      const first = views[0]
+      const first = views[index]
       return {
         textObject: [
           text({ ...TITLE, x: MARGIN_X, y: HEADER_Y, width: 380, content: first.header }),
-          rightText({ ...COUNTER, y: HEADER_Y, content: counter(0), sizeFor: `DEMO ${views.length} / ${views.length}` }),
+          rightText({ ...COUNTER, y: HEADER_Y, content: counter(index), sizeFor: `${tag || 'DEMO'} ${views.length} / ${views.length}` }),
           text({ ...EXPECTED, x: COLUMN_X, y: 60, width: CUE_WIDTH, content: first.legend[0], brightness: LEGEND_BRIGHTNESS }),
           text({ ...DETECTED, x: COLUMN_X, y: 87, width: CUE_WIDTH, content: first.legend[1], brightness: LEGEND_BRIGHTNESS }),
           // Swipes reach the app through this capture container.
           text({ ...CUE, x: COLUMN_X, y: 124, width: CUE_WIDTH, height: 84, content: first.cue, capture: true }),
           // Bottom row: replay hint (then the frame caption) left, next hint (then progress dots) right.
-          text({ ...REPLAY, x: MARGIN_X, y: HINT_Y, width: 260, content: replayHint(0), brightness: HINT_BRIGHTNESS }),
-          rightText({ ...NEXT, y: HINT_Y, content: nextHint(0), sizeFor: DOTS_ROOM, brightness: HINT_BRIGHTNESS }),
+          text({ ...REPLAY, x: MARGIN_X, y: HINT_Y, width: 260, content: replayHint(index), brightness: HINT_BRIGHTNESS }),
+          rightText({ ...NEXT, y: HINT_Y, content: nextHint(index), sizeFor: DOTS_ROOM, brightness: HINT_BRIGHTNESS }),
         ],
-        imageObject: [
+        imageObject: first.card ? [
           new ImageContainerProperty({ xPosition: 0, yPosition: ART_Y, width: ART_W, height: ART_H, containerID: ART.id, containerName: ART.name }),
-        ],
+        ] : [],
       }
     },
 
     enter(ctx) {
       context = ctx
-      const mine = generation
-      sendStatic(index, () => ctx.isActive() && generation === mine)
+      replaying = false
+      const mine = ++generation
+      sendDisplayed(index, () => ctx.isActive() && generation === mine)
+    },
+
+    dispose() {
+      generation++
+      replaying = false
+      context = null
     },
 
     onInput(input) {

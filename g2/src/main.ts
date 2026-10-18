@@ -2,6 +2,7 @@ import { status } from './status.ts'
 import { waitForEvenAppBridge } from '@evenrealities/even_hub_sdk'
 import { startPhoneApp } from '../../mobile/src/app.ts'
 import { startController } from './controller.ts'
+import { demoRequested, demoReview } from './demo.ts'
 import { G2Capture } from './g2capture.ts'
 import { Glasses } from './glasses.ts'
 import { filterInputs, toInput } from './input.ts'
@@ -64,7 +65,9 @@ async function main() {
     sheetMusic: () => settings.showSheetMusicWhilePlaying,
     menu: screen => (screen.allowsMenu === false ? undefined : sheetMusicMenu(settings)),
     onExit: () => bridged.requestExit(),
+    gallery: demoRequested() ? demoReview() : undefined,
   })
+  if (demoRequested()) status('DEMO review gallery: fixture cards only; no recording, upload or model call')
 
   function toggleSheetMusic() {
     settings = { ...settings, showSheetMusicWhilePlaying: !settings.showSheetMusicWhilePlaying }
