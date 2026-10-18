@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import type { GenerateContentParameters, GoogleGenAI, Content } from '@google/genai';
-import { coach, createGeminiChooser, validateChoice } from './coaching.js';
+import { coach, createGeminiChooser, validateChoice, choiceSchemaForFinding } from './coaching.js';
 import { createCoachServer, loadLibrary } from './http.js';
 import type { AnalysisResult, Passage, RecordingMetadata } from './contracts.js';
 import { InputError, parseCoachRequest } from './validation.js';
@@ -207,6 +207,12 @@ test('Strands GoogleModel streaming request contains inline WAV bytes', async ()
   const bytes = wav();
   await assert.rejects(() => chooser('Select one evidence-backed finding.', bytes, new AbortController().signal));
   assert.ok(captured);
+  const schema = captured.config?.responseJsonSchema as ReturnType<typeof choiceSchemaForFinding>;
+  assert.equal(captured.config?.responseMimeType, 'application/json');
+  assert.equal(schema.additionalProperties, false);
+  assert.deepEqual(schema.required, ['findingId', 'actionId', 'componentKind']);
+  assert.ok(schema.properties.actionId.enum.includes('slow_key'));
+  assert.ok(schema.properties.componentKind.enum.includes('wrong_note'));
   const contents = captured.contents as Content[];
   const parts = contents[contents.length - 1].parts ?? [];
   const inline = parts.find(part => part.inlineData?.mimeType === 'audio/wav')?.inlineData;
@@ -220,19 +226,44 @@ test('Strands GoogleModel accepts a streamed Gemini choice with attached WAV', a
     captured = params;
     return (async function* () {
       yield { candidates: [{ content: { parts: [{ text: JSON.stringify({
-        findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard'
+        findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note'
       }) }] }, finishReason: 'STOP' }] };
     })();
   } } } as unknown as GoogleGenAI;
   const chooser = createGeminiChooser('test-only', 'gemini-2.5-flash', fake);
   const choice = await chooser('Select one supported finding.', bytes, new AbortController().signal);
-  assert.deepEqual(choice, { findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' });
+  assert.deepEqual(choice, { findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' });
   assert.ok(captured);
   const contents = captured.contents as Content[];
   const parts = contents[contents.length - 1].parts ?? [];
   const inline = parts.find(part => part.inlineData?.mimeType === 'audio/wav')?.inlineData;
   assert.ok(inline?.data);
   assert.deepEqual(Buffer.from(inline.data, 'base64'), bytes);
+});
+test('coaching narrows the provider schema to its primary finding and supported actions', async () => {
+  const parsed = parseCoachRequest({ artifactId: 'x', passageId: 'P01', passageVersion: '1', analysis: analysis() }, library);
+  let received: ReturnType<typeof choiceSchemaForFinding> | undefined;
+  const result = await coach(parsed.request, parsed.passage, wav(), async (_prompt, _bytes, _signal, schema) => {
+    received = schema;
+    return { findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' };
+  });
+  assert.deepEqual(received?.properties.findingId.enum, ['f1']);
+  assert.deepEqual(received?.properties.actionId.enum, ['slow_key', 'isolate_key']);
+  assert.deepEqual(received?.properties.componentKind.enum, ['wrong_note']);
+  assert.equal(result.coachingSource, 'gemini');
+});
+test('streamed malformed, extra-field, and refused model responses are rejected', async () => {
+  for (const [text, finishReason] of [
+    ['not JSON', 'STOP'],
+    [JSON.stringify({ findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note', html: '<p>x</p>' }), 'STOP'],
+    [JSON.stringify({ findingId: 'f1', actionId: 'slow_key', componentKind: 'wrong_note' }), 'SAFETY']
+  ]) {
+    const fake = { models: { generateContentStream: async () => (async function* () {
+      yield { candidates: [{ content: { parts: [{ text }] }, finishReason }] };
+    })() } } as unknown as GoogleGenAI;
+    const chooser = createGeminiChooser('test-only', 'gemini-2.5-flash', fake);
+    await assert.rejects(() => chooser('Choose a finding', wav(), new AbortController().signal));
+  }
 });
 test('origin, auth, and input gates remain active', async () => {
   const server = createCoachServer({ library, chooser: null, token: 'test-token', allowedOrigin: 'http://localhost:5176' });
@@ -320,6 +351,7 @@ test('explicit model, bounded JSON output and one provider call are preserved on
     await assert.rejects(() => chooser('Select one supported finding.', wav(), new AbortController().signal));
     assert.deepEqual(requests.map(request => request.model), [modelId]);
     assert.equal(requests[0].config?.responseMimeType, 'application/json');
+    assert.equal((requests[0].config?.responseJsonSchema as { additionalProperties: boolean }).additionalProperties, false);
     assert.equal(requests[0].config?.maxOutputTokens, 512);
   }
 });

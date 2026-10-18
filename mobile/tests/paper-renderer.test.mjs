@@ -120,6 +120,18 @@ test('single-note boundaries do not draw invented neighbors', () => {
   assert.equal((extraSvg.match(/<ellipse /g) ?? []).length, 1)
 })
 
+test('early measured onset does not shift the score beat label or timing target', () => {
+  for (const kind of ['wrong_note', 'duration', 'timing']) {
+    const value = card(kind)
+    value.focus.startBeat = 4.9934
+    value.detected.notes.find(note => note.id === 'd2').onsetBeat = 4.9934
+    const svg = renderPaperSvg(value)
+    assert.match(svg, /Beat 6 ·/)
+    assert.doesNotMatch(svg, /Beat 5 ·/)
+    if (kind === 'timing') assert.match(svg, /on 6/)
+  }
+})
+
 test('keyboard overlays black keys and accidental keeps diatonic staff position', () => {
   const value = card('wrong_note', 'accidental')
   value.expected.notes = [note('e2', 61, 5)]

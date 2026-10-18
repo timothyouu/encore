@@ -6,7 +6,15 @@ import type { AnalysisResult, CoachRequest, CoachingResult, Finding, Passage, Re
 import { buildVisualPlan } from '../../shared/visual-plan.ts';
 
 export type ModelChoice = { findingId: string; actionId: string; visualKind: 'keyboard' | 'rhythm_strip' | 'none'; componentKind: Finding['kind'] };
-export type ModelChooser = (prompt: string, wav: Uint8Array, signal: AbortSignal) => Promise<unknown>;
+export type ChoiceSchema = {
+  type: 'object'; additionalProperties: false; required: ['findingId', 'actionId', 'componentKind'];
+  properties: {
+    findingId: { type: 'string'; minLength?: number; enum?: string[] };
+    actionId: { type: 'string'; enum: string[] };
+    componentKind: { type: 'string'; enum: Finding['kind'][] };
+  };
+};
+export type ModelChooser = (prompt: string, wav: Uint8Array, signal: AbortSignal, responseSchema?: ChoiceSchema) => Promise<unknown>;
 
 type Action = { id: string; text: string };
 const ACTIONS: Record<Finding['kind'], Action[]> = {
@@ -31,6 +39,40 @@ const ACTIONS: Record<Finding['kind'], Action[]> = {
     { id: 'release_length', text: 'Release that note after its written number of beats.' }
   ]
 };
+const FINDING_KINDS = Object.keys(ACTIONS) as Finding['kind'][];
+const DEFAULT_CHOICE_SCHEMA: ChoiceSchema = {
+  type: 'object', additionalProperties: false, required: ['findingId', 'actionId', 'componentKind'],
+  properties: {
+    findingId: { type: 'string', minLength: 1 },
+    actionId: { type: 'string', enum: FINDING_KINDS.flatMap(kind => ACTIONS[kind].map(action => action.id)) },
+    componentKind: { type: 'string', enum: FINDING_KINDS }
+  }
+};
+export function choiceSchemaForFinding(finding: Finding): ChoiceSchema {
+  return {
+    type: 'object', additionalProperties: false, required: ['findingId', 'actionId', 'componentKind'],
+    properties: {
+      findingId: { type: 'string', enum: [finding.id] },
+      actionId: { type: 'string', enum: ACTIONS[finding.kind].map(action => action.id) },
+      componentKind: { type: 'string', enum: [finding.kind] }
+    }
+  };
+}
+function parseModelChoice(text: string, schema: ChoiceSchema): unknown {
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid model choice');
+  const choice = value as Record<string, unknown>;
+  if (Object.keys(choice).length !== 3 ||
+      !schema.required.every(key => Object.hasOwn(choice, key)) ||
+      typeof choice.findingId !== 'string' || !choice.findingId ||
+      typeof choice.actionId !== 'string' || typeof choice.componentKind !== 'string' ||
+      (schema.properties.findingId.enum && !schema.properties.findingId.enum.includes(choice.findingId)) ||
+      !schema.properties.actionId.enum.includes(choice.actionId) ||
+      !schema.properties.componentKind.enum.includes(choice.componentKind as Finding['kind'])) {
+    throw new Error('invalid model choice');
+  }
+  return choice;
+}
 function midiName(pitch: number): string {
   const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   return names[pitch % 12] + String(Math.floor(pitch / 12) - 1);
@@ -158,28 +200,40 @@ export function fallback(
     coachingSource: 'fallback', fallbackReason: reason
   };
 }
-export function withInlineWav(params: GenerateContentParameters, wav: Uint8Array): GenerateContentParameters {
+export function withInlineWav(params: GenerateContentParameters, wav: Uint8Array, signal?: AbortSignal): GenerateContentParameters {
   if (!Array.isArray(params.contents) || params.contents.length === 0) throw new Error('missing user content');
   const contents = params.contents as Content[];
   const last = contents[contents.length - 1];
   if (last.role !== 'user') throw new Error('last content must be user');
   const inlineData = { mimeType: 'audio/wav', data: Buffer.from(wav).toString('base64') };
-  return { ...params, contents: [...contents.slice(0, -1), { ...last, parts: [...(last.parts ?? []), { inlineData }] }] };
+  return { ...params, contents: [...contents.slice(0, -1), { ...last, parts: [...(last.parts ?? []), { inlineData }] }],
+    config: { ...params.config, ...(signal ? { abortSignal: signal } : {}), automaticContinuation: false } };
 }
 export function createGeminiChooser(apiKey: string, modelId: string, google?: GoogleGenAI): ModelChooser {
   let quotaStopped = false;
-  return async (prompt: string, wav: Uint8Array, signal: AbortSignal): Promise<unknown> => {
+  return async (prompt: string, wav: Uint8Array, signal: AbortSignal, responseSchema = DEFAULT_CHOICE_SCHEMA): Promise<unknown> => {
     if (quotaStopped) throw new QuotaStoppedError();
     const base = google ?? new GoogleGenAI({ apiKey, vertexai: false, httpOptions: { baseUrl: 'https://generativelanguage.googleapis.com', retryOptions: { attempts: 1 } } });
+    let modelCalls = 0;
     // Strands 1.21.0 GoogleModel omits audioBlock. Adapt its Google client request
     // so Agent orchestration still sends the exact WAV as Gemini inlineData.
     const client = { models: {
       generateContentStream: async (params: GenerateContentParameters) => {
         if (quotaStopped) throw new QuotaStoppedError();
+        if (++modelCalls > 1) throw new Error('coaching model exceeded one call');
         try {
-          const stream = await base.models.generateContentStream(withInlineWav(params, wav));
+          const stream = await base.models.generateContentStream(withInlineWav(params, wav, signal));
           return (async function* () {
-            try { for await (const chunk of stream) yield chunk; }
+            try {
+              for await (const chunk of stream) {
+                if (chunk.promptFeedback?.blockReason) throw new Error('Gemini blocked the coaching request');
+                const reason = chunk.candidates?.[0]?.finishReason;
+                if (reason && reason !== 'STOP' && reason !== 'FINISH_REASON_UNSPECIFIED') {
+                  throw new Error('Gemini did not complete the coaching response');
+                }
+                yield chunk;
+              }
+            }
             catch (cause) {
               if (isQuotaError(cause)) { quotaStopped = true; throw new QuotaStoppedError(); }
               throw cause;
@@ -192,7 +246,8 @@ export function createGeminiChooser(apiKey: string, modelId: string, google?: Go
       }
     } } as unknown as GoogleGenAI;
     const agent = new Agent({
-      model: new GoogleModel({ client, modelId, params: { temperature: 0.2, maxOutputTokens: 512, responseMimeType: 'application/json' } }),
+      model: new GoogleModel({ client, modelId, params: { temperature: 0.2, maxOutputTokens: 512,
+        responseMimeType: 'application/json', responseJsonSchema: responseSchema, automaticContinuation: false } }),
       printer: false,
       retryStrategy: null,
       systemPrompt: 'You select a single evidence-backed piano practice action from server-provided options. Output compact JSON only.'
@@ -201,8 +256,8 @@ export function createGeminiChooser(apiKey: string, modelId: string, google?: Go
     signal.addEventListener('abort', abort, { once: true });
     try {
       const result = await agent.invoke(prompt);
-      const content = result.toString().trim();
-      return JSON.parse(content) as unknown;
+      if (result.stopReason !== 'endTurn') throw new Error('model did not finish a response');
+      return parseModelChoice(result.toString().trim(), responseSchema);
     } finally {
       signal.removeEventListener('abort', abort);
     }
@@ -214,11 +269,13 @@ export async function coach(
   const analysis = request.analysis;
   const primaryFindingId = buildVisualPlan(analysis, passage).cards[0]?.evidence.findingIds[0];
   if (needsRetry(analysis) || !primaryFindingId || !chooser) return fallback(analysis, passage);
+  const primaryFinding = analysis.findings.find(finding => finding.id === primaryFindingId);
+  if (!primaryFinding) return fallback(analysis, passage, 'invalid_response');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const value = await Promise.race([
-      chooser(buildPrompt(request, passage), wav, controller.signal),
+      chooser(buildPrompt(request, passage), wav, controller.signal, choiceSchemaForFinding(primaryFinding)),
       new Promise<never>((_resolve, reject) => {
         controller.signal.addEventListener('abort', () => reject(new Error('model timeout')), { once: true });
       })

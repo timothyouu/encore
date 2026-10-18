@@ -88,7 +88,9 @@ function focusNote(card: VisualCard, which: 'expected' | 'detected'): VisualNote
   return notes.find(note => ids.includes(note.id)) ?? notes.find(note => note.onsetBeat >= card.focus.startBeat - 0.25 && note.onsetBeat <= card.focus.endBeat + 0.25) ?? notes[0]
 }
 function label(card: VisualCard): string {
-  const b = humanBeat(card.focus.startBeat)
+  // The focus range includes an early detection; the correction belongs to the score note.
+  const reference = card.expected.notes.find(note => card.evidence.referenceNoteIds.includes(note.id))
+  const b = humanBeat(reference?.onsetBeat ?? card.focus.startBeat)
   const kind = card.kind
   if (kind === 'unclear_audio') return 'Couldn’t hear clearly'
   if (kind === 'tempo_drift') return 'Phrase · ' + (card.variant === 'slowing' ? 'slowing down' : 'speeding up')
@@ -228,20 +230,21 @@ function coreExtra(card: VisualCard, phase: PaperPhase): string {
   return frame(card, phase, body + side(expectedNames || '—', detectedNames || nameOnly(extra), phase))
 }
 function coreTiming(card: VisualCard, phase: PaperPhase): string {
+  const expectedBeat = focusNote(card, 'expected')?.onsetBeat ?? card.focus.startBeat
   const delta = card.metrics.timingDeltaBeats ?? ((focusNote(card, 'detected')?.onsetBeat ?? 0) - (focusNote(card, 'expected')?.onsetBeat ?? 0))
   const offset = clamp(delta * 112, -75, 75)
   const detectedX = phase === 'correction' || phase === 'resolved' ? 150 : 150 + offset
   let body = line(38, 149, 286, 149, DIM, 2) + line(42, 139, 42, 159, DIM) +
     line(150, 112, 150, 173, GREEN, 4) + line(258, 139, 258, 159, DIM) +
-    txt(42, 194, humanBeat(card.focus.startBeat - 1), 16, MUTED, 600, 'text-anchor="middle"') +
-    txt(150, 194, humanBeat(card.focus.startBeat), 20, GREEN, 800, 'text-anchor="middle"') +
-    txt(258, 194, humanBeat(card.focus.startBeat + 1), 16, MUTED, 600, 'text-anchor="middle"') +
+    txt(42, 194, humanBeat(expectedBeat - 1), 16, MUTED, 600, 'text-anchor="middle"') +
+    txt(150, 194, humanBeat(expectedBeat), 20, GREEN, 800, 'text-anchor="middle"') +
+    txt(258, 194, humanBeat(expectedBeat + 1), 16, MUTED, 600, 'text-anchor="middle"') +
     circle(detectedX, 149, 8)
   if (phase === 'static' || phase === 'detected') body += line(150, 99, 150 + offset, 99) +
     line(150, 92, 150, 106) + line(150 + offset, 92, 150 + offset, 106) +
     txt(150 + offset / 2, 86, deltaLabel(delta), 14, GREEN, 700, 'text-anchor="middle"')
   if (phase === 'correction' || phase === 'resolved') body += txt(150, 85, 'ON THE BEAT', 15, GREEN, 700, 'text-anchor="middle"')
-  return frame(card, phase, body + side('on ' + humanBeat(card.focus.startBeat), deltaLabel(delta), phase))
+  return frame(card, phase, body + side('on ' + humanBeat(expectedBeat), deltaLabel(delta), phase))
 }
 function coreDuration(card: VisualCard, phase: PaperPhase): string {
   const expected = clamp(card.metrics.expectedDurationBeats ?? focusNote(card, 'expected')?.durationBeats ?? 1, 0.1, 8)
