@@ -85,3 +85,9 @@ The latest PR15 ancestry (`25e00a7`) is locally reconciled in `d540b2c`. The res
 ## Final main reconciliation
 
 During the gate, other repository activity merged PR15 and PR21 into main (`ac6e2a5`). Compared with already reviewed `25e00a7`, the only additions are the unused legacy `g2/src/upload.ts` and its README section. The utility is retained untouched for compatibility; the README now accurately states that it is not imported by the packaged host. No second upload path, stored bearer, network permission or History implementation was enabled. The final main ancestry is reconciled locally; this task performed no GitHub merge.
+
+## Final gate
+
+`bash scripts/verify-storage.sh --include-g2` passed with exit 0: server 29, mobile 165, analysis 17, duration acceptance 4, Paper 8, G2 127, shipping integration 8, storage 5: **363 tests, zero failures**. Server typecheck, mobile/G2 TypeScript and Vite builds, passage synchronization and phone boundary checks passed. The run began before the final main ancestry refresh and completed during it; the active controller/art were unchanged. Final packaging separately typechecks/builds the final tree, including the restored unused uploader.
+
+Accepted units: shared finding/Sheet synchronization; validated keyboard/hold context with latest visualizations retained; upstream readable processing labels. One verifier correction cycle is documented above. Account usage was observed at 69% initially and 76% at 09:27 UTC in the same 10,080-minute window (reset 1792881562); this seven-point account-wide change is not attributable solely to this task. No workflow speed/cost comparison is claimed. No Gemini call, deployment, network-permission change or GitHub merge was performed. Physical testing must use the newly built package before claiming device acceptance.
