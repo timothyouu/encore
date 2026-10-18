@@ -8,7 +8,7 @@ import { validateVisualPlan } from '../../../shared/visual-plan.ts'
 export type CardView = {
   card: VisualCard | null
   header: string
-  // "● Expected F4" / "○ Detected E4": solid = expected, hollow = detected.
+  // "● Expected F4" / "× Detected E4": solid note = expected, × = what was heard.
   legend: [string, string]
   cue: string
 }
@@ -124,13 +124,13 @@ function legend(card: VisualCard): [string, string] {
       // A plain missing note has nothing detected, a plain extra nothing expected.
       return [
         `● Expected  ${expected && !(card.kind === 'extra_note' && card.variant === 'extra') ? noteName(expected.midiPitch) : '—'}`,
-        `○ Detected  ${detected && !(card.kind === 'missing_note' && card.variant === 'missing') ? noteName(detected.midiPitch) : '—'}`,
+        `× Detected  ${detected && !(card.kind === 'missing_note' && card.variant === 'missing') ? noteName(detected.midiPitch) : '—'}`,
       ]
     case 'timing': {
       const delta = m.timingDeltaBeats ?? 0
       return [
         `● Expected  on ${beatLabel(expected?.onsetBeat ?? card.focus.startBeat)}`,
-        `○ Detected  ${beatFraction(delta)} ${delta < 0 ? 'early' : 'late'}`,
+        `× Detected  ${beatFraction(delta)} ${delta < 0 ? 'early' : 'late'}`,
       ]
     }
     case 'duration':
@@ -141,17 +141,17 @@ function legend(card: VisualCard): [string, string] {
     case 'unclear_audio':
       return ['Expected  clear piano', `Detected  ${UNCLEAR_DETECTED[card.variant] ?? 'unclear audio'}`]
     case 'tempo_drift':
-      return ['● Expected  steady beat', `○ Detected  ${Math.abs(m.driftPercent ?? 0)}% ${card.variant === 'rushing' ? 'faster' : 'slower'}`]
+      return ['● Expected  steady beat', `× Detected  ${Math.abs(m.driftPercent ?? 0)}% ${card.variant === 'rushing' ? 'faster' : 'slower'}`]
     case 'uneven_rhythm':
-      return ['● Expected  even beats', '○ Detected  uneven']
+      return ['● Expected  even beats', '× Detected  uneven']
     case 'unexpected_pause':
-      return ['● Expected  keep going', `○ Detected  ${beats(m.gapBeats ?? 1)} gap`]
+      return ['● Expected  keep going', `× Detected  ${beats(m.gapBeats ?? 1)} gap`]
     case 'rest_violation':
-      return ['● Expected  silence', `○ Detected  ${detected ? noteName(detected.midiPitch) : 'a note'}`]
+      return ['● Expected  silence', `× Detected  ${detected ? noteName(detected.midiPitch) : 'a note'}`]
     case 'section_repeat_skip': {
       const [a, b] = card.segments ?? []
       const names = a && b ? `${title(a.label)}, ${title(b.label)}` : 'each bar once'
-      return [`● Expected  ${names}`, `○ Detected  ${card.variant === 'skipped' ? `${title(b?.label ?? 'a bar')} missing` : `${title(a?.label ?? 'a bar')} twice`}`]
+      return [`● Expected  ${names}`, `× Detected  ${card.variant === 'skipped' ? `${title(b?.label ?? 'a bar')} missing` : `${title(a?.label ?? 'a bar')} twice`}`]
     }
     case 'recurring_trouble':
       return [
