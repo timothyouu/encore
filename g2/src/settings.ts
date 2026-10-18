@@ -1,6 +1,6 @@
 import { MenuContainerProperty, MenuItemProperty } from '@evenrealities/even_hub_sdk'
-import type { Glasses } from './glasses'
-import { status } from './status'
+import type { Glasses } from './glasses.ts'
+import { status } from './status.ts'
 
 // Spec §5 display settings. Display only: never part of attempt data,
 // analysis, coaching or recording counts.

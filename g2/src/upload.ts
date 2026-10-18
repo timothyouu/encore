@@ -1,13 +1,15 @@
-import type { Glasses } from './glasses'
-import type { Take } from './recorder'
-import { status } from './status'
+import type { Glasses } from './glasses.ts'
+import type { Take } from './recorder.ts'
+import { status } from './status.ts'
 
 const URL_KEY = 'encore.uploadUrl'
 const UPLOAD_TIMEOUT_MS = 30000
 
 // Dev servers may preset a URL (e.g. `VITE_ENCORE_UPLOAD_URL=… npm run dev`)
 // so the simulator can upload without typing; a saved value always wins.
-const DEV_DEFAULT_URL: string = import.meta.env.DEV ? (import.meta.env.VITE_ENCORE_UPLOAD_URL ?? '') : ''
+// `import.meta.env` only exists under Vite, not in unit tests.
+const env = import.meta.env as ImportMetaEnv | undefined
+const DEV_DEFAULT_URL: string = env?.DEV ? (env.VITE_ENCORE_UPLOAD_URL ?? '') : ''
 
 export async function loadUploadUrl(glasses: Glasses): Promise<string> {
   try {

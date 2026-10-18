@@ -1,4 +1,4 @@
-import type { Passage, ReferenceNote } from './passages'
+import type { Passage } from './passages.ts'
 
 // Renders a passage as a one-line treble staff, matching the Paper mockup
 // (576×112), and splits it into two 288×112 PNG tiles: the widest image a
@@ -113,35 +113,78 @@ function drawClef(ctx: CanvasRenderingContext2D) {
   ctx.fillText(CLEF.glyph, CLEF.left + fitted.actualBoundingBoxLeft, CLEF.top + fitted.actualBoundingBoxAscent)
 }
 
-function drawNote(ctx: CanvasRenderingContext2D, note: ReferenceNote, g: Geometry) {
-  const x = xOfBeat(note.onsetBeat, g)
-  const step = stepOf(note.midiPitch)
-  const y = yOfStep(step)
+export type NoteLayout = {
+  id: string
+  x: number
+  y: number
+  // Diatonic step from C4 (0); E4 (2) is the bottom line.
+  step: number
+  ledgerYs: number[]
+  // Half notes and longer are hollow.
+  hollow: boolean
+  // Whole notes have no stem; stems point down from the middle line up.
+  stem: 'up' | 'down' | 'none'
+  sharp: boolean
+}
 
-  // Ledger lines below (C4 and lower) or above (A5 and higher) the staff.
+export type StaffLayout = {
+  bars: number
+  totalBeats: number
+  notes: NoteLayout[]
+  // A quarter rest on every beat no note sounds on.
+  restXs: number[]
+}
+
+// Where everything goes, separate from drawing so it can be checked without a canvas.
+export function staffLayout(passage: Passage): StaffLayout {
+  const g = geometry(passage)
+  const notes = passage.notes.map((note): NoteLayout => {
+    const step = stepOf(note.midiPitch)
+    const ledgerYs: number[] = []
+    // Ledger lines below (C4 and lower) or above (A5 and higher) the staff.
+    for (let ledger = 0; ledger >= step; ledger -= 2) ledgerYs.push(yOfStep(ledger))
+    for (let ledger = 12; ledger <= step; ledger += 2) ledgerYs.push(yOfStep(ledger))
+    return {
+      id: note.id,
+      x: xOfBeat(note.onsetBeat, g),
+      y: yOfStep(step),
+      step,
+      ledgerYs,
+      hollow: note.durationBeats >= 2,
+      stem: note.durationBeats >= 4 ? 'none' : step < 6 ? 'up' : 'down',
+      sharp: SHARP_PITCH_CLASSES.has(note.midiPitch % 12),
+    }
+  })
+
+  const restXs: number[] = []
+  for (let beat = 0; beat < g.totalBeats; beat++) {
+    const sounding = passage.notes.some(note => beat >= note.onsetBeat && beat < note.onsetBeat + note.durationBeats)
+    if (!sounding) restXs.push(xOfBeat(beat, g))
+  }
+
+  return { bars: g.totalBeats / g.beatsPerBar, totalBeats: g.totalBeats, notes, restXs }
+}
+
+function drawNote(ctx: CanvasRenderingContext2D, note: NoteLayout) {
+  const { x, y } = note
   ctx.fillStyle = LINE
-  for (let ledger = 0; ledger >= step; ledger -= 2) ctx.fillRect(x - 12, yOfStep(ledger), 24, 1.5)
-  for (let ledger = 12; ledger <= step; ledger += 2) ctx.fillRect(x - 12, yOfStep(ledger), 24, 1.5)
+  for (const ledgerY of note.ledgerYs) ctx.fillRect(x - 12, ledgerY, 24, 1.5)
 
   ctx.fillStyle = INK
   ctx.strokeStyle = INK
   ctx.beginPath()
   ctx.ellipse(x, y + 0.75, 7, 5.2, -20 * (Math.PI / 180), 0, Math.PI * 2)
-  // Half notes and longer are hollow.
-  if (note.durationBeats >= 2) {
+  if (note.hollow) {
     ctx.lineWidth = 2
     ctx.stroke()
   } else {
     ctx.fill()
   }
 
-  // Whole notes have no stem; stems point down from the middle line up.
-  if (note.durationBeats < 4) {
-    if (step < 6) ctx.fillRect(x + 5.2, y - 35, 2, 35)
-    else ctx.fillRect(x - 7.2, y + 1, 2, 35)
-  }
+  if (note.stem === 'up') ctx.fillRect(x + 5.2, y - 35, 2, 35)
+  else if (note.stem === 'down') ctx.fillRect(x - 7.2, y + 1, 2, 35)
 
-  if (SHARP_PITCH_CLASSES.has(note.midiPitch % 12)) {
+  if (note.sharp) {
     ctx.font = '600 18px sans-serif'
     ctx.textAlign = 'center'
     ctx.fillText('#', x - 16, y + 6)
@@ -161,16 +204,9 @@ function drawQuarterRest(ctx: CanvasRenderingContext2D, x: number) {
   ctx.stroke()
 }
 
-function drawPassage(ctx: CanvasRenderingContext2D, passage: Passage, g: Geometry) {
-  for (const note of passage.notes) drawNote(ctx, note, g)
-
-  // Any beat no note sounds on gets a quarter rest.
-  for (let beat = 0; beat < g.totalBeats; beat++) {
-    const sounding = passage.notes.some(
-      note => beat >= note.onsetBeat && beat < note.onsetBeat + note.durationBeats,
-    )
-    if (!sounding) drawQuarterRest(ctx, xOfBeat(beat, g))
-  }
+function drawPassage(ctx: CanvasRenderingContext2D, layout: StaffLayout) {
+  for (const note of layout.notes) drawNote(ctx, note)
+  for (const x of layout.restXs) drawQuarterRest(ctx, x)
 }
 
 function canvas(width: number, height: number) {
@@ -215,7 +251,7 @@ async function render(passage: Passage): Promise<StaffTiles> {
   full.ctx.fillStyle = '#000000'
   full.ctx.fillRect(0, 0, STAFF_W, STAFF_H)
   drawStaffFrame(full.ctx, g, hasClef)
-  drawPassage(full.ctx, passage, g)
+  drawPassage(full.ctx, staffLayout(passage))
 
   const tile = async (offsetX: number) => {
     const part = canvas(TILE_W, STAFF_H)

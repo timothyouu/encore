@@ -10,9 +10,12 @@ export function status(message: string, level: 'info' | 'error' = 'info') {
   if (lines.length > MAX_LINES) lines.shift()
   ;(level === 'error' ? console.error : console.log)(`[encore] ${message}`)
 
-  const app = document.getElementById('app')
+  // Absent outside a browser (unit tests).
+  const app = typeof document === 'undefined' ? null : document.getElementById('app')
   if (app) app.textContent = lines.join('\n')
 }
 
-window.addEventListener('error', event => status(`uncaught: ${event.message}`, 'error'))
-window.addEventListener('unhandledrejection', event => status(`unhandled: ${String(event.reason)}`, 'error'))
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', event => status(`uncaught: ${event.message}`, 'error'))
+  window.addEventListener('unhandledrejection', event => status(`unhandled: ${String(event.reason)}`, 'error'))
+}

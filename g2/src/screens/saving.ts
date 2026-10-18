@@ -1,7 +1,7 @@
-import { MARGIN_X, text } from '../layout'
-import type { Take } from '../recorder'
-import type { UploadResult } from '../upload'
-import type { Screen } from './screen'
+import { MARGIN_X, text } from '../layout.ts'
+import type { Take } from '../recorder.ts'
+import type { UploadResult } from '../upload.ts'
+import type { Screen } from './screen.ts'
 
 const MESSAGE = { id: 1, name: 'message' }
 
