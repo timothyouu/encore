@@ -28,6 +28,7 @@ The proposed initial audience is beginner piano learners practicing short prepar
 - Basic Pitch runs on a **laptop**, not in the phone WebView
 - Two feedback views: mistake review and corrective keyboard/finger schematic
 - Static diagrams with slow pose changes; no beat-synchronized animation requirement
+- Optional static sheet music for the selected passage on G2 while playing, toggled on/off in a G2 Settings screen opened with a long press
 - Return to song/passage selection after results to choose the same passage or another and play again
 - Phone mirrors feedback, shows total and per-passage recording counts, and lets the player revisit past results
 - No smartwatch integration
@@ -38,7 +39,7 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 
 ## 2. Quiet Tech design rules
 
-1. **Empty is the default:** while playing, hide notation and coaching; retain only a small recording indicator
+1. **Minimal while playing:** while playing, hide coaching and feedback. Show only the selected passage's static sheet music (when enabled in Settings) and a small recording indicator; with sheet music off, show only the recording indicator
 2. **One useful cue:** prioritize a single supported issue after each phrase
 3. **Show only meaningful changes:** selection, recording, processing, and feedback states must be distinguishable
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
@@ -85,7 +86,7 @@ An HTTPS tunnel may be necessary if venue networking prevents direct access. Whi
 
 - **Library:** song/passage selection with prepared passages, tempo, difficulty, brief learning objective, total recording count, per-passage recording counts, and access to History
 - **Passage:** notation/reference preview, connection state, recording-source selection
-- **Session:** mirrors current G2 state; start/stop fallback controls and explicit errors
+- **Session:** mirrors current G2 state, including whether sheet music is shown while playing; start/stop fallback controls and explicit errors
 - **Results:** evidence, concise coach cue, correction diagram, recording counts, **Play again** → Library, and **View past results** → History
 - **History:** individual attempts with passage, recording time, and processing/result/error status; select an entry to reopen its saved Results or status detail, and return to History without starting a recording. Raw-audio playback remains OPEN
 
@@ -100,11 +101,14 @@ Search applies only to the prepared library in v1.
 | Disconnected | Phone explains reconnect | Connected → Selection |
 | Selection | Song/passage selection prompt; phone shows Library | Select passage → Ready |
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
-| Recording | Small recording icon only | Tap → Analyzing; confirmed cancel → Selection |
+| Recording | Small recording icon; plus static sheet music for the selected passage when the Settings toggle is on | Tap → Analyzing; confirmed cancel → Selection |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
 | Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
 | Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
 | Recoverable error | Brief reason and Play again option | Play again → Selection |
+| Settings | Settings list; v1 contains one item, **Sheet music while playing: On/Off** | Tap → toggle the selected item; double tap → return to the state Settings was opened from |
+
+**Settings** is opened with a long press from any non-recording state (Disconnected excepted). PROPOSED: long press is ignored during Recording and Analyzing so capture is never interrupted or covered by a menu; change the toggle before starting or after results. Closing Settings returns to the exact prior state and view without starting capture or changing the selected passage.
 
 Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
@@ -112,11 +116,20 @@ Detailed History navigation is on the phone. When a saved result is mirrored on 
 
 - Single tap: start from Ready; stop and analyze from Recording
 - Swipe down: next feedback/guide page; swipe up: previous page
-- Double tap: go back one level; at root use the platform's exit behavior
+- Double tap: go back one level; at root use the platform's exit behavior; in Settings, close Settings
+- Long press (tap and hold): open Settings from any non-recording state; in Settings, single tap toggles the selected option
 - Proposed cancellation behavior to validate: during recording, double tap asks to cancel; it must never silently submit a partial attempt
 - Voice commands are optional later enhancements; do not block v1 on speech recognition
 
-Test actual gesture events and exit behavior on G2. Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
+Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; open Settings on the start event, ignore the matching release, and verify on hardware that a long press never also registers as a single tap (which could start or stop a recording). Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
+
+### Sheet music while playing
+
+- Render the selected passage's notation deterministically from the versioned `Passage` data as a monochrome image (staff, clef, note heads/durations, rests, bar lines); no model-generated notation
+- Show the whole passage statically; no playhead, scrolling, or beat-synchronized highlighting, and no correctness marks during capture
+- Build and send the sheet-music image before capture starts (on entering Ready or on the Ready → Recording transition), so no image transfers compete with microphone audio over Bluetooth during recording. If the image cannot be sent, start recording with the indicator only and note it on the phone; never block or delay capture on notation
+- The recording indicator must remain visible and distinguishable from the notation
+- Exact image size/layout within the 576×288 canvas is OPEN pending hardware readability tests; the six seed passages must each fit on one screen
 
 Use `rebuildPageContainer` only when the layout changes. Update existing text/image containers for content changes. Serialize image updates and avoid an unbounded Bluetooth queue. The schematic is inside the display, not positioned over physical piano keys.
 
@@ -200,6 +213,17 @@ type CoachingResult = {
 ```
 
 Validate every ID against the selected passage, findings, and an allowlisted pose library. Validate cue length. Proposed cue target: one sentence, at most 120 characters, shortened further if the hardware layout requires it. The model must not return executable drawing code, invented measurements, or arbitrary remote image URLs. Coaching does not define a separate retry exercise or change navigation; Play again is an application action that returns to Library.
+
+### Display settings
+
+```ts
+type DisplaySettings = {
+  schemaVersion: '1';
+  showSheetMusicWhilePlaying: boolean; // PROPOSED default: true
+};
+```
+
+Persist settings in browser-local storage alongside demo history (PROPOSED) so the choice survives app restarts. Settings affect display only: they are not attempt data, do not change analysis, coaching, or recording counts, and are not stored on `AttemptRecord`.
 
 ### Recording counts and saved results
 
@@ -304,7 +328,10 @@ Devin and other coding agents work within assigned modules and branches. Their h
 ### Phase 2: Complete one real loop
 
 - [ ] Phone selects a passage; G2 preview matches its version
-- [ ] Tap starts capture; only the recording icon remains
+- [ ] Tap starts capture; with sheet music on, the passage notation and recording icon are shown; with it off, only the recording icon remains
+- [ ] Long press opens Settings from Selection, Ready, Review, Guide, and error states; tapping toggles sheet music; double tap returns to the prior state unchanged
+- [ ] Long press during Recording/Analyzing does not open Settings, stop capture, or register as a tap
+- [ ] The sheet-music setting persists across app restarts and does not affect recording counts or analysis
 - [ ] Tap stops capture and sends exactly one attempt
 - [ ] Analysis finds a deliberate mistake and cites the correct note
 - [ ] Strands/Gemini returns one evidence-grounded cue
@@ -349,7 +376,7 @@ Track selection is not proof of eligibility. Confirm final submission requiremen
 6. Partner name; there is no third teammate
 7. Final passage selection, timing tolerances and acceptable measured demo latency
 
-These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision updates the confirmed selection, recording-count, and result-history flow only; broader review recommendations remain unresolved unless separately approved.
+These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision updates the confirmed selection, recording-count, and result-history flow, and adds optional sheet music while playing with a long-press Settings toggle; broader review recommendations remain unresolved unless separately approved.
 
 ## References
 
