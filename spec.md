@@ -2,7 +2,7 @@
 
 **Status:** Draft with unresolved review issues; choices and proposed defaults are explicitly marked OPEN or PROPOSED. This specification describes intended behavior, not verified implementation, and is not yet build-ready.
 
-**Updated:** October 17, 2026 (Pacific time)  
+**Updated:** October 18, 2026 (Pacific time)
 **Audience:** Timothy, teammate, Devin, and coding agents  
 **App name:** Encore
 **Repository:** https://github.com/timothyouu/encore (verified under Timothy’s account)
@@ -10,6 +10,8 @@
 **Team:** Two people: Timothy and one partner. There is no third teammate.
 
 **Latest scope decision:** The October 17 Granola discussion, [Recording page audio pipeline and visualization architecture](https://notes.granola.ai/d/32613d5d-34e4-4c80-bbf1-be861adc3f34), defines two model responsibilities: **Spotify Basic Pitch for note detection and Gemini for the Coach Agent**. Gemini is the coach provider confirmed by Timothy's accompanying direction. There is no separate visual-generation model. The contracts below are proposed implementation details where the discussion did not specify them.
+
+**October 18 integration decision:** WSL is the implementation source of truth. Preserve its WAV/artifact pipeline, durable history/retries, telemetry, and constrained Gemini action selection. Show top mistakes first with access to every affected bar, using Review → Guide for each finding/bar pair.
 
 ## 1. Product and scope
 
@@ -131,28 +133,29 @@ The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.de
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
 | Recording | Small recording icon; plus static sheet music for the selected passage when sheet music is shown | Tap → Analyzing; double tap → discard → Ready |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
-| Review | One mistake card per screen from `CoachingResult.visualPlan` (up to 3, priority order): art (keys, staff, beat ruler, duration bars or mic), ●/○ Expected/Detected legend, one cue | Swipe down/up → next/previous card; tap → replay the card's correction; double tap → Selection (Play again) |
+| Review | Selected affected bar, boxed mistake, expected/detected comparison and one supported cue | Swipe down → Guide for this finding/bar pair; swipe up → previous Guide; double tap → Selection |
+| Guide | Correction for the same finding and affected bar, using validated keys, notation or duration/rhythm art | Swipe down → next Review; swipe up → matching Review; tap → replay correction; double tap → Selection |
 | Recoverable error | Brief reason and Play again option | Play again → Selection |
 
 **Sheet music setting:** there is no app Settings screen on G2. The glasses OS draws a contextual menu on tap then hold, and Encore registers one item in it: **Hide sheet music** when shown, **Show sheet music** when hidden (verb labels, because the OS menu keeps no item state). Selecting it toggles the setting and re-declares the current page so the label updates; the player stays on the same state and view, with no capture started and no passage change. Recording and Analyzing omit the item, so the setting never changes mid-capture; change it before starting or after results.
 
-Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review remains read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
+Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
 ### Controls
 
-- Single tap: start from Ready; stop and analyze from Recording; replay the current card in Review
-- Swipe down: next mistake card; swipe up: previous card
+- Single tap: start from Ready; stop and analyze from Recording; replay the current correction in Guide
+- Swipe down/up: advance/reverse the ordered Review → Guide pairs; clamp at the first Review and last Guide
 - Double tap: go back one level; at root use the platform's exit behavior
 - Tap then hold: OS contextual menu (system-drawn); Encore adds only the sheet-music item
 - During recording, double tap discards the take immediately and returns to Ready (a dimmed `2× discard` hint says so); a discarded take is never saved as completed, counted or submitted
 - Voice commands are optional later enhancements; do not block v1 on speech recognition
-- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review `▼ next` when another card follows
+- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review/Guide `▼ next` when another page follows
 
 Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; Encore assigns no action to them, but drops any tap that arrives during or just after a hold, and hardware tests must verify that opening the system menu never also registers as a single tap (which could start or stop a recording). Opening and closing the system menu deliver foreground enter/exit events; they must not trigger a redraw or state change. Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
 
 ### Review cards on G2
 
-The glasses adapt the shared visual plan (`shared/visual-contract.ts`) following the Paper **Mistake animations** page, except that what the mic heard is drawn as × rather than a hollow notehead (which would read as a half note): solid note = expected, × = detected, a shaded band marks the beat in question, and every card labels EXPECTED and DETECTED in words. The card the coach chose (its findings match `evidenceFindingIds`) uses `summary.next` as its cue when it fits three lines; other cards use their own `cue`. Evidence IDs cover each card's whole context, so the faulty note is found by pairing expected and detected notes one to one (same pitch, onset within 0.2 beats). Tap replays a card as keyframes in its picture slot, sent at Bluetooth pace: first only what was played (× marks, the heard onset, the held length), then the fix (the written notes, the onset on the beat, the full length), ending on the fix. At rest, staff cards show only the written passage with the mistake's beat shaded (and a dashed slot for a missed note); × marks appear only during the replay. Timing and wrong-note-on-keys cards keep their × at rest because it carries the finding. Staff cards reveal each phase note by note in time order (at most four steps per phase, 1 s per step, 2 s on the frame that ends a phase); captions update once each picture has landed; the bottom row shows the frame caption and ●○○ progress, and swiping or leaving cancels it. Validated missing-note, extra-note, timing and duration findings may include one keyboard-context frame before the written correction; duration context associates the key with expected and measured hold bars. It uses the same solid expected / cross detected convention, keeps the latest resting artwork, and still ends on the correction. G2 card paging selects the corresponding shared finding and closes an open phone sheet overlay without creating a recording. There is no separate G2 Guide state; phone Guide and Sheet remain available. Unclear audio shows words and a microphone only, because analysis reports no audio levels to meter.
+The glasses adapt the shared visual plan (`shared/visual-contract.ts`) following the Paper **Mistake animations** page, except that what the mic heard is drawn as × rather than a hollow notehead (which would read as a half note): solid note = expected, × = detected, a shaded band marks the beat in question, and every card labels EXPECTED and DETECTED in words. The card the coach chose (its findings match `evidenceFindingIds`) uses `summary.next` as its cue when it fits three lines; other cards use their own `cue`. Evidence IDs cover each card's whole context, so the faulty note is found by pairing expected and detected notes one to one (same pitch, onset within 0.2 beats). In Guide, tap replays a correction as keyframes in its picture slot, sent at Bluetooth pace: first only what was played (× marks, the heard onset, the held length), then the fix (the written notes, the onset on the beat, the full length), ending on the fix. At rest, staff cards show only the written passage with the mistake's beat shaded (and a dashed slot for a missed note); × marks appear only during the replay. Timing and wrong-note-on-keys cards keep their × at rest because it carries the finding. Staff cards reveal each phase note by note in time order (at most four steps per phase, 1 s per step, 2 s on the frame that ends a phase); captions update once each picture has landed; the bottom row shows the frame caption and ●○○ progress, and swiping or leaving cancels it. Validated missing-note, extra-note, timing and duration findings may include one keyboard-context frame before the written correction; duration context associates the key with expected and measured hold bars. It uses the same solid expected / cross detected convention, keeps the latest resting artwork, and still ends on the correction. G2 pair navigation selects the corresponding shared finding and affected bar and closes an open phone sheet overlay without creating a recording. G2 has distinct Review and Guide pages for each finding/bar pair. Entering Guide starts on the correction; tap replays it. Both pages retain the same selected finding and segment; phone Guide and Sheet use that selection too. Unclear audio shows words and a microphone only, because analysis reports no audio levels to meter.
 
 ### Sheet music while playing
 
@@ -185,9 +188,12 @@ type Passage = {
   title: string;
   tempoBpm: number;
   beatsPerBar: number;
+  bars: { number: number; startBeat: number; endBeat: number }[];
   notes: ReferenceNote[];
 };
 ```
+
+`bars` is the authoritative contiguous, ordered bar map, with zero-based passage beat offsets and authored score labels. Pickups and excerpts may begin at bar 0 or 17; never infer bar labels from note IDs. The existing six seed maps describe their unchanged two full bars. Changes to musical boundaries or passage content require a new passage version. Legacy passages may omit the map only while reading v1 data.
 
 Convert reference beats to seconds using `seconds = beats * 60 / tempoBpm`. Store the actual attempt tempo separately from original tempo. Finger suggestions are authored teaching metadata, never inferred observations of the player's fingers.
 
@@ -208,9 +214,16 @@ type Finding = {
   detectedNoteId?: string;
   timingDeltaMs?: number; // positive = late, negative = early
   durationDeltaMs?: number; // positive = held too long, negative = too short
+  location: { barNumber: number; beatInBar: number; passageBeat: number } | null;
+  segmentIds: string[];
+};
+type DisplaySegment = {
+  id: string; startBar: number; endBar: number;
+  startBeat: number; endBeat: number;
+  referenceNoteIds: string[]; findingIds: string[];
 };
 type AnalysisResult = {
-  schemaVersion: '1';
+  schemaVersion: '2';
   attemptId: string;
   passageId: string;
   passageVersion: string;
@@ -222,6 +235,7 @@ type AnalysisResult = {
   alignment: { offsetSec: number | null; reliable: boolean };
   detectedNotes: DetectedNote[];
   findings: Finding[];
+  displaySegments: DisplaySegment[];
   metrics: { matchedNotes: number; expectedNotes: number; medianAbsTimingErrorMs: number | null };
 };
 ```
@@ -234,10 +248,11 @@ Recording metadata includes attempt ID, capture source, source and normalized sa
 
 ```ts
 type CoachingResult = {
-  schemaVersion: '1';
+  schemaVersion: '2';
   attemptId: string;
   cue: string;
   evidenceFindingIds: string[];
+  primarySegmentId: string | null;
   visual: {
     kind: 'keyboard' | 'rhythm_strip' | 'none';
     referenceNoteIds: string[];
@@ -254,6 +269,22 @@ type CoachingResult = {
 Validate every ID against the selected passage, findings, and an allowlisted pose library. Validate cue length. Proposed cue target: one sentence, at most 120 characters, shortened further if the hardware layout requires it. The model must not return executable drawing code, invented measurements, or arbitrary remote image URLs. Coaching does not define a separate retry exercise or change navigation; Play again is an application action that returns to Library.
 
 The proposed `visual.mistakes` entries reference measured evidence; the renderer resolves expected/played pitches, onset and duration from the versioned passage and analysis. Ordinary code chooses key geometry, labels, highlights and animation timing. Show expected versus played keys and expected versus measured hold duration, including quarter/half-note labels when supported by the reference. Missing notes have no played-note event; extra notes may have no reference-note event. Reject mismatched references and unsupported duration claims. The coach selects supported mistakes, not layout or musical measurements. Save the validated data so History can render the same result without another model call. Slow finger poses, if retained, use authored suggestions and never imply observed finger tracking.
+
+### Mistake locations, priority and Review → Guide
+
+Version 2 analysis adds deterministic locations and display segments. Python Basic Pitch and alignment remain unchanged; the TypeScript analysis boundary validates the detector response, calculates segments, and returns/caches v2. Both consumers still use the same immutable normalized WAV. The phone and G2 validate the supplied ranges against the selected versioned passage; neither asks Gemini to calculate locations.
+
+- Wrong, missing, timing and duration findings use the expected reference onset. Late playing does not move a mistake into the next bar. Extra notes use `(detected onset seconds - alignment offset seconds) * attempt tempo / 60`.
+- One affected authored bar forms one segment. Same-bar mistakes share it; separated affected bars stay separate. A reference note crossing bar boundaries links every intersected bar. Include all overlapping reference notes, clip notation at the segment boundary, and place boundary onsets in the following bar.
+- Unreliable alignment or an out-of-passage extra note has `location: null` and no segment; it remains accessible without a notation highlight. Uncertain/error and correct analyses have no segments and follow the existing retry/clean UX.
+- Validate finite positions, exact boundaries, unique IDs, note membership and reciprocal finding/segment links. A nonnull primary segment must exist and contain the selected evidence. A null primary is valid for clean results or when all cited findings are unlocated, even if other findings have affected bars. Save analysis/coaching together so History restores exactly those ranges without another inference call.
+- Top mistakes come first using the existing deterministic visual priority and constrained coach choice. The selected primary segment comes first, then other priority segments, then remaining affected bars in passage order. Include every finding/bar pair, followed by unlocated findings. The three-card visual summary is not a limit on browsable mistakes or bars.
+- Navigation is Review(finding, bar) → Guide(the same finding, bar) → Review(next pair). Reverse navigation restores the preceding page. Phone bar selection, sheet overlay, and G2 use the same selection; changing pages never starts capture or increments recording counts. A cross-bar finding has a pair in each affected bar.
+- Existing v1 responses and History remain supported as explicitly legacy, full-passage results. Do not silently synthesize saved v2 locations for them. New server results are v2; the phone accepts both versions and rejects malformed v2 data.
+
+Gemini still returns only an allowed `findingId`, `actionId`, and `componentKind`. Server code builds the cue, visual references and primary segment from measured evidence; the model does not write free-form cues or choose ranges. Invalid/model-error output follows the existing labeled fallback policy, with deterministic segment selection.
+
+Acceptance covers same/separated bars, boundary onsets, sustained cross-bar notes, aligned extras, pickup/excerpt labels, unreliable alignment, clean/uncertain results, forged ranges/links, more than three mistakes, forward/reverse paired navigation, and History reload. Local browser and fake-bridge checks do not establish physical G2 readability or microphone quality.
 
 ### Display settings
 

@@ -22,6 +22,8 @@ Node's built-in test runner on the TypeScript sources (no extra dependencies; re
 
 For a presentation-only fixture gallery in the simulator, open the dev URL with `?demo=review`. It shows all prepared Review cards with a visible DEMO label; double tap returns to the shared Library. It creates no recording and makes no backend or model request. For browser-only raster inspection without an Even bridge, open `/tests/review-browser.html` from the Vite dev server. That fixture displays the same card art and correction replay, without exercising the glasses transport. Its Show key context button previews explicitly synthetic keyboard and hold-duration context.
 
+`/tests/segments-browser.html` displays paired Review and Guide pages from a synthetic v2 saved result. Both pages use the same one-bar notation window and bar/beat position. This is a browser approximation of firmware text and canvas art, not evidence of physical glasses behavior. Unit tests also cover complete forward/reverse pair navigation, read-only History, interval clipping, unlocated events, and cancellation of late Guide replay work.
+
 ## Phone and glasses together
 
 This page hosts the phone UI from `../mobile/` (`startPhoneApp`) and mirrors its session on the glasses; see [`../glasses-integration/CONTRACT.md`](../glasses-integration/CONTRACT.md). The phone's `SessionStore` is the only source of truth: phone buttons and glasses gestures make the same session calls, and `src/controller.ts` redraws the glasses from it.
@@ -49,7 +51,7 @@ The pack script validates the approved exact origin, generates ignored `app.netw
 | `src/main.ts` | Mounts the phone UI, boots the bridge, routes normalized input to the controller. |
 | `src/controller.ts` | Phone session state → glasses screen; glasses gestures → session calls (CONTRACT.md state map). |
 | `src/g2capture.ts` | The G2 mic as the phone session's capture source: mic on, one `g2` attempt, WAV → analysis → coaching; discard, interrupt, 30s cap. |
-| `src/feedback.ts` | Derives Review cards from the saved attempt's exact validated visual plan; labels source and fallback coaching. |
+| `src/feedback.ts` | Derives every saved finding/bar pair in shared priority order, beyond the top-three overview; clips notation to the validated bar, labels source and local cues. |
 | `src/review/` | Evidence-bound card text, authored reference finger cues, keyboard/staff/rhythm art, and timed correction replay. |
 | `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
 | `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `menuItem`; drops duplicates and any tap that belongs to a long press. |
@@ -70,6 +72,6 @@ The pack script validates the approved exact origin, generates ignored `app.netw
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
 | 04 | Analyzing | Short status; no input, no menu |
-| 05 | Review | One validated finding card at a time with expected/detected legend, exact key or beat art, concise cue, and authored reference finger when supported. Swipe down/up moves between cards, synchronizes the shared finding, and closes an open phone sheet overlay; tap replays measured versus written notes, includes validated key/hold context when available, and ends on the correction; double tap → Selection. Uncertain audio gets a neutral microphone card without replay. The phone's Guide and Sheet remain phone screens; they mirror the same saved attempt without commanding a second G2 page |
+| 05 | Review → Guide | Every finding/bar pair has Review then Guide. Down advances and up reverses the shared sequence without wrapping; Review tap opens the same pair's Guide, Guide tap replays its correction, double tap → Selection. Both pages show the same validated bar window and position; Review compares expected/heard notes, Guide starts on the written correction with its grounded cue and authored reference finger when supported. Phone navigation stays synchronized; a phone sheet overlay keeps the underlying G2 Review/Guide page, and glasses navigation closes that overlay. Reopened History uses the same read-only pages with a Saved label. Legacy v1 results retain meaningful beat cards without invented bar positions; v2 unlocated findings are text-only. Uncertain audio gets a neutral microphone card without replay. |
 | — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |
