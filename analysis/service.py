@@ -26,7 +26,18 @@ from analysis.scoring import score_notes
 
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_AUDIO_SECONDS = 30.0
-DETECTOR_VERSION = "basic-pitch/0.4.0+tflite-icassp2022"
+DETECTOR_VERSION = "basic-pitch/0.4.0+tflite-icassp2022+piano-sensitive-v1"
+PIANO_DETECTION = {
+    "onset_threshold": 0.35,
+    "frame_threshold": 0.20,
+    "minimum_note_length": 90.0,
+    "minimum_frequency": 27.5,  # A0, MIDI 21
+    "maximum_frequency": 4186.01,  # C8, MIDI 108
+}
+AUDIBLE_WINDOW_SEC = 0.10
+MIN_AUDIBLE_RMS = 0.0015
+MINOR_CLIPPING_FRACTION = 0.005
+SEVERE_CLIPPING_FRACTION = 0.05
 PASSAGES_PATH = Path(__file__).resolve().parents[1] / "shared" / "passages.json"
 _MODEL: Any = None
 _MODEL_ERROR = False
@@ -80,7 +91,7 @@ def _predict(wav_bytes: bytes) -> list[dict[str, Any]]:
             temporary.write(wav_bytes)
             temporary.flush()
             with redirect_stdout(StringIO()):
-                _, _, events = predict(temporary.name, model_or_model_path=model)
+                _, _, events = predict(temporary.name, model_or_model_path=model, **PIANO_DETECTION)
     notes: list[dict[str, Any]] = []
     for index, event in enumerate(sorted(events, key=lambda item: (item[0], item[2])), 1):
         onset, end, pitch, score, _ = event
@@ -133,15 +144,23 @@ def _inspect_wav(wav_bytes: bytes, metadata: AttemptMetadata) -> tuple[dict[str,
     if sys.byteorder != "little":
         samples.byteswap()
     clipped_count = sum(abs(sample) >= 32500 for sample in samples)
-    clipped = clipped_count / len(samples) >= 0.005
-    rms = audioop.rms(frames, 2) / 32768.0
-    audible = rms >= 0.0015
+    clipped_fraction = clipped_count / len(samples)
+    clipped = clipped_fraction >= SEVERE_CLIPPING_FRACTION
+    # Count-in/room silence should not dilute a usable quiet entrance. Require
+    # one full 100 ms window; isolated clicks still face note/alignment gates.
+    window_bytes = max(1, round(sample_rate * AUDIBLE_WINDOW_SEC)) * channels * sample_width
+    audible = any(
+        audioop.rms(frames[start:start + window_bytes], sample_width) / 32768.0 >= MIN_AUDIBLE_RMS
+        for start in range(0, len(frames) - window_bytes + 1, window_bytes)
+    )
     has_dropouts = metadata.missingChunkCount > 0 or (
         metadata.expectedSampleCount is not None and metadata.expectedSampleCount != frame_count
     )
     warnings: list[str] = []
     if clipped:
         warnings.append("clipped")
+    elif clipped_fraction >= MINOR_CLIPPING_FRACTION:
+        warnings.append("minor_clipping")
     if has_dropouts:
         warnings.append("capture_gap")
     if not audible:
@@ -208,7 +227,8 @@ def health() -> JSONResponse:
     loaded = _MODEL is not None and not _MODEL_ERROR
     return JSONResponse(
         status_code=200 if loaded else 503,
-        content={"status": "ok" if loaded else "unavailable", "modelLoaded": loaded},
+        content={"status": "ok" if loaded else "unavailable", "modelLoaded": loaded,
+                 "detectorVersion": DETECTOR_VERSION},
     )
 
 

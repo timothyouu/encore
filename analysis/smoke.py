@@ -12,7 +12,7 @@ import wave
 import numpy as np
 
 from analysis.scoring import score_notes
-from analysis.service import _predict
+from analysis.service import DETECTOR_VERSION, _predict
 
 SAMPLE_RATE = 22050
 
@@ -53,7 +53,7 @@ def main() -> None:
     result = score_notes(
         passage, "synthetic-smoke", passage["tempoBpm"], detected,
         {"clipped": False, "hasDropouts": False, "warnings": []},
-        detector_version="basic-pitch/0.4.0+tflite-icassp2022",
+        detector_version=DETECTOR_VERSION,
     )
     print(json.dumps({
         "input": "synthetic harmonic tones, not live piano",

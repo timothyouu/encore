@@ -37,7 +37,33 @@ def wav_samples(sample: int = 0) -> bytes:
     return output.getvalue()
 
 
+def wav_frames(frames: bytes) -> bytes:
+    output = BytesIO()
+    with wave.open(output, "wb") as recording:
+        recording.setnchannels(1)
+        recording.setsampwidth(2)
+        recording.setframerate(22050)
+        recording.writeframes(frames)
+    return output.getvalue()
+
+
 class AudioValidationTests(unittest.TestCase):
+    def test_quiet_entrance_is_not_diluted_by_leading_silence(self) -> None:
+        silence = bytes(22050 * 2)
+        quiet_note = (100).to_bytes(2, "little", signed=True) * 2205
+        tail = bytes((44100 - 22050 - 2205) * 2)
+        quality, audible = _inspect_wav(wav_frames(silence + quiet_note + tail), metadata())
+        self.assertTrue(audible)
+        self.assertNotIn("low_level", quality["warnings"])
+
+    def test_brief_clipping_warns_without_rejecting_whole_recording(self) -> None:
+        frames = (32767).to_bytes(2, "little", signed=True) * 441
+        frames += (100).to_bytes(2, "little", signed=True) * (44100 - 441)
+        quality, audible = _inspect_wav(wav_frames(frames), metadata())
+        self.assertTrue(audible)
+        self.assertFalse(quality["clipped"])
+        self.assertIn("minor_clipping", quality["warnings"])
+
     def test_silence_is_not_a_musical_error(self) -> None:
         quality, audible = _inspect_wav(wav_samples(), metadata())
         self.assertFalse(audible)

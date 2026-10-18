@@ -10,7 +10,11 @@ from math import ceil, isfinite
 from statistics import median
 from typing import Any
 
-SCORING_VERSION = "1.1.1-demo"
+SCORING_VERSION = "1.2.1-demo"
+MIN_PITCH_ANCHOR_FRACTION = 0.35
+MIN_PAIR_COVERAGE = 0.60
+MIN_EXTRA_NOTE_SCORE = 0.35
+FINDING_PRIORITY = {"missing_note": 0, "extra_note": 1, "wrong_note": 2, "timing": 3, "duration": 4}
 TIMING_FINDING_SEC = 0.15
 # Provisional event-duration thresholds, not calibrated acoustic sustain measurements.
 DURATION_MIN_SCORE = 0.5
@@ -68,8 +72,7 @@ def _candidate_offsets(reference: list[dict[str, Any]], detected: list[dict[str,
             if expected["midiPitch"] != played["midiPitch"]:
                 continue
             offset = played["onsetSec"] - expected["onsetBeat"] * beat_sec
-            if -0.25 <= offset <= 10.0:
-                candidates.add(round(offset, 3))
+            candidates.add(round(offset, 3))
     return sorted(candidates)
 
 
@@ -151,8 +154,19 @@ def score_notes(
     pitch_anchors = sum(
         reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs
     )
-    if ambiguous or pitch_anchors < max(2, ceil(len(reference) * 0.60)):
+    enough_coverage = len(best.pairs) >= ceil(len(reference) * MIN_PAIR_COVERAGE)
+    if ambiguous or not enough_coverage or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION)):
         result["audioQuality"]["warnings"].append("ambiguous_alignment" if ambiguous else "too_few_pitch_anchors")
+        return result
+    # Infer note identity before anchoring: a missed opening note or a leading
+    # extra must not shift every later reference note. Keep the original WAV clock.
+    first_reference, first_detected = best.pairs[0]
+    offset = detected[first_detected]["onsetSec"] - reference[first_reference]["onsetBeat"] * beat_sec
+    best = _align(reference, detected, offset, beat_sec)
+    pitch_anchors = sum(reference[i]["midiPitch"] == detected[j]["midiPitch"] for i, j in best.pairs)
+    if (len(best.pairs) < ceil(len(reference) * MIN_PAIR_COVERAGE)
+            or pitch_anchors < max(2, ceil(len(reference) * MIN_PITCH_ANCHOR_FRACTION))):
+        result["audioQuality"]["warnings"].append("too_few_pitch_anchors")
         return result
     result["alignment"] = {"offsetSec": offset, "reliable": True}
     result["status"] = "ok"
@@ -216,12 +230,26 @@ def score_notes(
                 if "ambiguous_repeat_boundary" not in result["audioQuality"]["warnings"]:
                     result["audioQuality"]["warnings"].append("ambiguous_repeat_boundary")
                 continue
+            score = played.get("detectorScore")
+            if isinstance(score, (int, float)) and isfinite(score) and score < MIN_EXTRA_NOTE_SCORE:
+                # A more sensitive detector also hears faint room hum. Keep raw
+                # events in History, but don't call weak unmatched events mistakes.
+                if "weak_extra_note_evidence" not in result["audioQuality"]["warnings"]:
+                    result["audioQuality"]["warnings"].append("weak_extra_note_evidence")
+                continue
             findings.append({"kind": "extra_note", "detectedNoteId": played["id"]})
     if "ambiguous_repeat_boundary" in result["audioQuality"]["warnings"]:
         result["status"] = "uncertain"
         result["alignment"] = {"offsetSec": None, "reliable": False}
         return result
-    result["findings"] = [{"id": f"f{index}", **finding} for index, finding in enumerate(findings, 1)]
+    def importance(finding: dict[str, Any]) -> tuple[int, float]:
+        magnitude = abs(finding.get("timingDeltaMs", finding.get("durationDeltaMs", 0)))
+        return FINDING_PRIORITY[finding["kind"]], -magnitude
+
+    # Keep every supported finding for phone review and saved History. Glasses
+    # apply their own presentation limit without discarding this evidence.
+    selected = sorted(findings, key=importance)
+    result["findings"] = [{"id": f"f{index}", **finding} for index, finding in enumerate(selected, 1)]
     result["metrics"] = {
         "matchedNotes": correct_pitch_count,
         "expectedNotes": len(reference),

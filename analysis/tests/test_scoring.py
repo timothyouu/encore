@@ -37,6 +37,73 @@ def scored(passage: dict[str, Any], notes: list[dict[str, Any]], audio_quality: 
 
 
 class ScoringTests(unittest.TestCase):
+    def test_long_leading_silence_does_not_change_comparison(self) -> None:
+        passage = PASSAGES["P01"]
+        short = scored(passage, performed(passage, offset=0.8))
+        delayed = scored(passage, performed(passage, offset=18.25))
+        self.assertEqual(delayed["status"], "ok")
+        self.assertEqual(delayed["findings"], short["findings"])
+        self.assertEqual(delayed["metrics"], short["metrics"])
+        self.assertAlmostEqual(delayed["alignment"]["offsetSec"], 18.25)
+
+    def test_first_matched_note_anchors_timing_instead_of_majority(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        notes[0]["onsetSec"] += 0.20
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertAlmostEqual(result["alignment"]["offsetSec"], 1.0)
+        self.assertTrue(all(finding["kind"] == "timing" for finding in result["findings"]))
+        self.assertEqual(len(result["findings"]), 7)
+        self.assertTrue(all(finding["timingDeltaMs"] == -200 for finding in result["findings"]))
+
+    def test_missing_opening_note_is_preserved(self) -> None:
+        passage = PASSAGES["P01"]
+        result = scored(passage, performed(passage)[1:])
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([(f["kind"], f.get("referenceNoteId")) for f in result["findings"]],
+                         [("missing_note", "P01-N01")])
+        self.assertAlmostEqual(result["alignment"]["offsetSec"], 0.8)
+
+    def test_wrong_first_pitch_still_sets_the_entrance(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage, offset=2.0)
+        notes[0]["midiPitch"] = 61
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertAlmostEqual(result["alignment"]["offsetSec"], 2.0)
+        self.assertEqual([(f["kind"], f.get("referenceNoteId")) for f in result["findings"]],
+                         [("wrong_note", "P01-N01")])
+
+    def test_leading_extra_does_not_become_the_timing_anchor(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        notes.insert(0, {"id": "extra", "midiPitch": 90, "onsetSec": 0.1,
+                         "durationSec": 0.1, "detectorScore": 0.8})
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertAlmostEqual(result["alignment"]["offsetSec"], 0.8)
+        self.assertEqual([f["kind"] for f in result["findings"]], ["extra_note"])
+
+    def test_all_findings_saved_with_missing_before_largest_timing_errors(self) -> None:
+        passage = {**PASSAGES["P01"], "notes": [
+            {**PASSAGES["P01"]["notes"][0], "id": f"n{i}", "midiPitch": 40 + i,
+             "onsetBeat": i, "durationBeats": 1} for i in range(40)
+        ]}
+        notes = performed(passage)
+        for index in range(1, 13):
+            notes[index]["onsetSec"] += 0.16 + index * 0.01
+        notes.pop(30)
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(len(result["findings"]), 13)
+        self.assertEqual(result["findings"][0]["kind"], "missing_note")
+        self.assertEqual(result["findings"][0]["referenceNoteId"], "n30")
+        self.assertEqual([f["timingDeltaMs"] for f in result["findings"][1:]],
+                         [280, 270, 260, 250, 240, 230, 220, 210, 200, 190, 180, 170])
+        self.assertEqual(result["metrics"]["matchedNotes"], 39)
+        self.assertEqual(result["metrics"]["expectedNotes"], 40)
+
     def test_clean_passage_with_recording_start_offset(self) -> None:
         passage = PASSAGES["P01"]
         result = scored(passage, performed(passage))
@@ -128,6 +195,33 @@ class ScoringTests(unittest.TestCase):
         self.assertEqual(result["status"], "uncertain")
         self.assertEqual(result["findings"], [])
         self.assertFalse(result["alignment"]["reliable"])
+
+    def test_clear_performance_with_four_wrong_notes_can_get_feedback(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        for index in (1, 3, 5, 7):
+            notes[index]["midiPitch"] += 1
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual([f["kind"] for f in result["findings"]], ["wrong_note"] * 4)
+        self.assertEqual(result["metrics"]["matchedNotes"], 4)
+
+    def test_three_note_fragment_still_cannot_grade_whole_passage(self) -> None:
+        passage = PASSAGES["P01"]
+        result = scored(passage, performed(passage)[:3])
+        self.assertEqual(result["status"], "uncertain")
+        self.assertEqual(result["findings"], [])
+
+    def test_weak_room_hum_is_saved_without_an_extra_note_accusation(self) -> None:
+        passage = PASSAGES["P01"]
+        notes = performed(passage)
+        notes.append({"id": "hum", "midiPitch": 31, "onsetSec": 0.2,
+                      "durationSec": 0.2, "detectorScore": 0.23})
+        result = scored(passage, notes)
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["findings"], [])
+        self.assertIn("weak_extra_note_evidence", result["audioQuality"]["warnings"])
+        self.assertTrue(any(note["id"] == "hum" for note in result["detectedNotes"]))
 
     def test_rest_and_long_note_passages(self) -> None:
         self.assertEqual(
