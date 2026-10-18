@@ -22,7 +22,7 @@ const LEGEND_BRIGHTNESS = 3
 const NEXT_HINT = '▼  next'
 const REPLAY_HINT = 'tap  replay'
 // Each replay frame stays up at least this long, even on a fast link.
-const FRAME_DWELL_MS = 700
+const FRAME_DWELL_MS = 2000
 
 type ReviewOptions = {
   coaching: CoachingResult
