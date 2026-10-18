@@ -29,6 +29,10 @@ To record from the glasses, open **Connection settings** on the phone and choose
 
 Glasses diagnostics are in the collapsed **Glasses debug** panel under the phone UI; it opens by itself on any error.
 
+## Uploads
+
+Set the **Upload URL** on the phone screen (saved in Even app storage). Each take is POSTed as `multipart/form-data`: `audio` (WAV) and `metadata` (JSON: attempt ID, passage ID/version, timestamps, format, duration, measured byte rate, `captureSource: "g2"`). The server must send CORS headers, and the packaged app needs its domain in `app.json` under a `network` permission. For simulator testing, `VITE_ENCORE_UPLOAD_URL=<url> npm run dev` presets the URL when none is saved.
+
 ## Pack for distribution
 
 ```bash
@@ -52,6 +56,7 @@ Produces an `.ehpk` file.
 | `../shared/passages.ts` | The six approved seed passages and authored fingerings (spec §7), shared with the phone Guide. |
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/recorder.ts` / `src/wav.ts` | One mic capture at a time; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
+| `src/upload.ts` / `src/phone.ts` | Multipart upload (`audio` + `metadata`) to the Upload URL set on the phone screen. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
 | `src/keyboard.ts` | Draws a finding's keyboard schematic (expected vs heard keys, hold bars) as one 288×96 PNG. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
