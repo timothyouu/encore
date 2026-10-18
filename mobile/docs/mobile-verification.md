@@ -1,5 +1,15 @@
 # Encore mobile handoff
 
+## Current mobile-only boundary correction — October 17, 2026
+
+The earlier implementation record below is historical and includes a now-removed glasses adapter. It must not be used as permission to restore device control in the mobile app.
+
+Repo-wide audit found an unconditional `main.ts → connectDisplay` path: `display.ts` created a G2 page, upgraded its text, listened to glasses gestures, and could shut the page down. Calling this adapter optional or mobile-side was incorrect. The mobile manifest also reused the G2 package ID. These paths and mobile Even Hub dependencies/packaging have been removed; `g2/` is unchanged.
+
+The current app owns phone DOM/SVG, phone microphone capture, demo fixtures, session state, and local History only. Historical G2 provenance can still be displayed without controlling a device. Phone-side preferences do not imply physical G2 settings have been applied. Repository `AGENTS.md` and spec section 9 define the durable side-effect boundary.
+
+Current checks and final regression counts are recorded in `mobile-boundary-verification.md`. From the current checkout use `cd mobile`, `npm test`, and `npm run build` with approved existing dependencies. The older worktree paths, display-test count, and SDK browser warning below are historical evidence only.
+
 ## Outcome and location
 
 Implemented the phone companion in the existing strict TypeScript/Vite app. Implementation was prepared on `codex/mobile-ui` in `/home/tim/projects/encore-mobile-ui`, an isolated WSL worktree based on `91ab3de`. The original Windows checkout remains unchanged. No app deployment was performed. The later authorized branch publication and merge are tracked by the shipping PR.
