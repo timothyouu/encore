@@ -1,0 +1,142 @@
+{
+  "file": {
+    "id": "01M56HHCC29GHEHZ2V9FPV5FTR",
+    "name": "G2 Mobile App"
+  },
+  "contentHash": {
+    "tokens": "201c032a"
+  }
+}
+(
+    <div style={{ backgroundColor: '#F6F2EA', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', fontSize: '12px', fontSynthesis: 'none', height: '844px', lineHeight: '16px', MozOsxFontSmoothing: 'grayscale', overflow: 'clip', overflowWrap: 'anywhere', paddingTop: '62px', WebkitFontSmoothing: 'antialiased', width: '390px' }}>
+      <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'space-between', paddingInline: '24px' }}>
+        <div style={{ boxSizing: 'border-box', color: '#000000', flexShrink: '0', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px', width: '90px' }}>
+          ‹ Even Hub
+        </div>
+        <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '28px', lineHeight: '34px' }}>
+          encore
+        </div>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexShrink: '0', justifyContent: 'end', width: '90px' }}>
+          <svg width="22" height="22" viewBox="0 0 22 22" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <path d="M3 6h16M3 11h16M3 16h16" fill="#000000" stroke="#625F58" />
+          </svg>
+        </div>
+      </div>
+      <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', minHeight: '0px', paddingInline: '24px', paddingTop: '20px' }}>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '22px', paddingTop: '4px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '30px', lineHeight: '38px' }}>
+            Choose a passage
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+            12 recordings · View history ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderColor: '#D8D2C7', borderRadius: '10px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '46px', paddingInline: '14px' }}>
+          <svg width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <circle cx="8" cy="8" r="5.5" fill="none" stroke="#171714" />
+            <path d="m12 12 5 5" fill="#000000" stroke="#171714" />
+          </svg>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+            Search 6 passages
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            01
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              First Steps
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              60 BPM · Beginner · 4 recordings
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            02
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              Little Echo
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              60 BPM · Beginner · 3 recordings
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            03
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              Open Windows
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              60 BPM · Beginner · 2 recordings
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            04
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              Hold the Moment
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              60 BPM · Beginner · 1 recording
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            05
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              Room to Breathe
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              60 BPM · Beginner · 1 recording
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', borderBottomColor: '#D8D2C7', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '12px', height: '84px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', flexShrink: '0', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '17px', lineHeight: '22px', width: '28px' }}>
+            06
+          </div>
+          <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '4px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '25px' }}>
+              Small Climb
+            </div>
+            <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+              72 BPM · Beginner · 1 recording
+            </div>
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', flexShrink: '0', flexWrap: 'wrap', fontFamily: 'system-ui, sans-serif', fontSize: '24px', justifyContent: 'end', lineHeight: '30px', textAlign: 'right', width: '20px' }}>
+            ›
+          </div>
+        </div>
+      </div>
+      <div style={{ alignItems: 'end', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '42px', justifyContent: 'center', paddingBottom: '8px' }} />
+    </div>
+  )
