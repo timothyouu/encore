@@ -28,9 +28,9 @@ export type PhoneAppOptions = {
 export type PhoneApp = {
   store: SessionStore;
   settings: DisplaySettingsStore;
-  /** The same start/stop/cancel the phone controls use. */
-  start(): void;
-  stop(): void;
+  /** The same start/stop/cancel the phone controls use; start/stop settle when the capture source has. */
+  start(): Promise<void>;
+  stop(): Promise<void>;
   cancel(): void;
   /** Re-render after host state (e.g. device status) changes. */
   refresh(): void;
@@ -54,15 +54,15 @@ export function startPhoneApp(root: HTMLElement, options: PhoneAppOptions): Phon
     const value: unknown = (event as CustomEvent<{ scenario: unknown }>).detail?.scenario;
     if (value === 'mistakes' || value === 'clean' || value === 'uncertain' || value === 'error') scenario = value;
   });
-  function start(): void {
+  async function start(): Promise<void> {
     if (settings.isOpen) return;
-    if (mode !== 'demo') { void driver?.start(); return; }
+    if (mode !== 'demo') { await driver?.start(); return; }
     if (!store.start()) return;
     activeScenario = scenario;
-    captureLimit = setTimeout(stop, 30_000);
+    captureLimit = setTimeout(() => { void stop(); }, 30_000);
   }
-  function stop(): void {
-    if (mode !== 'demo') { void driver?.stop(); return; }
+  async function stop(): Promise<void> {
+    if (mode !== 'demo') { await driver?.stop(); return; }
     const record = store.stop();
     if (!record) return;
     clearTimeout(captureLimit);
@@ -87,7 +87,7 @@ export function startPhoneApp(root: HTMLElement, options: PhoneAppOptions): Phon
   }
   const refresh = (): void => { root.dispatchEvent(new CustomEvent('encore:mode-change')); };
   const unmount = mountPhone(root, store, {
-    start, stop, cancel, getMode: () => mode, isBusy: () => Boolean(driver?.busy), deviceStatus: options.deviceStatus,
+    start: () => { void start(); }, stop: () => { void stop(); }, cancel, getMode: () => mode, isBusy: () => Boolean(driver?.busy), deviceStatus: options.deviceStatus,
   }, settings);
   const connection = mountConnection(store, root, next => {
     if (driver?.busy || driver?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';

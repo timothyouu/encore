@@ -2,6 +2,7 @@ import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
+import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor } from './feedback.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
 type Mode = 'demo' | 'phone' | 'g2';
@@ -60,43 +61,6 @@ function statusLabel(record: AttemptRecord): string {
   if (record.analysis?.status === 'error') return 'Analysis unavailable';
   if (record.analysis?.findings.length === 0) return 'No supported mistakes';
   return 'Result';
-}
-
-function findingBeat(finding: Finding, passage: Passage, record: AttemptRecord): number {
-  const reference = passage.notes.find((note) => note.id === finding.referenceNoteId);
-  if (reference) return reference.onsetBeat;
-  const detected = record.analysis?.detectedNotes.find((note) => note.id === finding.detectedNoteId);
-  return detected ? detected.onsetSec * (record.analysis?.attemptTempoBpm ?? passage.tempoBpm) / 60 : Number.MAX_SAFE_INTEGER;
-}
-
-function orderedFindings(record: AttemptRecord, passage: Passage): Finding[] {
-  return [...(record.analysis?.findings ?? [])].sort((a, b) => findingBeat(a, passage, record) - findingBeat(b, passage, record));
-}
-
-function referenceFor(finding: Finding | undefined, passage: Passage): ReferenceNote | undefined {
-  return passage.notes.find((note) => note.id === finding?.referenceNoteId);
-}
-
-function findingTitle(finding: Finding): string {
-  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing' }[finding.kind];
-}
-
-function detailFor(finding: Finding, passage: Passage, record: AttemptRecord): string {
-  const reference = referenceFor(finding, passage);
-  const detected = record.analysis?.detectedNotes.find((note) => note.id === finding.detectedNoteId);
-  if (finding.kind === 'wrong_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Heard ${detected ? noteName(detected.midiPitch) : 'another note'}`;
-  if (finding.kind === 'missing_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Not detected`;
-  if (finding.kind === 'extra_note') return `Heard ${detected ? noteName(detected.midiPitch) : 'an extra note'} outside the reference`;
-  const delta = finding.timingDeltaMs ?? 0;
-  return `${reference ? noteName(reference.midiPitch) : 'Note'} · ${Math.abs(Math.round(delta))} ms ${delta >= 0 ? 'late' : 'early'}`;
-}
-
-function correctionFor(finding: Finding, passage: Passage): string {
-  const reference = referenceFor(finding, passage);
-  if (!reference) return 'Listen for the next expected note, then try the passage again.';
-  const beat = reference.onsetBeat + 1;
-  if (finding.kind === 'timing') return `Place ${noteName(reference.midiPitch)} on beat ${beat}.`;
-  return `Play ${noteName(reference.midiPitch)} on beat ${beat}.`;
 }
 
 function svgElement<K extends keyof SVGElementTagNameMap>(tag: K, attributes: Record<string, string>): SVGElementTagNameMap[K] {
