@@ -1,6 +1,7 @@
 import { groundedVisualPlan } from './paper-evidence.ts';
 import { passages, type Passage } from './passages.ts';
 import type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
+import type { PhonePersistence } from './storage.ts';
 export type { AnalysisResult, CoachingResult, DetectedNote, Finding } from '../../shared/contracts.ts';
 
 export type AttemptRecord = {
@@ -19,6 +20,8 @@ export type SessionState = {
 };
 type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
 const STORAGE_KEY = 'encore.attempts.v1';
+export const SESSION_STORAGE_KEY = STORAGE_KEY;
+export const HISTORY_CAP = 1000;
 const POSE_IDS = new Set(['finger-1', 'finger-2', 'finger-3', 'finger-4', 'finger-5', 'neutral']);
 const KINDS = new Set(['wrong_note', 'missing_note', 'extra_note', 'timing', 'duration']);
 const STATUSES = new Set(['ok', 'uncertain', 'insufficient_audio', 'error']);
@@ -140,6 +143,16 @@ function recordValid(value: unknown): value is AttemptRecord {
   return true;
 }
 
+function parseRecords(raw: string): AttemptRecord[] {
+  const saved: unknown = JSON.parse(raw);
+  if (!object(saved) || saved.version !== 1 || !Array.isArray(saved.records) ||
+      saved.records.length > 1000 || !saved.records.every(recordValid) ||
+      !unique(saved.records.map((record: AttemptRecord) => record.attemptId))) {
+    throw new Error('Invalid saved session data');
+  }
+  return saved.records;
+}
+
 export class SessionStore {
   processingStage: 'normalization' | 'upload' | 'analysis' | 'coaching' | null = null;
   state: SessionState = {
@@ -149,50 +162,75 @@ export class SessionStore {
   records: AttemptRecord[] = [];
   storageWarning: string | null = null;
   private storage: Storage | undefined;
+  private persistence: PhonePersistence | undefined;
   private listeners = new Set<() => void>();
 
   constructor(storage?: Storage) {
     try {
       this.storage = storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined);
-      const raw = this.storage?.getItem(STORAGE_KEY);
-      if (raw) {
-        const saved: unknown = JSON.parse(raw);
-        if (!object(saved) || saved.version !== 1 || !Array.isArray(saved.records) ||
-            saved.records.length > 1000 || !saved.records.every(recordValid) ||
-            !unique(saved.records.map((record: AttemptRecord) => record.attemptId))) {
-          throw new Error('Invalid saved session data');
-        }
-        this.records = saved.records;
-        let changed = false;
-        for (const record of this.records) {
-          if (record.captureStatus === 'recording') {
-            record.captureStatus = 'interrupted';
-            record.processingStatus = 'error';
-            record.error = { stage: 'capture', message: 'Recording was interrupted when the app closed.' };
-            changed = true;
-          } else if (record.captureStatus === 'completed' &&
-              (record.processingStatus === 'processing' || record.processingStatus === 'not_started')) {
-            record.processingStatus = 'error';
-            record.error = { stage: record.analysis ? 'coaching' : 'upload', message: 'Processing was interrupted. Retry this attempt while its audio is available.' };
-            changed = true;
-          }
-        }
-        if (changed) this.persist();
-      }
+      const raw = this.storage?.getItem(`${STORAGE_KEY}.migrated`) === '1' ? null : this.storage?.getItem(STORAGE_KEY);
+      if (raw) this.restore(raw);
     } catch {
       this.records = [];
       this.storageWarning = 'Saved history could not be loaded.';
     }
   }
 
+  async hydrate(persistence: PhonePersistence): Promise<void> {
+    try {
+      const raw = await persistence.load(STORAGE_KEY, value => {
+        try { parseRecords(value); return true; } catch { return false; }
+      });
+      this.persistence = persistence;
+      this.records = [];
+      if (raw) this.restore(raw);
+      this.storageWarning = persistence.warning;
+    } catch {
+      this.storageWarning = 'Local history storage is unavailable. Changes may last only for this session.';
+    }
+    this.emit();
+  }
+
+  private restore(raw: string): void {
+    this.records = parseRecords(raw);
+    let changed = false;
+    for (const record of this.records) {
+      if (record.captureStatus === 'recording') {
+        record.captureStatus = 'interrupted';
+        record.processingStatus = 'error';
+        record.error = { stage: 'capture', message: 'Recording was interrupted when the app closed.' };
+        changed = true;
+      } else if (record.captureStatus === 'completed' &&
+          (record.processingStatus === 'processing' || record.processingStatus === 'not_started')) {
+        record.processingStatus = 'error';
+        record.error = { stage: record.analysis ? 'coaching' : 'upload', message: 'Processing was interrupted. Retry this attempt while its audio is available.' };
+        changed = true;
+      }
+    }
+    if (changed) this.persist();
+  }
+
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
   }
+  warnStorage(message: string): void { this.storageWarning = message; this.emit(); }
   private emit(): void { for (const listener of this.listeners) listener(); }
   private persist(): void {
+    const snapshot = JSON.stringify({ version: 1, records: this.records });
+    if (this.persistence) {
+      void this.persistence.save(STORAGE_KEY, snapshot).then(() => {
+        if (this.storageWarning?.startsWith('History could not be saved')) {
+          this.storageWarning = null; this.emit();
+        }
+      }, () => {
+        this.storageWarning = 'History could not be saved on this device. Changes may last only for this session.';
+        this.emit();
+      });
+      return;
+    }
     try {
-      this.storage?.setItem(STORAGE_KEY, JSON.stringify({ version: 1, records: this.records }));
+      this.storage?.setItem(STORAGE_KEY, snapshot);
     } catch {
       this.storageWarning = 'History could not be saved on this device.';
     }
@@ -208,6 +246,10 @@ export class SessionStore {
   }
   start(source: 'demo' | 'phone' | 'test' = 'demo'): AttemptRecord | null {
     if (this.state.screen !== 'ready' || !['demo', 'phone', 'test'].includes(source)) return null;
+    if (this.records.length >= HISTORY_CAP) {
+      this.warnStorage('History is full at 1,000 attempts. Existing results are preserved; a new attempt cannot be recorded.');
+      return null;
+    }
     const passage = passages.find((item) => item.id === this.state.passageId);
     if (!passage) return null;
     const record: AttemptRecord = {

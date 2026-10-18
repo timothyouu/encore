@@ -84,3 +84,26 @@ test('phone corrections follow the same fixed three-card priority plan', () => {
   assert.deepEqual(visible.map(f=>f.id),plan.cards.flatMap(c=>c.evidence.findingIds));
   assert.deepEqual(visibleFindings(fixtureAnalysis(record,'uncertain'),passages[0]),[]);
 });
+test('history retains validated visual JSON without a new inference', () => {
+  let saved = null;
+  const storage = {getItem:()=>saved,setItem:(_key,value)=>{saved=value;}};
+  const store = new SessionStore(storage);
+  store.selectPassage('P01'); store.start(); const record=store.stop();
+  store.applyAnalysis(record.attemptId,fixtureAnalysis(record,'mistakes'));
+  const coach=fixtureCoaching(record);
+  coach.visualPlan=buildVisualPlan(record.analysis,passages[0]);
+  assert.equal(store.applyCoaching(record.attemptId,coach),true);
+  const reopened=new SessionStore(storage);
+  assert.deepEqual(reopened.records[0].coaching.visualPlan,coach.visualPlan);
+  assert.deepEqual(visibleFindings(reopened.records[0].analysis,passages[0],reopened.records[0].coaching).map(f=>f.id),coach.visualPlan.cards.flatMap(c=>c.evidence.findingIds));
+});
+
+test('hostile kinds and absent measured note evidence fail closed', () => {
+  for (const kind of ['constructor','toString','__proto__']) {
+    const plan=structuredClone(examples[0].plan); plan.cards[0].kind=kind;
+    assert.equal(validateVisualPlan(plan),false);
+  }
+  const plan=structuredClone(examples[0].plan);
+  plan.cards[0].expected.notes=[];
+  assert.equal(validateVisualPlan(plan),false);
+});

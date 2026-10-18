@@ -4,8 +4,16 @@ import { InputError } from './validation.js';
 
 export const MAX_WAV_BYTES = 1_350_000;
 export const MAX_JSON_BYTES = 1_850_000;
-const TTL_MS = 10 * 60 * 1000;
+export const HARD_TTL_MS = 10 * 60 * 1000;
+export const RETRY_GRACE_MS = 60 * 1000;
 const MAX_ARTIFACTS = 24;
+type CleanupTimer = { cancel(): void };
+type ScheduleCleanup = (callback: () => void, delayMs: number) => CleanupTimer;
+const scheduleCleanupTimer: ScheduleCleanup = (callback, delayMs) => {
+  const timer = setTimeout(callback, delayMs);
+  timer.unref();
+  return { cancel: () => clearTimeout(timer) };
+};
 
 export type Artifact = {
   metadata: RecordingMetadata;
@@ -13,6 +21,8 @@ export type Artifact = {
   digest: string;
   id: string;
   expiresAt: number;
+  purgeAt: number;
+  coachingState?: 'skipped' | 'completed';
   analysis?: unknown;
   analysisPromise?: Promise<unknown>;
   coaching?: unknown;
@@ -97,15 +107,40 @@ export function validateWav(bytes: Buffer, declaredDuration: number): void {
 export class ArtifactStore {
   private byId = new Map<string, Artifact>();
   private byAttempt = new Map<string, string>();
-  constructor(private clock: () => number = Date.now) {}
+  private cleanupTimer: CleanupTimer | undefined;
+  private disposed = false;
+  constructor(private clock: () => number = Date.now, private schedule: ScheduleCleanup = scheduleCleanupTimer) {}
+  private scheduleCleanup(): void {
+    this.cleanupTimer?.cancel();
+    if (this.disposed || this.byId.size === 0) return;
+    const next = Math.min(...Array.from(this.byId.values(), artifact => artifact.purgeAt));
+    this.cleanupTimer = this.schedule(() => {
+      this.cleanupTimer = undefined;
+      this.cleanup();
+    }, Math.max(1, next - this.clock()));
+  }
   cleanup(): void {
     const now = this.clock();
     for (const [id, artifact] of this.byId) {
-      if (artifact.expiresAt <= now && !artifact.analysisPromise && !artifact.coachingPromise) {
+      if (artifact.purgeAt <= now) {
         this.byId.delete(id);
         this.byAttempt.delete(artifact.metadata.attemptId);
       }
     }
+    this.scheduleCleanup();
+  }
+  complete(artifact: Artifact, coachingState: 'skipped' | 'completed'): void {
+    if (this.byId.get(artifact.id) !== artifact) return;
+    if (!artifact.coachingState) artifact.purgeAt = Math.min(artifact.expiresAt, this.clock() + RETRY_GRACE_MS);
+    artifact.coachingState = coachingState;
+    this.scheduleCleanup();
+  }
+  dispose(): void {
+    this.disposed = true;
+    this.cleanupTimer?.cancel();
+    this.cleanupTimer = undefined;
+    this.byId.clear();
+    this.byAttempt.clear();
   }
   put(metadata: RecordingMetadata, bytes: Buffer, audioBase: string): RecordingReceipt {
     this.cleanup();
@@ -118,9 +153,11 @@ export class ArtifactStore {
       }
     } else {
       if (this.byId.size >= MAX_ARTIFACTS) throw new StoreFullError();
-      artifact = { id: randomUUID(), metadata, bytes: Buffer.from(bytes), digest, expiresAt: this.clock() + TTL_MS };
+      const expiresAt = this.clock() + HARD_TTL_MS;
+      artifact = { id: randomUUID(), metadata, bytes: Buffer.from(bytes), digest, expiresAt, purgeAt: expiresAt };
       this.byId.set(artifact.id, artifact);
       this.byAttempt.set(metadata.attemptId, artifact.id);
+      this.scheduleCleanup();
     }
     return {
       ...metadata, artifactId: artifact.id, audioUrl: audioBase + '/v1/recordings/' + artifact.id + '/audio',

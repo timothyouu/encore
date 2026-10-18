@@ -130,6 +130,73 @@ test('rejects malformed WAV and expires artifact with manual clock', async () =>
     assert.equal((await post(base, '/v1/analyze', { artifactId: first.artifactId, attemptId: 'attempt-1', passageId: 'P01', passageVersion: '1' })).status, 410);
   } finally { await close(server); }
 });
+test('pending analysis cannot return a usable result after hard expiry', async () => {
+  let now = 1_000;
+  let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const fetchImpl = async (): Promise<Response> => {
+    started?.();
+    await blocked;
+    return new Response(JSON.stringify(analysis()), { status: 200 });
+  };
+  const server = createCoachServer({ library, chooser: null, now: () => now, fetchImpl: fetchImpl as typeof fetch });
+  const base = await serve(server);
+  try {
+    const upload = { metadata, wavBase64: wav().toString('base64') };
+    const first = await (await post(base, '/v1/recordings', upload)).json() as { artifactId: string; audioUrl: string };
+    const pending = post(base, '/v1/analyze', { artifactId: first.artifactId, attemptId: metadata.attemptId,
+      passageId: 'P01', passageVersion: '1' });
+    await entered;
+    now += 10 * 60 * 1000;
+    assert.equal((await fetch(first.audioUrl)).status, 410);
+    const second = await (await post(base, '/v1/recordings', upload)).json() as { artifactId: string };
+    assert.notEqual(second.artifactId, first.artifactId);
+    release?.();
+    assert.equal((await pending).status, 410, 'expired analysis must not produce a result that coaching rejects');
+    assert.equal((await post(base, '/v1/analyze', { artifactId: first.artifactId, attemptId: metadata.attemptId,
+      passageId: 'P01', passageVersion: '1' })).status, 410);
+  } finally { release?.(); await close(server); }
+});
+test('hung analysis has a bounded response deadline and remains retryable', async () => {
+  let calls = 0;
+  const server = createCoachServer({ library, chooser: null, analysisTimeoutMs: 10,
+    fetchImpl: (async () => { calls++; return new Promise<Response>(() => {}); }) as typeof fetch });
+  const base = await serve(server);
+  try {
+    const receipt = await (await post(base, '/v1/recordings', { metadata, wavBase64: wav().toString('base64') })).json() as { artifactId: string };
+    const ref = { artifactId: receipt.artifactId, attemptId: metadata.attemptId, passageId: 'P01', passageVersion: '1' };
+    assert.equal((await post(base, '/v1/analyze', ref)).status, 502);
+    assert.equal((await post(base, '/v1/analyze', ref)).status, 502);
+    assert.equal(calls, 2);
+  } finally { await close(server); }
+});
+test('pending coaching cannot return a usable result after hard expiry', async () => {
+  let now = 1_000;
+  let release: (() => void) | undefined;
+  let started: (() => void) | undefined;
+  const entered = new Promise<void>(resolve => { started = resolve; });
+  const blocked = new Promise<void>(resolve => { release = resolve; });
+  const server = createCoachServer({ library, now: () => now,
+    fetchImpl: (async () => new Response(JSON.stringify(analysis()), { status: 200 })) as typeof fetch,
+    chooser: async () => {
+      started?.();
+      await blocked;
+      return { findingId: 'f1', actionId: 'slow_key', visualKind: 'keyboard' };
+    } });
+  const base = await serve(server);
+  try {
+    const receipt = await (await post(base, '/v1/recordings', { metadata, wavBase64: wav().toString('base64') })).json() as { artifactId: string };
+    const ref = { artifactId: receipt.artifactId, attemptId: metadata.attemptId, passageId: 'P01', passageVersion: '1' };
+    const measured = await (await post(base, '/v1/analyze', ref)).json() as AnalysisResult;
+    const pending = post(base, '/v1/coach', { ...ref, analysis: measured });
+    await entered;
+    now += 10 * 60 * 1000;
+    release?.();
+    assert.equal((await pending).status, 410);
+  } finally { release?.(); await close(server); }
+});
 test('Strands GoogleModel streaming request contains inline WAV bytes', async () => {
   let captured: GenerateContentParameters | undefined;
   const fake = { models: { generateContentStream: async (params: GenerateContentParameters): Promise<never> => {

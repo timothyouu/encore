@@ -547,9 +547,9 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page result-page');
     const analysis = record.analysis;
     add(page, control(store.state.historyOrigin ? '‹ Back to history' : '‹ Library', 'back-link', returnFromResult), resultHeader(passage, record));
-    if (!analysis || analysis.status !== 'ok') {
-      const message = analysis?.status === 'uncertain' || analysis?.status === 'insufficient_audio' ? "I couldn't hear that clearly. Try again." : record.error?.message ?? 'This result is unavailable.';
-      const unclearCard = analysis ? resolveVisualPlan(analysis, passage, record.coaching).cards.find(card => card.kind === 'unclear_audio') : undefined;
+    const unclearCard = analysis ? resolveVisualPlan(analysis, passage, record.coaching).cards.find(card => card.kind === 'unclear_audio') : undefined;
+    if (!analysis || analysis.status !== 'ok' || unclearCard) {
+      const message = unclearCard || analysis?.status === 'uncertain' || analysis?.status === 'insufficient_audio' ? "I couldn't hear that clearly. Try again." : record.error?.message ?? 'This result is unavailable.';
       if (unclearCard) {
         const view = mountPaperVisualization(unclearCard);
         paperViews.push(view);

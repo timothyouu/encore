@@ -1,6 +1,7 @@
 import { passages } from './passages.ts';
-import type { AttemptRecord, SessionStore } from './session.ts';
+import { HISTORY_CAP, type AttemptRecord, type SessionStore } from './session.ts';
 import { normalizeBlob, bytesToBase64, type NormalizedAudio } from './audio-normalization.ts';
+import type { PhonePersistence } from './storage.ts';
 
 export type CaptureEndpoints = { upload: string; analysis: string; coaching: string };
 
@@ -8,6 +9,10 @@ const MAX_CAPTURE_MS = 30_000;
 const RECORDER_STOP_TIMEOUT_MS = 5_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const ANALYSIS_TIMEOUT_MS = 70_000;
+const RETRY_TTL_MS = 10 * 60 * 1000;
+const RETRY_COUNT_CAP = 24;
+const RETRY_BYTE_CAP = 32 * 1024 * 1024;
+const MAX_NORMALIZED_WAV_BYTES = 44 + Math.ceil(MAX_CAPTURE_MS / 1000 * 22_050 * 2);
 export function requestTimeoutMs(stage: 'normalization' | 'upload' | 'analysis' | 'coaching'): number {
   return stage === 'analysis' ? ANALYSIS_TIMEOUT_MS : REQUEST_TIMEOUT_MS;
 }
@@ -69,19 +74,23 @@ export class PhoneCapture {
   private disposed = false;
   private activeAttemptId: string | null = null;
   private rejectRecording: ((error: Error) => void) | null = null;
-  private saved = new Map<string, { blob: Blob; normalized?: NormalizedAudio; artifact?: Artifact }>();
+  private saved = new Map<string, { blob?: Blob; normalized?: NormalizedAudio; artifact?: Artifact; savedAt?: number }>();
+  private retryExpiryTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly store: SessionStore;
   private endpoints: CaptureEndpoints;
   private readonly onChange?: () => void;
+  private readonly persistence?: PhonePersistence;
 
   constructor(
     store: SessionStore,
     endpoints: CaptureEndpoints,
     onChange?: () => void,
+    persistence?: PhonePersistence,
   ) {
     this.store = store;
     this.endpoints = endpoints;
     this.onChange = onChange;
+    this.persistence = persistence;
     if (typeof window !== 'undefined') window.addEventListener('pagehide', this.onPageHide);
   }
 
@@ -99,6 +108,35 @@ export class PhoneCapture {
   }
 
   private changed(): void { this.onChange?.(); }
+
+  private memoryBytes(): number {
+    let bytes = 0;
+    for (const item of this.saved.values()) bytes += item.normalized?.wav.byteLength ?? item.blob?.size ?? 0;
+    return bytes;
+  }
+
+  private pruneMemory(): void {
+    let removed = 0;
+    for (const [id, item] of this.saved) {
+      if (Date.now() - (item.savedAt ?? 0) <= RETRY_TTL_MS) continue;
+      this.saved.delete(id); removed++;
+    }
+    if (removed) this.store.warnStorage(`${removed} recording${removed === 1 ? '' : 's'} expired after 10 minutes and can no longer be retried.`);
+    this.scheduleMemoryExpiry();
+  }
+
+  private scheduleMemoryExpiry(): void {
+    if (this.retryExpiryTimer) clearTimeout(this.retryExpiryTimer);
+    const earliest = Math.min(...[...this.saved.values()].map(item => (item.savedAt ?? 0) + RETRY_TTL_MS));
+    if (!Number.isFinite(earliest)) return;
+    this.retryExpiryTimer = setTimeout(() => this.pruneMemory(), Math.max(1, earliest - Date.now() + 1));
+    (this.retryExpiryTimer as ReturnType<typeof setTimeout> & { unref?: () => void }).unref?.();
+  }
+
+  private remember(attemptId: string, value: { blob?: Blob; normalized?: NormalizedAudio; artifact?: Artifact; savedAt?: number }): void {
+    this.saved.set(attemptId, { ...value, savedAt: value.savedAt ?? Date.now() });
+    this.scheduleMemoryExpiry();
+  }
 
   private clearCapture(): void {
     if (this.timer !== undefined) clearTimeout(this.timer);
@@ -136,6 +174,16 @@ export class PhoneCapture {
 
   async start(): Promise<void> {
     if (this.disposed || this.busy || this.recording || this.store.state.screen !== 'ready') return;
+    this.pruneMemory();
+    if (this.store.records.length >= HISTORY_CAP) {
+      this.store.warnStorage('History is full at 1,000 attempts. Existing results are preserved; a new attempt cannot be recorded.');
+      return;
+    }
+    if (this.saved.size >= RETRY_COUNT_CAP || this.memoryBytes() + MAX_NORMALIZED_WAV_BYTES > RETRY_BYTE_CAP ||
+        (this.persistence && !this.persistence.canReserveAudio(MAX_NORMALIZED_WAV_BYTES))) {
+      this.error = 'Recording retry storage is full (24 recordings or 32 MiB). Retry an earlier recording or wait for its 10 minute window to expire.';
+      this.changed(); return;
+    }
     this.error = null;
     if (!validateEndpoints(this.endpoints)) {
       this.error = 'Configure upload, analysis, and coaching endpoints before recording.';
@@ -226,7 +274,7 @@ export class PhoneCapture {
         this.fail(record, 'capture', 'No audio was recorded.');
         return;
       }
-      this.saved.set(record.attemptId, { blob });
+      this.remember(record.attemptId, { blob });
       await this.process(record, generation);
     } catch (cause) {
       if (generation !== this.generation || this.disposed) return;
@@ -272,14 +320,40 @@ export class PhoneCapture {
     if (!passage) { this.fail(record, 'analysis', 'The selected passage is unavailable.'); return; }
     const saved = this.saved.get(record.attemptId);
     if (!saved) return;
+    if (Date.now() - (saved.savedAt ?? 0) > RETRY_TTL_MS) {
+      this.saved.delete(record.attemptId); this.scheduleMemoryExpiry();
+      this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.');
+      return;
+    }
     if (!saved.normalized) {
       this.store.setProcessingStage(record.attemptId, 'normalization');
       this.requestStage = 'normalization';
-      try { saved.normalized = await normalizeBlob(saved.blob); }
+      try {
+        if (!saved.blob) throw new Error('Audio is unavailable for normalization.');
+        saved.normalized = await normalizeBlob(saved.blob);
+        saved.savedAt ??= Date.now();
+      }
       catch (cause) { if (generation === this.generation) this.fail(record, 'normalization', message(cause)); return; }
     }
     if (generation !== this.generation || this.disposed) return;
     const normalized = saved.normalized;
+    if (this.persistence && !this.persistence.hasAudio(record.attemptId)) {
+      try {
+        await this.persistence.saveAudio({ attemptId: record.attemptId, ...normalized, savedAt: saved.savedAt ?? Date.now() });
+        saved.blob = undefined;
+      } catch {
+        this.store.warnStorage(this.persistence.warning ?? 'Recording could not be saved for retry. It remains available only in this open session.');
+        if (this.persistence.warning?.includes('expired')) {
+          this.fail(record, 'normalization', 'Recording retry window expired after 10 minutes. Record a new attempt.');
+          return;
+        }
+      }
+    }
+    if (this.persistence?.hasAudio(record.attemptId)) {
+      this.saved.delete(record.attemptId);
+      this.scheduleMemoryExpiry();
+    }
+    if (generation !== this.generation || this.disposed) return;
     let artifact = saved.artifact;
     let uploaded = false;
     if (!artifact || Date.parse(artifact.expiresAt) <= Date.now() + 1_000) {
@@ -318,7 +392,10 @@ export class PhoneCapture {
         return;
       }
     }
-    if (record.analysis?.status !== 'ok') return;
+    if (record.analysis?.status !== 'ok') {
+      if (record.processingStatus === 'result') await this.releaseAudio(record.attemptId);
+      return;
+    }
     this.store.setProcessingStage(record.attemptId, 'coaching');
     try {
       this.requestStage = 'coaching';
@@ -327,6 +404,8 @@ export class PhoneCapture {
       if (generation !== this.generation || this.disposed) return;
       if (!this.store.applyCoaching(record.attemptId, coaching)) {
         this.fail(record, 'coaching', 'The coaching response was invalid.');
+      } else {
+        await this.releaseAudio(record.attemptId);
       }
     } catch (cause) {
       if (/HTTP (404|410)/.test(message(cause))) saved.artifact = undefined;
@@ -334,8 +413,27 @@ export class PhoneCapture {
     }
   }
 
+  private async releaseAudio(attemptId: string): Promise<void> {
+    this.saved.delete(attemptId);
+    this.scheduleMemoryExpiry();
+    if (!this.persistence?.hasAudio(attemptId)) { this.changed(); return; }
+    try { await this.persistence.deleteAudio(attemptId); }
+    catch { this.store.warnStorage('A completed recording could not be removed from local retry storage.'); }
+    this.changed();
+  }
+
   async processWavBlob(blob: Blob): Promise<void> {
     if (this.disposed || this.busy || this.recording || this.store.state.screen !== 'ready') return;
+    this.pruneMemory();
+    if (this.store.records.length >= HISTORY_CAP) {
+      this.store.warnStorage('History is full at 1,000 attempts. Existing results are preserved; a new attempt cannot be recorded.');
+      return;
+    }
+    if (this.saved.size >= RETRY_COUNT_CAP || this.memoryBytes() + blob.size > RETRY_BYTE_CAP ||
+        (this.persistence && !this.persistence.canReserveAudio(MAX_NORMALIZED_WAV_BYTES))) {
+      this.error = 'Recording retry storage is full (24 recordings or 32 MiB). Retry an earlier recording or wait for its 10 minute window to expire.';
+      this.changed(); return;
+    }
     if (!validateEndpoints(this.endpoints)) { this.error = 'Configure upload, analysis, and coaching endpoints first.'; this.changed(); return; }
     this.busy = true;
     const generation = ++this.generation;
@@ -344,7 +442,7 @@ export class PhoneCapture {
       if (!record) return;
       this.activeAttemptId = record.attemptId;
       this.store.stop();
-      this.saved.set(record.attemptId, { blob });
+      this.remember(record.attemptId, { blob });
       await this.process(record, generation);
     } finally {
       if (generation === this.generation) { this.busy = false; this.activeAttemptId = null; this.changed(); }
@@ -353,21 +451,39 @@ export class PhoneCapture {
 
   async retry(attemptId = this.store.state.attemptId ?? ''): Promise<void> {
     if (this.disposed || this.busy || this.recording) return;
+    this.pruneMemory();
     const record = this.store.records.find(item => item.attemptId === attemptId);
-    if (!record || !this.saved.has(attemptId)) {
+    if (!record || (!this.saved.has(attemptId) && !this.persistence?.hasAudio(attemptId))) {
       this.error = 'Audio for this attempt is no longer available. Record a new attempt.';
       this.changed(); return;
     }
-    if (!this.store.beginRetry(attemptId)) return;
-    this.busy = true; this.error = null; this.activeAttemptId = attemptId;
+    this.busy = true;
     const generation = ++this.generation;
-    try { await this.process(record, generation); }
-    finally { if (generation === this.generation) { this.busy = false; this.activeAttemptId = null; this.changed(); } }
+    this.changed();
+    try {
+      if (!this.saved.has(attemptId) && this.persistence) {
+        try {
+          const durable = await this.persistence.getAudio(attemptId);
+          if (durable) this.remember(attemptId, { normalized: durable, savedAt: durable.savedAt });
+        } catch { this.store.warnStorage('Saved recording could not be read for retry.'); }
+        if (!this.saved.has(attemptId)) {
+          this.error = 'Audio for this attempt is no longer available. Record a new attempt.';
+          return;
+        }
+      }
+      if (generation !== this.generation || this.disposed || !this.store.beginRetry(attemptId)) return;
+      this.error = null; this.activeAttemptId = attemptId;
+      await this.process(record, generation);
+    } finally {
+      if (generation === this.generation) { this.busy = false; this.activeAttemptId = null; this.changed(); }
+    }
   }
   canRetry(attemptId: string): boolean {
     const record = this.store.records.find(item => item.attemptId === attemptId);
+    const memory = this.saved.get(attemptId);
     return !this.disposed && !this.busy && !!record && record.captureStatus === 'completed' &&
-      record.processingStatus === 'error' && record.error?.stage !== 'capture' && this.saved.has(attemptId);
+      record.processingStatus === 'error' && record.error?.stage !== 'capture' &&
+      ((!!memory && Date.now() - (memory.savedAt ?? 0) <= RETRY_TTL_MS) || this.persistence?.hasAudio(attemptId) === true);
   }
 
   cancel(): void {
@@ -391,6 +507,7 @@ export class PhoneCapture {
     if (this.store.state.screen === 'recording') this.interruptCapture('Recording was interrupted when the page closed.');
     else this.cancel();
     this.saved.clear();
+    if (this.retryExpiryTimer) clearTimeout(this.retryExpiryTimer);
     this.disposed = true;
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', this.onPageHide);
   }

@@ -21,6 +21,7 @@ export type CoachServerOptions = {
   allowedOrigin?: string;
   publicBaseUrl?: string;
   timeoutMs?: number;
+  analysisTimeoutMs?: number;
   now?: () => number;
 };
 export async function loadLibrary(): Promise<Passage[]> {
@@ -60,6 +61,24 @@ async function readJson(request: IncomingMessage, maximum: number): Promise<unkn
 }
 class TooLargeError extends Error {}
 class AnalysisError extends Error {}
+async function boundedAnalysis<T>(run: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
+  const controller = new AbortController();
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      run(controller.signal),
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          controller.abort();
+          reject(new AnalysisError('analysis deadline exceeded'));
+        }, timeoutMs);
+      })
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    controller.abort();
+  }
+}
 function requestFields(raw: unknown): Record<string, unknown> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new InputError('request object required');
   return raw as Record<string, unknown>;
@@ -87,8 +106,8 @@ export function createCoachServer(options: CoachServerOptions): Server {
   const rates = new Map<string, RateEntry>();
   const fetcher = options.fetchImpl ?? fetch;
   const target = analysisEndpoint(options.analysisUrl ?? 'http://127.0.0.1:8002/v1/analyze');
-  const cleanupTimer = setInterval(() => store.cleanup(), 60_000);
-  cleanupTimer.unref();
+  const analysisTimeoutMs = Math.min(65_000, Math.max(1, options.analysisTimeoutMs ?? 65_000));
+  const coachTimeoutMs = Math.min(60_000, Math.max(1, options.timeoutMs ?? 12_000));
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin;
     const corsOrigin = origin && options.allowedOrigin === origin ? origin : undefined;
@@ -143,11 +162,11 @@ export function createCoachServer(options: CoachServerOptions): Server {
       if (path === '/v1/analyze') {
         if (artifact.analysis) { send(response, 200, artifact.analysis, corsOrigin); return; }
         if (!artifact.analysisPromise) {
-          artifact.analysisPromise = invokeBasicPitch(artifact.id, async (): Promise<AnalysisResult> => {
+          artifact.analysisPromise = boundedAnalysis(signal => invokeBasicPitch(artifact.id, async (): Promise<AnalysisResult> => {
             const form = new FormData();
             form.set('metadata', JSON.stringify(artifact.metadata));
             form.set('audio', new Blob([new Uint8Array(artifact.bytes)], { type: 'audio/wav' }), 'attempt.wav');
-            const upstream = await fetcher(target, { method: 'POST', body: form, signal: AbortSignal.timeout(65_000) });
+            const upstream = await fetcher(target, { method: 'POST', body: form, signal });
             if (!upstream.ok) throw new AnalysisError('analysis unavailable');
             const result = await upstream.json() as unknown;
             let parsed: ReturnType<typeof parseCoachRequest>;
@@ -157,10 +176,19 @@ export function createCoachServer(options: CoachServerOptions): Server {
             } catch { throw new AnalysisError('invalid analysis result'); }
             if (parsed.request.analysis.attemptId !== artifact.metadata.attemptId ||
                 parsed.request.analysis.attemptTempoBpm !== artifact.metadata.attemptTempoBpm) throw new AnalysisError('analysis mismatch');
-            if (parsed.request.analysis.status !== 'error') artifact.analysis = parsed.request.analysis;
-            artifact.analysisPromise = undefined;
             return parsed.request.analysis;
-          }).catch(cause => { artifact.analysisPromise = undefined; throw cause; });
+          }), analysisTimeoutMs).then(result => {
+            if (store.get(artifact.id) !== artifact) throw new ExpiredArtifactError();
+            if (result.status !== 'error') {
+              artifact.analysis = result;
+              if (result.status !== 'ok') store.complete(artifact, 'skipped');
+            }
+            return result;
+          }).catch(cause => {
+            if (cause instanceof ExpiredArtifactError) throw cause;
+            throw new AnalysisError('analysis unavailable');
+          })
+            .finally(() => { artifact.analysisPromise = undefined; });
         }
         send(response, 200, await artifact.analysisPromise, corsOrigin); return;
       }
@@ -171,8 +199,14 @@ export function createCoachServer(options: CoachServerOptions): Server {
       }
       if (artifact.coaching) { send(response, 200, artifact.coaching, corsOrigin); return; }
       if (!artifact.coachingPromise) {
-        artifact.coachingPromise = coach(parsed.request, parsed.passage, artifact.bytes, options.chooser, options.timeoutMs ?? 12_000)
-          .then((result: CoachingResult) => { artifact.coaching = result; artifact.coachingPromise = undefined; return result; })
+        artifact.coachingPromise = coach(parsed.request, parsed.passage, artifact.bytes, options.chooser, coachTimeoutMs)
+          .then((result: CoachingResult) => {
+            if (store.get(artifact.id) !== artifact) throw new ExpiredArtifactError();
+            artifact.coaching = result;
+            store.complete(artifact, 'completed');
+            artifact.coachingPromise = undefined;
+            return result;
+          })
           .catch(cause => { artifact.coachingPromise = undefined; throw cause; });
       }
       send(response, 200, await artifact.coachingPromise, corsOrigin);
@@ -189,7 +223,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       } else error(response, 500, 'internal_error', corsOrigin);
     }
   });
-  server.on('close', () => clearInterval(cleanupTimer));
+  server.on('close', () => store.dispose());
   return server;
 }
 export function isLoopbackHost(host: string): boolean {

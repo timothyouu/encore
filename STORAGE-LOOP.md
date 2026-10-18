@@ -1,0 +1,9 @@
+# Storage implementation loop
+Trigger: user request on October 17, 2026. Supervised in-session only; no automation.
+Isolated branch: codex/local-storage-retention at /home/tim/projects/encore-storage. Existing modified renderer work copied from encore-wav-flow; do not overwrite unrelated changes.
+Acceptance units: (1) spec policy; (2) local settings/history and persistent bounded retry; (3) bounded server audio lifecycle; (4) independently verified integration and handoff.
+Writers: mobile worker owns mobile/src and mobile/tests; server worker owns server/src; coordinator owns spec, acceptance, and documentation.
+Verifier: bash scripts/verify.sh plus independent acceptance/storage* checks and real browser IndexedDB/navigation/reload checks. Implementation workers must not edit acceptance tests or this methodology. Existing regressions must not be weakened. Tests added by workers are supporting evidence, not the sole acceptance gate.
+Loop budget: initial implementation plus at most six fix iterations; stop when all required gates pass. The same unresolved failure twice triggers a circuit breaker and concrete blocker report; do not retry indefinitely. Continue independent authorized work when one gate is externally blocked.
+Constraints: no installs, secrets, provider calls, deployments, g2 changes, or commits. Existing dependencies are reused via symlinks. No claim of physical device verification.
+Append results and correction cycles to docs/storage-verification.md. Independent integration review precedes acceptance. Report actual commands, browser observations, remaining limitations and account-wide allowance attribution uncertainty.

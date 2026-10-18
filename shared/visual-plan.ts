@@ -96,20 +96,66 @@ export function validateVisualCard(value: unknown): value is VisualCard {
   if (evidence.source === 'analysis' && (value.segments !== undefined || value.historyRows !== undefined)) return false;
   if (value.segments !== undefined && !validSegments(value.segments)) return false;
   if (value.historyRows !== undefined && !validHistory(value.historyRows)) return false;
+  const expected = value.expected as VisualCard['expected'];
+  const detected = value.detected as VisualCard['detected'];
+  const metrics = value.metrics as VisualCard['metrics'];
+  const expectedIds = new Set(expected.notes.map(note => note.id));
+  const detectedIds = new Set(detected.notes.map(note => note.id));
+  if (evidence.referenceNoteIds.some(noteId => !expectedIds.has(noteId)) ||
+      evidence.detectedNoteIds.some(noteId => !detectedIds.has(noteId))) return false;
+  const focus = value.focus as VisualCard['focus'];
+  const inFocus = (note: VisualNote): boolean => note.onsetBeat < focus.endBeat &&
+    note.onsetBeat + note.durationBeats > focus.startBeat;
+  const metricKeys: Record<VisualKind, readonly string[]> = {
+    wrong_note: [], missing_note: [], extra_note: [], timing: ['timingDeltaBeats'],
+    duration: ['expectedDurationBeats', 'detectedDurationBeats'], unclear_audio: [],
+    tempo_drift: ['driftPercent'], uneven_rhythm: [], unexpected_pause: ['gapBeats'],
+    rest_violation: [], section_repeat_skip: [], recurring_trouble: ['recurrenceCount', 'recurrenceWindow']
+  };
+  const needed = metricKeys[kind];
+  if (Object.keys(metrics).length !== needed.length || needed.some(metric => !Object.hasOwn(metrics, metric))) return false;
+  const hasReference = evidence.referenceNoteIds.length > 0;
+  const hasDetected = evidence.detectedNoteIds.length > 0;
+  if (kind === 'wrong_note' && (!hasReference || !hasDetected)) return false;
+  if (kind === 'missing_note' && !hasReference) return false;
+  if (kind === 'extra_note' && !hasDetected) return false;
+  if ((kind === 'timing' || kind === 'duration') && (!hasReference || !hasDetected)) return false;
+  if (['wrong_note', 'missing_note', 'timing', 'duration'].includes(kind) &&
+      !expected.notes.some(note => evidence.referenceNoteIds.includes(note.id) && inFocus(note))) return false;
+  if (['wrong_note', 'extra_note', 'timing', 'duration'].includes(kind) &&
+      !detected.notes.some(note => evidence.detectedNoteIds.includes(note.id) && inFocus(note))) return false;
   if (kind === 'unclear_audio') {
     if (evidence.measurement !== 'audio_quality' || evidence.findingIds.length > 0 ||
         (evidence.source === 'analysis' && value.variant !== 'uncertain' && value.variant !== 'no_piano')) return false;
-    if ((value.expected as VisualCard['expected']).notes.length > 0 || (value.detected as VisualCard['detected']).notes.length > 0) return false;
-  } else if (evidence.source === 'analysis' && (evidence.measurement !== 'note_alignment' || evidence.findingIds.length === 0)) return false;
+    if (expected.notes.length > 0 || detected.notes.length > 0 || hasReference || hasDetected) return false;
+  } else if (evidence.findingIds.length === 0) return false;
+  if (['wrong_note', 'missing_note', 'extra_note', 'timing', 'duration'].includes(kind) &&
+      evidence.measurement !== 'note_alignment') return false;
+  if (kind === 'tempo_drift' && (evidence.measurement !== 'phrase_pattern' ||
+      expected.notes.length < 3 || detected.notes.length < 3 || metrics.driftPercent === 0)) return false;
+  if (kind === 'uneven_rhythm' && (evidence.measurement !== 'phrase_pattern' ||
+      expected.notes.length < 3 || detected.notes.length < 3)) return false;
+  if (kind === 'unexpected_pause' && (evidence.measurement !== 'phrase_pattern' ||
+      expected.notes.length < 2 || detected.notes.length < 1 || metrics.gapBeats === 0)) return false;
+  if (kind === 'rest_violation' && (evidence.measurement !== 'phrase_pattern' || detected.notes.length < 1 ||
+      expected.notes.some(note => note.onsetBeat < (value.focus as VisualCard['focus']).endBeat &&
+        note.onsetBeat + note.durationBeats > (value.focus as VisualCard['focus']).startBeat))) return false;
   if (kind === 'recurring_trouble' && (evidence.source !== 'fixture' || evidence.measurement !== 'history' ||
       value.historyRows === undefined)) return false;
+  if (kind === 'recurring_trouble') {
+    const rows = value.historyRows as VisualCard['historyRows'] ?? [];
+    const observed = rows.filter(row => row.flaggedBeats.some(beat => beat >= focus.startBeat && beat < focus.endBeat)).length;
+    if (rows.length < 2 || metrics.recurrenceWindow !== rows.length || metrics.recurrenceCount !== observed) return false;
+  }
   if (kind === 'section_repeat_skip' && (evidence.source !== 'fixture' || value.segments === undefined ||
-      !(value.expected as VisualCard['expected']).segmentIds || !(value.detected as VisualCard['detected']).segmentIds)) return false;
+      evidence.measurement !== 'phrase_pattern' || !expected.segmentIds || !detected.segmentIds ||
+      expected.notes.length === 0 || detected.notes.length === 0)) return false;
   if (kind === 'section_repeat_skip') {
     const segmentIds = new Set((value.segments as VisualCard['segments'] ?? []).map(segment => segment.id));
-    const expectedPath = (value.expected as VisualCard['expected']).segmentIds ?? [];
-    const detectedPath = (value.detected as VisualCard['detected']).segmentIds ?? [];
-    if (new Set(expectedPath).size !== expectedPath.length ||
+    const expectedPath = expected.segmentIds ?? [];
+    const detectedPath = detected.segmentIds ?? [];
+    if (segmentIds.size < 2 || expectedPath.length < 2 || detectedPath.length < 1 ||
+        new Set(expectedPath).size !== expectedPath.length ||
         [...expectedPath, ...detectedPath].some(segmentId => !segmentIds.has(segmentId))) return false;
   }
   return true;

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PhoneCapture, validateEndpoints, requestTimeoutMs } from '../src/capture.ts';
 import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../src/session.ts';
+import { PhonePersistence } from '../src/storage.ts';
 
 const endpoints = { upload: '/api/recordings', analysis: '/api/analyze', coaching: '/api/coach' };
 const artifact = attemptId => ({ artifactId: 'artifact-1', attemptId, audioUrl: '/v1/recordings/artifact-1',
@@ -105,6 +106,68 @@ test('mismatched artifact fails upload and retry reuses same completed attempt',
     assert.deepEqual(calls, [endpoints.upload, endpoints.upload, endpoints.analysis]);
     capture.dispose();
   } finally { env.restore(); }
+});
+
+test('failed upload retries normalized WAV after reload using the original attempt', async () => {
+  const state = new Map(); const audio = new Map();
+  const backend = {
+    async get(store, key) { return structuredClone((store === 'state' ? state : audio).get(key)); },
+    async put(store, key, value) { (store === 'state' ? state : audio).set(key, structuredClone(value)); },
+    async delete(store, key) { (store === 'state' ? state : audio).delete(key); },
+    async values() { return structuredClone([...audio.values()]); },
+  };
+  const legacy = { getItem() { return null; }, setItem() {}, removeItem() {} };
+  let session = new SessionStore(legacy); let failing = true; const calls = [];
+  const env = browser(async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    if (url === endpoints.upload && failing) return { ok: false, status: 503 };
+    const record = session.records[0];
+    return { ok: true, json: async () => url === endpoints.upload ? artifact(record.attemptId) :
+      url === endpoints.analysis ? fixtureAnalysis(record, 'uncertain') : {} };
+  });
+  try {
+    let persistence = new PhonePersistence(backend, legacy);
+    await session.hydrate(persistence); await persistence.hydrateAudio();
+    session.selectPassage('P01'); const first = new PhoneCapture(session, endpoints, undefined, persistence);
+    await first.start(); await first.stop();
+    const attemptId = session.records[0].attemptId;
+    assert.equal(session.records[0].error.stage, 'upload');
+    assert.equal(audio.has(attemptId), true);
+    await persistence.flush(); first.dispose();
+
+    session = new SessionStore(legacy); persistence = new PhonePersistence(backend, legacy);
+    await session.hydrate(persistence); await persistence.hydrateAudio();
+    assert.equal(calls.length, 1, 'hydrating history must not contact the service');
+    const second = new PhoneCapture(session, endpoints, undefined, persistence);
+    assert.equal(second.canRetry(attemptId), true);
+    failing = false; await second.retry(attemptId);
+    assert.equal(session.records.length, 1);
+    assert.equal(session.count(), 1);
+    assert.equal(session.records[0].attemptId, attemptId);
+    assert.equal(session.records[0].processingStatus, 'result');
+    assert.deepEqual(calls.map(call => call.url), [endpoints.upload, endpoints.upload, endpoints.analysis]);
+    assert.equal(calls[1].body.metadata.attemptId, attemptId);
+    assert.equal(audio.has(attemptId), false, 'terminal uncertain result removes retry audio');
+    second.dispose();
+  } finally { env.restore(); }
+});
+
+test('session-only failed audio stops being retryable after ten minutes', async () => {
+  const originalNow = Date.now; let now = 1000000; Date.now = () => now;
+  const session = store(); let calls = 0;
+  const env = browser(async () => { calls++; return { ok: false, status: 503 }; });
+  try {
+    session.selectPassage('P01'); const capture = new PhoneCapture(session, endpoints);
+    await capture.start(); await capture.stop();
+    const id = session.records[0].attemptId;
+    assert.equal(capture.canRetry(id), true);
+    now += 10 * 60 * 1000 + 1;
+    assert.equal(capture.canRetry(id), false);
+    await capture.retry(id);
+    assert.equal(calls, 1);
+    assert.match(session.storageWarning, /expired/);
+    capture.dispose();
+  } finally { env.restore(); Date.now = originalNow; }
 });
 test('correcting endpoints in the same tab retains failed attempt audio for retry', async () => {
   const session = store(); const requests = []; const corrected = '/api/corrected-recordings';

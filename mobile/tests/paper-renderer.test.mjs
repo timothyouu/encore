@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { renderPaperSvg } from '../src/paper-renderer.ts'
-import { VISUAL_KINDS } from '../../shared/visual-plan.ts'
+import { readFileSync } from 'node:fs'
+import { mountPaperVisualization, renderPaperSvg } from '../src/paper-renderer.ts'
+import { VISUAL_KINDS, validateVisualPlan } from '../../shared/visual-plan.ts'
 
 const names = Object.keys(VISUAL_KINDS)
 function note(id, midiPitch, onsetBeat, durationBeats = 1) {
@@ -10,19 +11,29 @@ function note(id, midiPitch, onsetBeat, durationBeats = 1) {
 function card(kind, variant = VISUAL_KINDS[kind].variants[0]) {
   const expected = [note('e1', 65, 4), note('e2', 67, 5), note('e3', 69, 6), note('e4', 71, 7)]
   const detected = [note('d1', 65, 4), note('d2', kind === 'wrong_note' ? 66 : 67, 5.25), note('d3', 69, 6.1), note('d4', 71, 7)]
+  const metricsByKind = {
+    wrong_note: {}, missing_note: {}, extra_note: {}, timing: { timingDeltaBeats: variant === 'late' ? 0.25 : -0.25 },
+    duration: { expectedDurationBeats: 2, detectedDurationBeats: variant === 'long' ? 3 : 1 },
+    unclear_audio: {}, tempo_drift: { driftPercent: 12 }, uneven_rhythm: {},
+    unexpected_pause: { gapBeats: 1.5 }, rest_violation: {}, section_repeat_skip: {},
+    recurring_trouble: { recurrenceCount: 3, recurrenceWindow: 3 },
+  }
   const value = {
     id: 'fixture-1', kind, variant, priority: VISUAL_KINDS[kind].priority,
     focus: { startBeat: 5, endBeat: 6 },
     expected: { label: 'F4 G4 A4 B4', notes: expected },
     detected: { label: 'F4 G♭4 A4 B4', notes: detected },
-    metrics: { timingDeltaBeats: variant === 'late' ? 0.25 : -0.25,
-      expectedDurationBeats: 2, detectedDurationBeats: variant === 'long' ? 3 : 1,
-      gapBeats: 1.5, recurrenceCount: 3, recurrenceWindow: 3 },
-    cue: 'Play G4 on beat 5',
-    evidence: { source: 'fixture', measurement: kind === 'unclear_audio' ? 'audio_quality' : kind === 'recurring_trouble' ? 'history' : 'note_alignment',
-      findingIds: kind === 'unclear_audio' ? [] : ['f1'], referenceNoteIds: ['e2'], detectedNoteIds: ['d2'] },
+    metrics: metricsByKind[kind],
+    cue: 'Play G4 on beat 6',
+    evidence: { source: 'fixture', measurement: kind === 'unclear_audio' ? 'audio_quality' :
+      kind === 'recurring_trouble' ? 'history' :
+      ['tempo_drift', 'uneven_rhythm', 'unexpected_pause', 'rest_violation', 'section_repeat_skip'].includes(kind) ? 'phrase_pattern' : 'note_alignment',
+      findingIds: kind === 'unclear_audio' ? [] : ['f1'],
+      referenceNoteIds: ['missing_note', 'extra_note', 'unclear_audio'].includes(kind) ? (kind === 'missing_note' ? ['e2'] : []) : ['e2'],
+      detectedNoteIds: ['missing_note', 'unclear_audio'].includes(kind) ? [] : ['d2'] },
   }
   if (kind === 'unclear_audio') { value.expected.notes = []; value.detected.notes = [] }
+  if (kind === 'rest_violation') { value.expected.notes = [note('e1', 65, 4, 1)]; value.detected.notes = [note('d2', 67, 5.2)]; value.evidence.referenceNoteIds = [] }
   if (kind === 'section_repeat_skip') {
     value.segments = [
       { id: 's1', label: 'E E', startBeat: 1, endBeat: 2 },
@@ -34,9 +45,9 @@ function card(kind, variant = VISUAL_KINDS[kind].variants[0]) {
     value.detected.segmentIds = variant === 'skipped' ? ['s1', 's2', 's4'] : ['s1', 's2', 's1', 's3', 's4']
   }
   if (kind === 'recurring_trouble') value.historyRows = [
-    { attemptId: 'a3', label: 'TAKE 3', flaggedBeats: [6] },
-    { attemptId: 'a4', label: 'TAKE 4', flaggedBeats: [5, 6] },
-    { attemptId: 'a5', label: 'TAKE 5', flaggedBeats: [6] },
+    { attemptId: 'a3', label: 'TAKE 3', flaggedBeats: [5] },
+    { attemptId: 'a4', label: 'TAKE 4', flaggedBeats: [5] },
+    { attemptId: 'a5', label: 'TAKE 5', flaggedBeats: [5] },
   ]
   return value
 }
@@ -118,4 +129,88 @@ test('keyboard overlays black keys and accidental keeps diatonic staff position'
   assert.match(renderPaperSvg(value, 'correction'), /♯/)
 })
 
+
+
+
+
+test('every saved gallery example validates and renders', () => {
+  const path = new URL('../../shared/visual-examples.json', import.meta.url)
+  const examples = JSON.parse(readFileSync(path, 'utf8')).examples
+  assert.ok(examples.length >= 12)
+  for (const example of examples) {
+    assert.ok(validateVisualPlan(example.plan), example.name)
+    for (const item of example.plan.cards) {
+      const svg = renderPaperSvg(item)
+      assert.match(svg, /viewBox="0 0 576 288"/, example.name)
+    }
+  }
+})
+
+
+
+test('replay settles, restart cancels old timers, and destroy clears the screen', () => {
+  const prior = { document: globalThis.document, window: globalThis.window,
+    setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout }
+  const scheduled = new Map()
+  let nextId = 1
+  try {
+    globalThis.document = { createElement: () => ({
+      className: '', innerHTML: '', attributes: {},
+      setAttribute(name, value) { this.attributes[name] = value },
+      replaceChildren() { this.innerHTML = '' },
+    }) }
+    globalThis.window = { matchMedia: () => ({ matches: false }) }
+    globalThis.setTimeout = (callback, delay) => {
+      const id = nextId++
+      scheduled.set(id, { callback, delay, active: true })
+      return id
+    }
+    globalThis.clearTimeout = id => { const timer = scheduled.get(id); if (timer) timer.active = false }
+    const view = mountPaperVisualization(card('timing', 'early'))
+    assert.match(view.element.innerHTML, /tap  ↻ replay/)
+    view.replay()
+    assert.match(view.element.innerHTML, /●○○/)
+    const stale = [...scheduled.values()]
+    view.replay()
+    stale.forEach(timer => timer.callback())
+    assert.match(view.element.innerHTML, /●○○/)
+    const current = [...scheduled.values()].filter(timer => timer.active).sort((a, b) => a.delay - b.delay)
+    assert.equal(current.length, 4)
+    current[0].callback()
+    assert.match(view.element.innerHTML, /●●○/)
+    current[1].callback()
+    assert.match(view.element.innerHTML, /●●●/)
+    current[2].callback()
+    assert.match(view.element.innerHTML, /Play G4 on beat 6/)
+    current[3].callback()
+    assert.match(view.element.innerHTML, /tap  ↻ replay/)
+    view.replay()
+    const pending = [...scheduled.values()].filter(timer => timer.active)
+    view.destroy()
+    pending.forEach(timer => timer.callback())
+    assert.equal(view.element.innerHTML, '')
+  } finally {
+    Object.assign(globalThis, prior)
+  }
+})
+
+test('reduced motion replay remains static without timers', () => {
+  const prior = { document: globalThis.document, window: globalThis.window, setTimeout: globalThis.setTimeout }
+  let scheduled = 0
+  try {
+    globalThis.document = { createElement: () => ({
+      className: '', innerHTML: '', setAttribute() {}, replaceChildren() { this.innerHTML = '' },
+    }) }
+    globalThis.window = { matchMedia: () => ({ matches: true }) }
+    globalThis.setTimeout = () => { scheduled++; return 1 }
+    const view = mountPaperVisualization(card('missing_note'))
+    const staticSvg = view.element.innerHTML
+    view.replay()
+    assert.equal(view.element.innerHTML, staticSvg)
+    assert.equal(scheduled, 0)
+    view.destroy()
+  } finally {
+    Object.assign(globalThis, prior)
+  }
+})
 

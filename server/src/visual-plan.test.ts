@@ -115,6 +115,36 @@ test('dense context retains the actual focal detection', () => {
   assert.ok(plan.cards[0].detected.notes.some(note => note.id === 'focal'));
 });
 
+test('kind-specific evidence cannot be omitted or detached from shown notes', () => {
+  const catalog = examples as { examples: { name: string; plan: { cards: Record<string, unknown>[] } }[] };
+  const fixture = (name: string): { cards: Record<string, unknown>[] } => {
+    const found = catalog.examples.find(entry => entry.name === name);
+    assert.ok(found, name);
+    return structuredClone(found.plan);
+  };
+  const wrong = fixture('wrong_note-pitch');
+  (wrong.cards[0].expected as { notes: unknown[] }).notes = [];
+  assert.equal(validateVisualPlan(wrong), false);
+  const detached = fixture('wrong_note-pitch');
+  (detached.cards[0].evidence as { detectedNoteIds: string[] }).detectedNoteIds = ['invented'];
+  assert.equal(validateVisualPlan(detached), false);
+  const misplaced = fixture('wrong_note-pitch');
+  misplaced.cards[0].focus = { startBeat: 20, endBeat: 21 };
+  assert.equal(validateVisualPlan(misplaced), false);
+  const timing = fixture('timing-early');
+  timing.cards[0].metrics = {};
+  assert.equal(validateVisualPlan(timing), false);
+  const duration = fixture('duration-short');
+  duration.cards[0].metrics = { expectedDurationBeats: 2 };
+  assert.equal(validateVisualPlan(duration), false);
+  const section = fixture('section_repeat_skip-repeated');
+  delete section.cards[0].segments;
+  assert.equal(validateVisualPlan(section), false);
+  const recurring = fixture('recurring_trouble-recurring');
+  (recurring.cards[0].metrics as { recurrenceCount: number }).recurrenceCount = 2;
+  assert.equal(validateVisualPlan(recurring), false);
+});
+
 test('model may choose an allowed component/action only for the primary finding', async () => {
   const measured = analysis();
   const request = { artifactId: 'fixture-artifact', passageId: passage.id, passageVersion: passage.version, analysis: measured };

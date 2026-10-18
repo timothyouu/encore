@@ -1,3 +1,5 @@
+import type { PhonePersistence } from './storage.ts';
+
 export type DisplaySettings = {
   schemaVersion: '1';
   showSheetMusicWhilePlaying: boolean;
@@ -26,27 +28,51 @@ function validPatch(value: unknown): value is Partial<Omit<DisplaySettings, 'sch
     (!Object.hasOwn(value, 'sheetMusicSize') || value.sheetMusicSize === 'standard' || value.sheetMusicSize === 'large');
 }
 
+function parseSettings(raw: string): Readonly<DisplaySettings> {
+  const saved: unknown = JSON.parse(raw);
+  if (!plainObject(saved) || saved.schemaVersion !== '1' || typeof saved.showSheetMusicWhilePlaying !== 'boolean') throw new Error('Invalid display settings');
+  const { schemaVersion: _version, ...patch } = saved;
+  if (!validPatch(patch)) throw new Error('Invalid display settings');
+  return Object.freeze({ ...DEFAULT_DISPLAY_SETTINGS, ...patch });
+}
+
 export class DisplaySettingsStore {
   private snapshot: Readonly<DisplaySettings> = DEFAULT_DISPLAY_SETTINGS;
   private opened = false;
   private storage: SettingsStorage | undefined;
+  private persistence: PhonePersistence | undefined;
   private listeners = new Set<() => void>();
   storageWarning: string | null = null;
 
   constructor(storage?: SettingsStorage) {
     try {
       this.storage = storage ?? (typeof localStorage === 'undefined' ? undefined : localStorage);
-      const raw = this.storage?.getItem(DISPLAY_SETTINGS_KEY);
+      const raw = this.storage?.getItem(`${DISPLAY_SETTINGS_KEY}.migrated`) === '1' ? null : this.storage?.getItem(DISPLAY_SETTINGS_KEY);
       if (!raw) return;
-      const saved: unknown = JSON.parse(raw);
-      if (!plainObject(saved) || saved.schemaVersion !== '1' || typeof saved.showSheetMusicWhilePlaying !== 'boolean') throw new Error('Invalid display settings');
-      const { schemaVersion: _version, ...patch } = saved;
-      // Accept the original v1 single-toggle shape; new preferences retain their defaults.
-      if (!validPatch(patch)) throw new Error('Invalid display settings');
-      this.snapshot = Object.freeze({ ...DEFAULT_DISPLAY_SETTINGS, ...patch });
+      this.restore(raw);
     } catch {
       this.storageWarning = 'Display settings could not be loaded. Default preferences are in use.';
     }
+  }
+
+  async hydrate(persistence: PhonePersistence): Promise<void> {
+    try {
+      const raw = await persistence.load(DISPLAY_SETTINGS_KEY, value => {
+        try { parseSettings(value); return true; } catch { return false; }
+      });
+      this.persistence = persistence;
+      this.snapshot = DEFAULT_DISPLAY_SETTINGS;
+      if (raw) this.restore(raw);
+      this.storageWarning = persistence.warning;
+    } catch {
+      this.storageWarning = 'Local display settings storage is unavailable. Changes may last only for this session.';
+    }
+    this.emit();
+  }
+
+  private restore(raw: string): void {
+    // Accept the original v1 single-toggle shape; new preferences retain their defaults.
+    this.snapshot = parseSettings(raw);
   }
 
   get value(): Readonly<DisplaySettings> { return this.snapshot; }
@@ -77,6 +103,16 @@ export class DisplaySettingsStore {
     if (next.showSheetMusicWhilePlaying === this.snapshot.showSheetMusicWhilePlaying &&
         next.sheetMusicSize === this.snapshot.sheetMusicSize && next.showNoteNames === this.snapshot.showNoteNames) return true;
     this.snapshot = next;
+    if (this.persistence) {
+      void this.persistence.save(DISPLAY_SETTINGS_KEY, JSON.stringify(next)).then(() => {
+        this.storageWarning = null;
+      }, () => {
+        this.storageWarning = 'Display settings could not be saved. Changes apply to this session only.';
+        this.emit();
+      });
+      this.emit();
+      return true;
+    }
     try {
       if (this.storage) {
         this.storage.setItem(DISPLAY_SETTINGS_KEY, JSON.stringify(next));
