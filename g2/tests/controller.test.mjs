@@ -13,7 +13,7 @@ function memory() {
 }
 
 // Demo-style session actions, like startPhoneApp's demo source.
-function demoActions(store, { startWorks = true } = {}) {
+function demoActions(store, { startWorks = true, coachAll = false } = {}) {
   return {
     async start() {
       if (startWorks) store.start('demo')
@@ -22,7 +22,17 @@ function demoActions(store, { startWorks = true } = {}) {
       const record = store.stop()
       if (!record) return
       store.applyAnalysis(record.attemptId, fixtureAnalysis(record, 'mistakes'))
-      store.applyCoaching(record.attemptId, fixtureCoaching(store.records.find(r => r.attemptId === record.attemptId)))
+      const saved = store.records.find(r => r.attemptId === record.attemptId)
+      const coaching = fixtureCoaching(saved)
+      if (coachAll) {
+        coaching.evidenceFindingIds = saved.analysis.findings.map(finding => finding.id)
+        coaching.visual.referenceNoteIds = [...new Set(saved.analysis.findings.map(finding => finding.referenceNoteId).filter(Boolean))]
+        coaching.visual.mistakes = saved.analysis.findings.map(finding => ({ findingId: finding.id,
+          ...(finding.referenceNoteId && { referenceNoteId: finding.referenceNoteId }),
+          ...(finding.detectedNoteId && { detectedNoteId: finding.detectedNoteId }),
+        }))
+      }
+      store.applyCoaching(record.attemptId, coaching)
     },
     cancel() {
       store.cancel()
@@ -43,7 +53,10 @@ function setup(options) {
     onExit: () => exits++,
     renderTiles: tiles,
     renderArt: async () => new Uint8Array([83]),
-    renderFrame: async (_card, step) => new Uint8Array([step.layer === 'played' ? 80 : 87]),
+    renderFrame: async (_card, step, context) => {
+      options?.onFrame?.(step, context)
+      return new Uint8Array([step.layer === 'played' ? 80 : 87])
+    },
     frameDwellMs: 0,
     gallery: options?.gallery,
   })
@@ -110,6 +123,21 @@ test('full loop from the glasses: record, stop, evidence cards, replay, Play aga
   assert.equal(store.state.screen, 'library')
   assert.equal(controller.current.name, 'selection')
   assert.equal(store.count(), 1)
+})
+
+test('a saved coached finding adds one grounded key frame before the written correction', async () => {
+  const frames = []
+  const { input } = setup({ coachAll: true, onFrame: (step, context) => frames.push({ step, context }) })
+  await input('listSelect', { index: 0 })
+  await input('tap')
+  await input('tap')
+  await input('tap')
+  const contextFrames = frames.filter(({ step }) => step.art === 'context')
+  assert.equal(contextFrames.length, 1)
+  assert.equal(contextFrames[0].context.kind, 'missing_note')
+  assert.equal(contextFrames[0].context.expected.label, 'F4')
+  assert.equal(contextFrames[0].context.played, undefined)
+  assert.equal(frames.at(-1).step.layer, 'written')
 })
 
 test('glasses discard: not counted, back to Ready for the same passage, in place', async () => {

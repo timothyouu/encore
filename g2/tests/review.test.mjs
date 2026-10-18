@@ -245,6 +245,20 @@ test('every kind replays what was played, then the fix; unclear audio has nothin
   }
 })
 
+test('validated key context is supplemental and the replay still ends on the existing correction', () => {
+  for (const name of ['missing_note-missing', 'extra_note-extra', 'timing-early', 'duration-short']) {
+    const plain = replaySteps(card(name))
+    const withContext = replaySteps(card(name), true)
+    assert.equal(withContext.length, plain.length + 1, name)
+    assert.equal(withContext.filter(step => step.art === 'context').length, 1, name)
+    assert.deepEqual(withContext.at(-1), plain.at(-1), name)
+    assert.ok(withContext.findIndex(step => step.art === 'context') < withContext.findIndex(step => step.layer === 'written'), name)
+  }
+  assert.equal(replaySteps(card('wrong_note-pitch'), true).filter(step => step.art === 'context').length, 0)
+  assert.deepEqual(replaySteps(card('unclear_audio-noisy'), true), [])
+  assert.ok(replaySteps(card('missing_note-missing'), true).length <= 2 * 4 + 1)
+})
+
 test('staff replays reveal notes one at a time, at most four steps per phase', () => {
   assert.deepEqual(revealCounts(2), [1, 2])
   assert.deepEqual(revealCounts(3), [1, 2, 3])

@@ -1,6 +1,7 @@
 import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { CoachingResult } from '../../../shared/contracts.ts'
 import type { VisualCard } from '../../../shared/visual-contract.ts'
+import type { MistakeVisualization } from '../../../mobile/src/visualization.ts'
 import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, padToWidth, rightText, text } from '../layout.ts'
 import { ART_H, ART_W, MAX_REVEAL_STEPS, renderCardArt, renderReplayFrame, replaySteps, type ReplayStep } from '../review/art.ts'
 import { CUE_WIDTH, cardViews, type CardView } from '../review/model.ts'
@@ -35,11 +36,15 @@ type ReviewOptions = {
   initialIndex?: number
   // Double tap: back to passage selection (spec §4 "Play again").
   onPlayAgain(): void
+  // Keep the shared phone finding selection aligned with a glasses card swipe.
+  onCardChange?: (view: CardView, index: number) => void
+  // Only validated saved finding evidence may supply a supplemental frame.
+  keyboardContext?: (view: CardView) => MistakeVisualization | null
   // Fixture results must say so on screen (spec §9).
   demo?: boolean
   // Canvas rendering and real time by default; tests pass stand-ins.
   renderArt?: (card: VisualCard) => Promise<Uint8Array>
-  renderFrame?: (card: VisualCard, step: ReplayStep) => Promise<Uint8Array>
+  renderFrame?: (card: VisualCard, step: ReplayStep, context?: MistakeVisualization | null) => Promise<Uint8Array>
   frameDwellMs?: number
 }
 
@@ -59,6 +64,8 @@ export function reviewScreen({
   tag = '',
   initialIndex = 0,
   onPlayAgain,
+  onCardChange,
+  keyboardContext,
   demo = false,
   renderArt = renderCardArt,
   renderFrame = renderReplayFrame,
@@ -72,9 +79,10 @@ export function reviewScreen({
   // Keep the last picture delivered to the glasses across an OS-menu redraw.
   let displayed: { index: number; step: ReplayStep } | null = null
 
+  const contextFor = (i: number) => keyboardContext?.(views[i]) ?? null
   const steps = (i: number) => {
     const card = views[i].card
-    return card ? replaySteps(card) : []
+    return card ? replaySteps(card, Boolean(contextFor(i))) : []
   }
   const counter = (i: number) => {
     const count = views.length > 1 ? `${i + 1} / ${views.length}` : ''
@@ -109,7 +117,7 @@ export function reviewScreen({
     const shown = displayed
     const card = views[i].card
     if (!shown || shown.index !== i || !card || !context) return sendStatic(i, still)
-    return renderFrame(card, shown.step)
+    return renderFrame(card, shown.step, contextFor(i))
       .then(png => context?.glasses.updateImage(ART, png, still))
       .catch(error => status(`replay art failed: ${String(error)}`, 'error'))
   }
@@ -121,6 +129,7 @@ export function reviewScreen({
     const mine = ++generation
     const ctx = context
     if (!ctx) return
+    onCardChange?.(views[i], i)
     // Fast swipes queue several cards; only the card still shown is sent.
     const current = () => ctx.isActive() && generation === mine
     for (const [container, content] of texts(views[i], i)) ctx.glasses.updateText(container, content || ' ', current)
@@ -140,7 +149,7 @@ export function reviewScreen({
     try {
       for (const [n, step] of plan.entries()) {
         if (!current()) return
-        const delivered = await ctx.glasses.updateImage(ART, await renderFrame(card, step), current)
+        const delivered = await ctx.glasses.updateImage(ART, await renderFrame(card, step, contextFor(i)), current)
         if (!delivered || !current()) return
         displayed = { index: i, step }
         // Text lands instantly and images lag over BLE, so the caption follows the picture.

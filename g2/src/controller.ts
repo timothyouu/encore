@@ -1,6 +1,7 @@
 import type { MenuContainerProperty } from '@evenrealities/even_hub_sdk'
 import type { SessionState, SessionStore } from '../../mobile/src/session.ts'
 import { orderedFindings } from '../../mobile/src/feedback.ts'
+import { resolveMistakeVisualization } from '../../mobile/src/visualization.ts'
 import type { VisualCard } from '../../shared/visual-contract.ts'
 import type { CoachingResult } from '../../shared/contracts.ts'
 import { reviewData } from './feedback.ts'
@@ -53,6 +54,12 @@ function keyOf(state: SessionState): string {
     default:
       return `${state.screen}:${state.attemptId}`
   }
+}
+
+function stageText(stage: SessionStore['processingStage'], demo: boolean): string {
+  if (demo) return 'Demo · prepared result'
+  return stage === 'normalization' ? 'Saving WAV' : stage === 'upload' ? 'Uploading recording'
+    : stage === 'analysis' ? 'Analyzing notes' : stage === 'coaching' ? 'Preparing coaching' : ''
 }
 
 // Mirrors the phone session (mobile SessionStore) on the glasses and turns
@@ -147,7 +154,7 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
         return screen
       }
       case 'processing':
-        return analyzingScreen(store.processingStage ?? '')
+        return analyzingScreen(stageText(store.processingStage, record?.captureSource === 'demo'))
       case 'review':
       case 'guide':
       case 'sheet': {
@@ -160,6 +167,26 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
           tag,
           initialIndex: matched < 0 ? 0 : matched,
           onPlayAgain: playAgain,
+          onCardChange: view => {
+            if (store.state.attemptId !== record.attemptId) return
+            const findings = orderedFindings(record, passage)
+            const target = findings.findIndex(finding => view.card?.evidence.findingIds.includes(finding.id))
+            batch(() => {
+              store.closeSheet()
+              store.showReview()
+              if (target >= 0) store.moveFinding(target - store.state.findingIndex)
+              // A swipe already changed the current Review in place. Adopt its
+              // new store key so the store emission does not rebuild it.
+              currentKey = keyOf(store.state)
+            })
+          },
+          keyboardContext: view => {
+            const card = view.card
+            if (!card || card.evidence.source !== 'analysis' || card.evidence.findingIds.length !== 1) return null
+            if (!['missing_note', 'extra_note', 'timing', 'duration'].includes(card.kind)) return null
+            const finding = orderedFindings(record, passage).find(item => item.id === card.evidence.findingIds[0])
+            return finding && finding.kind === card.kind ? resolveMistakeVisualization(record, passage, finding) : null
+          },
           renderArt,
           renderFrame,
           frameDwellMs,
@@ -178,7 +205,11 @@ export function startController({ glasses, store, actions, sheetMusic, menu, onE
     if (key === currentKey && current) {
       // Same page: only Ready ↔ Recording changes in place.
       if (key.startsWith('ready:')) (current as ReadyScreen).setRecording(state.screen === 'recording')
-      if (key.startsWith('processing:')) (current as ReturnType<typeof analyzingScreen>).setStage(store.processingStage ?? '')
+      if (key.startsWith('processing:')) {
+        const record = store.records.find(item => item.attemptId === state.attemptId)
+        const analyzing = current as ReturnType<typeof analyzingScreen>
+        analyzing.setStage(stageText(store.processingStage, record?.captureSource === 'demo'))
+      }
       return
     }
     const next = screenFor(state)

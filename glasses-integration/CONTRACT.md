@@ -51,7 +51,7 @@ g2/index.html (Even Hub WebView)
 
 Phone and glasses inputs both change the store, and the controller redraws the glasses from it. It only rebuilds a page when the G2 state or passage changes. Ready ↔ Recording keeps the in-place text swap, so no image goes over BLE during capture.
 
-Card paging and replay are G2 presentation state, not new attempts. Phone Guide and Sheet remain phone views. G2 combines corrective notes, keys, rhythm, and authored-finger guidance into Review cards and replay. Switching attempts, returning to selection, or leaving a card invalidates its queued images and replay timers. History is read-only and never resubmits audio.
+Card paging updates the shared selected finding by validated evidence ID and closes an open phone Sheet overlay before showing Review. Replay is G2 presentation state; neither paging nor replay creates a new attempt. Phone Guide and Sheet remain phone views. G2 combines corrective notes, keys, rhythm, and authored-finger guidance into Review cards and replay. Validated keyboard and hold-duration context from the earlier Guide implementation is available within replay; the latest resting art and final correction frame remain intact. Switching attempts, returning to selection, or leaving a card invalidates its queued images and replay timers. History is read-only and never resubmits audio.
 
 ## Capture rules
 

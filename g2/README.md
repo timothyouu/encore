@@ -20,7 +20,7 @@ npm test
 
 Node's built-in test runner on the TypeScript sources (no extra dependencies; relative imports carry `.ts` so Node can resolve them). `tests/fakes.mjs` stands in for the Even bridge, so screens, input, recording, the G2 capture source, the phone↔glasses controller and the glasses queue run without hardware. Staff drawing is covered through `staffLayout()`, the canvas-free layout step.
 
-For a presentation-only fixture gallery in the simulator, open the dev URL with `?demo=review`. It shows all prepared Review cards with a visible DEMO label; double tap returns to the shared Library. It creates no recording and makes no backend or model request. For browser-only raster inspection without an Even bridge, open `/tests/review-browser.html` from the Vite dev server. That fixture displays the same card art and correction replay, without exercising the glasses transport.
+For a presentation-only fixture gallery in the simulator, open the dev URL with `?demo=review`. It shows all prepared Review cards with a visible DEMO label; double tap returns to the shared Library. It creates no recording and makes no backend or model request. For browser-only raster inspection without an Even bridge, open `/tests/review-browser.html` from the Vite dev server. That fixture displays the same card art and correction replay, without exercising the glasses transport. Its Show key context button previews explicitly synthetic keyboard and hold-duration context.
 
 ## Phone and glasses together
 
@@ -66,6 +66,6 @@ The pack script validates the approved exact origin, generates ignored `app.netw
 | 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint, double tap back |
 | 03 | Recording | Tap ● (or Start on the phone) starts the session's source. Sheet music on: text swapped in place, staff stays (no image sends); off: just ■. `tap ■` stops and analyzes, `2× discard` throws the take away and returns to Ready |
 | 04 | Analyzing | Short status; no input, no menu |
-| 05 | Review | One validated finding card at a time with expected/detected legend, exact key or beat art, concise cue, and authored reference finger when supported. Swipe down/up moves between cards; tap replays measured versus written notes and ends on the correction; double tap → Selection. Uncertain audio gets a neutral microphone card without replay. The phone's Guide and Sheet remain phone screens; they mirror the same saved attempt without commanding a second G2 page |
+| 05 | Review | One validated finding card at a time with expected/detected legend, exact key or beat art, concise cue, and authored reference finger when supported. Swipe down/up moves between cards, synchronizes the shared finding, and closes an open phone sheet overlay; tap replays measured versus written notes, includes validated key/hold context when available, and ends on the correction; double tap → Selection. Uncertain audio gets a neutral microphone card without replay. The phone's Guide and Sheet remain phone screens; they mirror the same saved attempt without commanding a second G2 page |
 | — | Recoverable error | Plain reason (never a musical claim); tap → Selection |
 | — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |
