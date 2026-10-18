@@ -53,6 +53,7 @@ Produces an `.ehpk` file.
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/recorder.ts` / `src/wav.ts` | One mic capture at a time; G2 PCM (s16le, 16 kHz, mono) wrapped as WAV, with the measured byte rate logged. |
 | `src/review/` | Card model (header, legend, cue; pairing expected vs detected to find the faulty note) and 288×144 card art. |
+| `src/keyboard.ts` | Keyboard schematic for one finding as a 288×96 PNG (from #19). Not wired in: G2 has no Guide state since #16, and Review's card art draws its own keys. |
 | `src/demo.ts` | Dev-only `?demo=review` gallery of every card in `shared/visual-examples.json`, labelled DEMO. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
