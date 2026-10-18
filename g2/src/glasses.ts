@@ -8,6 +8,7 @@ import {
   type EvenAppBridge,
   type ImageContainerProperty,
   type ListContainerProperty,
+  type MenuContainerProperty,
 } from '@evenrealities/even_hub_sdk'
 import { status } from './status'
 
@@ -15,6 +16,9 @@ export type Page = {
   textObject?: TextContainerProperty[]
   listObject?: ListContainerProperty[]
   imageObject?: ImageContainerProperty[]
+  // Items for the OS contextual menu (tap then hold). A rebuild without it
+  // clears the app's items, so every page carries it explicitly.
+  menuObject?: MenuContainerProperty
 }
 
 const STARTUP_RESULT: Record<number, string> = {

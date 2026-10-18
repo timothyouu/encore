@@ -6,6 +6,7 @@ export type Input =
   | { kind: 'swipeUp' }
   | { kind: 'swipeDown' }
   | { kind: 'listSelect'; index: number }
+  | { kind: 'menuItem'; itemID: number }
   | { kind: 'longPress' }
   | { kind: 'longPressRelease' }
   | { kind: 'foreground' }
@@ -20,6 +21,9 @@ function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeLis
 }
 
 export function toInput(event: EvenHubEvent): Input | null {
+  // Selections in the OS contextual menu bypass event capture entirely.
+  if (event.menuItemClickEvent?.itemID) return { kind: 'menuItem', itemID: event.menuItemClickEvent.itemID }
+
   const listType = eventTypeOf(event.listEvent)
   const textType = eventTypeOf(event.textEvent)
   const sysType = eventTypeOf(event.sysEvent)
@@ -51,8 +55,9 @@ export function toInput(event: EvenHubEvent): Input | null {
 // Hardware can report one gesture twice in quick succession; drop the repeat.
 const DUPLICATE_WINDOW_MS = 250
 // A tap or list click that arrives while a long press is held, or just after
-// it is released, belongs to that long press. Letting it through could start
-// or stop a recording (spec §4 controls).
+// it is released, belongs to that long press (the simulator sends one). The OS
+// menu opens with tap then hold, so letting it through could start or stop a
+// recording.
 const AFTER_RELEASE_MS = 400
 // If the release event is lost, stop treating the press as held after this.
 const MAX_HOLD_MS = 4000

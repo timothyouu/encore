@@ -27,8 +27,8 @@ Produces an `.ehpk` file.
 |---|---|
 | `src/main.ts` | Boots the bridge, routes normalized input to the current screen. |
 | `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
-| `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `longPress`; drops duplicates and any tap that belongs to a long press. |
-| `src/settings.ts` | Display settings (spec §5), saved in Even app storage. |
+| `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `menuItem`; drops duplicates and any tap that belongs to a long press. |
+| `src/settings.ts` | Display settings (spec §5), saved in Even app storage, and the sheet-music system-menu item. |
 | `src/layout.ts` | Shared geometry from the Paper mockups; right-aligned text via `@evenrealities/pretext`. |
 | `../shared/passages.ts` | The six approved seed passages and authored fingerings (spec §7), shared with the phone Guide. |
 | `src/passages.ts` | Re-exports the shared passages for G2 screens. |
@@ -40,6 +40,6 @@ Produces an `.ehpk` file.
 
 | Mockup | State | Status |
 |---|---|---|
-| 01 | Selection | Native list, tap to open, double tap to exit |
-| 02 | Ready | Staff (2 image tiles), focus line, `tap ● record` (recording not wired yet), double tap back |
-| 09 | Settings | Long press from any screen except Recording/Analyzing; tap toggles sheet music, double tap returns |
+| 01 | Selection | Native list (5 rows), tap to open, double tap to exit; no hints |
+| 02 | Ready | Staff (2 image tiles), focus line, dimmed `tap ●` hint (recording not wired yet), double tap back |
+| — | System menu | Tap then hold: "Hide/Show sheet music" item (no Settings screen); omitted while recording/analyzing |
