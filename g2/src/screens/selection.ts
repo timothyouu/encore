@@ -1,14 +1,14 @@
 import { ListContainerProperty, ListItemContainerProperty } from '@evenrealities/even_hub_sdk'
-import { HEADER_Y, HINT_Y, MARGIN_X, SCREEN_W, splitRow, text } from '../layout'
+import { HEADER_Y, MARGIN_X, SCREEN_W, text } from '../layout'
 import type { Passage } from '../passages'
 import type { Screen } from './screen'
 
-// Firmware list rows are a fixed 40px; four fit between the header and hint bar.
+// Firmware list rows are a fixed 40px; with no hint row, five fit below the header.
 // Rows have 12px inner padding, so this lines item text up with the header at MARGIN_X.
 const LIST_X = MARGIN_X - 12 - 4
 const LIST_W = SCREEN_W - 2 * LIST_X
 const LIST_Y = 48
-const VISIBLE_ROWS = 4
+const VISIBLE_ROWS = 5
 const LIST_PADDING = 4
 
 type SelectionOptions = {
@@ -19,15 +19,13 @@ type SelectionOptions = {
 
 // 01 · Select passage. The native list owns scrolling and the selection box,
 // so swipes never reach the app here; only a tap (listSelect) or double tap does.
+// No gesture hints: tap to open and double tap to exit are system conventions.
 export function selectionScreen({ passages, onOpen, onExit }: SelectionOptions): Screen {
   return {
     name: 'selection',
 
     page: () => ({
-      textObject: [
-        text({ id: 1, name: 'title', x: MARGIN_X, y: HEADER_Y, width: 400, content: 'Choose a passage' }),
-        ...splitRow(3, 'hint', HINT_Y, 'tap  open', '2× tap  exit'),
-      ],
+      textObject: [text({ id: 1, name: 'title', x: MARGIN_X, y: HEADER_Y, width: 400, content: 'Choose a passage' })],
       listObject: [
         new ListContainerProperty({
           xPosition: LIST_X,

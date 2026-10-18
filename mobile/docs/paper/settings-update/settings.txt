@@ -1,0 +1,83 @@
+{
+  "file": {
+    "id": "01M56HHCC29GHEHZ2V9FPV5FTR",
+    "name": "G2 Mobile App"
+  },
+  "contentHash": {
+    "tokens": "201c032a"
+  }
+}
+(
+    <div style={{ backgroundColor: 'var(--color-paper)', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', fontSize: '12px', fontSynthesis: 'none', gap: '24px', height: '844px', lineHeight: '16px', MozOsxFontSmoothing: 'grayscale', overflow: 'clip', overflowWrap: 'anywhere', paddingBottom: '42px', paddingInline: '24px', paddingTop: '62px', WebkitFontSmoothing: 'antialiased', width: '390px' }}>
+      <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'space-between', width: '342px' }}>
+        <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', flexShrink: '0', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px', width: '90px' }}>
+          ‹ Library
+        </div>
+        <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '30px', lineHeight: '34px' }}>
+          encore
+        </div>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '44px', justifyContent: 'end', width: '90px' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <polygon points="12.00,3.40 13.95,2.19 15.83,2.76 16.78,4.85 18.08,5.92 20.31,6.44 21.24,8.17 20.43,10.32 20.60,12.00 21.81,13.95 21.24,15.83 19.15,16.78 18.08,18.08 17.56,20.31 15.83,21.24 13.68,20.43 12.00,20.60 10.05,21.81 8.17,21.24 7.22,19.15 5.92,18.08 3.69,17.56 2.76,15.83 3.57,13.68 3.40,12.00 2.19,10.05 2.76,8.17 4.85,7.22 5.92,5.92 6.44,3.69 8.17,2.76 10.32,3.57" fill="none" stroke="#625F58" strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="12" cy="12" r="3.5" fill="none" stroke="#625F58" strokeWidth="1.5" />
+          </svg>
+        </div>
+      </div>
+      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '32px', lineHeight: '40px' }}>
+          Settings
+        </div>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', gap: '8px' }}>
+          <svg width="26" height="22" viewBox="0 0 26 22" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: '0', display: 'inline-block', height: '17px', width: '20px' }}>
+            <path d="M2 10L4 5H7M24 10L22 5H19M11 11C12 9.5 14 9.5 15 11" fill="none" stroke="#287453" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+            <rect x="2" y="9" width="9" height="7" rx="2.5" fill="none" stroke="#287453" strokeWidth="1.8" />
+            <rect x="15" y="9" width="9" height="7" rx="2.5" fill="none" stroke="#287453" strokeWidth="1.8" />
+          </svg>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', display: 'inline-block', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '20px' }}>
+            G2 glasses connected
+          </div>
+        </div>
+      </div>
+      <div style={{ alignItems: 'center', borderBottomColor: 'var(--color-line)', borderBottomStyle: 'solid', borderBottomWidth: '1px', borderTopColor: 'var(--color-line)', borderTopStyle: 'solid', borderTopWidth: '1px', boxSizing: 'border-box', display: 'flex', gap: '16px', paddingBlock: '20px' }}>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '8px' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '16px', fontWeight: 500, lineHeight: '24px' }}>
+            Show sheet music on glasses
+          </div>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '20px' }}>
+            See the sheet music while you play.
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', backgroundColor: 'var(--color-ink)', borderRadius: '20px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '28px', justifyContent: 'end', padding: '3px', width: '48px' }}>
+          <div style={{ backgroundColor: 'var(--color-paper)', borderRadius: '50%', boxSizing: 'border-box', flexShrink: '0', height: '22px', width: '22px' }} />
+        </div>
+      </div>
+      <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '16px', lineHeight: '24px' }}>
+          Sheet music size
+        </div>
+        <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: '12px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', padding: '4px' }}>
+          <div style={{ alignContent: 'center', boxSizing: 'border-box', color: 'var(--color-muted)', display: 'flex', flexBasis: '0%', flexGrow: '1', flexWrap: 'wrap', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', justifyContent: 'center', lineHeight: '18px', textAlign: 'center' }}>
+            Standard
+          </div>
+          <div style={{ alignItems: 'center', backgroundColor: 'var(--color-paper)', borderColor: 'var(--color-line)', borderRadius: '9px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexGrow: '1', justifyContent: 'center' }}>
+            <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', display: 'flex', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+              Large
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style={{ alignItems: 'center', borderBottomColor: 'var(--color-line)', borderBottomStyle: 'solid', borderBottomWidth: '1px', boxSizing: 'border-box', display: 'flex', gap: '16px', paddingBlock: '16px' }}>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '6px' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-ink)', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '16px', lineHeight: '24px' }}>
+            Note names
+          </div>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '20px' }}>
+            Show C4, D4, E4 below the notes.
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', backgroundColor: 'var(--color-ink)', borderRadius: '20px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '28px', justifyContent: 'end', padding: '3px', width: '48px' }}>
+          <div style={{ backgroundColor: 'var(--color-paper)', borderRadius: '50%', boxSizing: 'border-box', flexShrink: '0', height: '22px', width: '22px' }} />
+        </div>
+      </div>
+    </div>
+  )

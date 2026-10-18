@@ -31,7 +31,7 @@ The proposed initial audience is beginner piano learners practicing short prepar
 - Basic Pitch runs on a **laptop**, not in the phone WebView
 - Two feedback views: mistake review and corrective keyboard/finger schematic
 - Deterministic HTML/JavaScript piano-key animations show incorrect notes and durations (for example quarter notes versus half notes); no separate Gemini visual model or live beat-synchronized animation requirement
-- Optional static sheet music for the selected passage on G2 while playing, toggled on/off in a G2 Settings screen opened with a long press
+- Optional static sheet music for the selected passage on G2 while playing, toggled with a **Hide/Show sheet music** item in the G2 system contextual menu (tap then hold)
 - Return to song/passage selection after results to choose the same passage or another and play again
 - Phone mirrors feedback, shows total and per-passage recording counts, and lets the player revisit past results
 - No smartwatch integration
@@ -42,7 +42,7 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 
 ## 2. Quiet Tech design rules
 
-1. **Quiet while playing:** retain a small recording indicator and hide coaching. Show reference sheet music only when the player enables it in Settings; otherwise hide notation. The initial setting is OPEN pending hardware validation.
+1. **Minimal while playing:** while playing, hide coaching and feedback. Show only the selected passage's static sheet music (when enabled from the system menu) and a small recording indicator; with sheet music off, show only the recording indicator
 2. **One useful cue:** prioritize a single supported issue after each phrase
 3. **Show only meaningful changes:** selection, recording, processing, and feedback states must be distinguishable
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
@@ -127,14 +127,13 @@ The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.de
 | Disconnected | Phone explains reconnect | Connected → Selection |
 | Selection | Song/passage selection prompt; phone shows Library | Select passage → Ready |
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
-| Recording | Small recording icon; static reference sheet music when enabled in Settings, using the chosen size and note-name preference; no coaching | Tap → Analyzing; confirmed cancel → Selection |
+| Recording | Small recording icon; plus static sheet music for the selected passage when sheet music is shown | Tap → Analyzing; double tap → discard → Ready |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
 | Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
 | Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
 | Recoverable error | Brief reason and Play again option | Play again → Selection |
-| Settings | Settings list; v1 contains one item, **Sheet music while playing: On/Off** | Tap → toggle the selected item; double tap → return to the state Settings was opened from |
 
-**Settings** is opened with a long press from any non-recording state (Disconnected excepted). PROPOSED: long press is ignored during Recording and Analyzing so capture is never interrupted or covered by a menu; change the toggle before starting or after results. Closing Settings returns to the exact prior state and view without starting capture or changing the selected passage.
+**Sheet music setting:** there is no app Settings screen on G2. The glasses OS draws a contextual menu on tap then hold, and Encore registers one item in it: **Hide sheet music** when shown, **Show sheet music** when hidden (verb labels, because the OS menu keeps no item state). Selecting it toggles the setting and re-declares the current page so the label updates; the player stays on the same state and view, with no capture started and no passage change. Recording and Analyzing omit the item, so the setting never changes mid-capture; change it before starting or after results.
 
 Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
@@ -142,12 +141,13 @@ Detailed History navigation is on the phone. When a saved result is mirrored on 
 
 - Single tap: start from Ready; stop and analyze from Recording
 - Swipe down: next feedback/guide page; swipe up: previous page
-- Double tap: go back one level; at root use the platform's exit behavior; in Settings, close Settings
-- Long press (tap and hold): open Settings from any non-recording state; in Settings, single tap toggles the selected option
-- Proposed cancellation behavior to validate: during recording, double tap asks to cancel; it must never silently submit a partial attempt
+- Double tap: go back one level; at root use the platform's exit behavior
+- Tap then hold: OS contextual menu (system-drawn); Encore adds only the sheet-music item
+- During recording, double tap discards the take immediately and returns to Ready (a dimmed `2× discard` hint says so); a discarded take is never saved as completed, counted or submitted
 - Voice commands are optional later enhancements; do not block v1 on speech recognition
+- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review `▼ guide`
 
-Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; open Settings on the start event, ignore the matching release, and verify on hardware that a long press never also registers as a single tap (which could start or stop a recording). Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
+Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; Encore assigns no action to them, but drops any tap that arrives during or just after a hold, and hardware tests must verify that opening the system menu never also registers as a single tap (which could start or stop a recording). Opening and closing the system menu deliver foreground enter/exit events; they must not trigger a redraw or state change. Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
 
 ### Sheet music while playing
 
@@ -259,7 +259,7 @@ type DisplaySettings = {
 };
 ```
 
-Persist settings in browser-local storage alongside demo history (PROPOSED) so the choice survives app restarts. Settings affect display only: they are not attempt data, do not change analysis, coaching, or recording counts, and are not stored on `AttemptRecord`.
+Persist settings so the choice survives app restarts; G2 currently stores them in Even app storage (`setLocalStorage`, key `encore.displaySettings`), PROPOSED. Settings affect display only: they are not attempt data, do not change analysis, coaching, or recording counts, and are not stored on `AttemptRecord`.
 
 ### Recording counts and saved results
 
@@ -375,12 +375,11 @@ Devin and other coding agents work within assigned modules and branches. Their h
 ### Phase 2: Complete one real loop
 
 - [ ] Phone selects a passage; G2 preview matches its version
-- [ ] Tap starts capture; the recording icon remains, with reference sheet music only when enabled in Settings; no coaching appears during capture
-- [ ] Library gear button → Settings → Library works without starting capture or changing recording counts
-- [ ] Sheet music toggle controls G2 notation; Standard/Large changes notation size, and Note names controls pitch labels without changing passage data or analysis
-- [ ] Verify both sheet-music visibility states, both sizes, note names on/off, and disconnected yellow status on the phone; validate notation legibility and static passage fit on physical G2
-- [ ] Long press opens Settings from Selection, Ready, Review, Guide, and error states; tapping toggles sheet music; double tap returns to the prior state unchanged
-- [ ] Long press during Recording/Analyzing does not open Settings, stop capture, or register as a tap
+- [ ] Tap starts capture; with sheet music on, the passage notation and recording icon are shown; with it off, only the recording icon remains
+- [ ] Tap then hold opens the system menu from Selection, Ready, Review, Guide, and error states with Hide/Show sheet music; selecting it toggles the setting and returns to the same state unchanged
+- [ ] During Recording/Analyzing the menu offers no sheet-music item, and opening the menu never stops capture or registers as a tap
+- [ ] Phone Library gear button → Settings → Library preserves recording counts and the active attempt
+- [ ] Phone Settings persists sheet-music visibility, Standard/Large and note-name preferences locally; applying them to G2 requires its separate integration contract
 - [ ] The sheet-music setting persists across app restarts and does not affect recording counts or analysis
 - [ ] Tap stops capture and sends exactly one attempt
 - [ ] Stop/save produces a valid WAV with actual sample-rate normalization; source and normalized metadata match decoded audio
@@ -435,7 +434,7 @@ Track selection is not proof of eligibility. Confirm final submission requiremen
 8. WAV normalization target, upload/storage host, actual endpoint URLs, byte-upload versus authorized URL retrieval, audio expiry and bounded retry/cleanup window
 9. Gemini audio-input encoding, validated mistake schema, and deterministic key/duration animation details; no separate visual model is planned
 
-These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision incorporates the October 17 recording-page, two-model audio pipeline and deterministic visualization decisions while preserving the selection, Settings, recording-count, History and workstream boundaries. Proposed contract details remain subject to integration review.
+These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision combines the October 17 WAV pipeline and deterministic visualization decisions with the current selection, recording-count, History, phone Settings and G2 system contextual-menu flow. Proposed contract details remain subject to integration review.
 
 ## References
 

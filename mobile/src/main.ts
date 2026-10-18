@@ -2,13 +2,16 @@ import { SessionStore, fixtureAnalysis, fixtureCoaching } from './session.ts';
 import { mountPhone } from './phone.ts';
 import { PhoneCapture, validateEndpoints } from './capture.ts';
 import { mountConnection } from './connection.ts';
+import { DisplaySettingsStore } from './settings.ts';
 
 const root = document.querySelector<HTMLElement>('#app');
 if (!root) throw new Error('Encore app root is missing');
-const store = new SessionStore({
+const storage = {
   getItem: (key: string): string | null => window.localStorage.getItem(key),
   setItem: (key: string, value: string): void => window.localStorage.setItem(key, value),
-});
+};
+const store = new SessionStore(storage);
+const settings = new DisplaySettingsStore(storage);
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
 let scenario: Scenario = 'mistakes';
 let activeScenario: Scenario = 'mistakes';
@@ -21,6 +24,7 @@ root.addEventListener('encore:scenario', (event: Event) => {
   if (value === 'mistakes' || value === 'clean' || value === 'uncertain' || value === 'error') scenario = value;
 });
 function start(): void {
+  if (settings.isOpen) return;
   if (mode === 'phone') { void phone?.start(); return; }
   if (!store.start()) return;
   activeScenario = scenario;
@@ -53,7 +57,7 @@ function cancel(): void {
 const unmount = mountPhone(root, store, { start, stop, cancel,
   retry: () => { void phone?.retry(); }, importWav: (blob: Blob) => { void phone?.processWavBlob(blob); },
   canRetry: (attemptId: string) => phone?.canRetry(attemptId) ?? false,
-  getMode: () => mode });
+  getMode: () => mode, isBusy: () => Boolean(phone?.busy) }, settings);
 const connection = mountConnection(store, root, next => {
   if (phone?.busy || phone?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
   if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter valid upload, analysis, and coaching endpoints. Use /api paths, HTTPS, or HTTP localhost.';
@@ -63,6 +67,7 @@ const connection = mountConnection(store, root, next => {
   phone?.dispose(); phone = undefined;
   mode = next.mode;
   if (mode === 'phone') phone = new PhoneCapture(store, next, () => {
+    root.dispatchEvent(new CustomEvent('encore:mode-change'));
     connection.message(phone?.error ?? (phone?.busy && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));
     permissionCancel.hidden = !(phone?.busy && !phone.recording && store.state.screen === 'ready');
   });
@@ -75,12 +80,14 @@ permissionCancel.style.cssText = 'margin:12px auto;min-height:44px;padding:12px 
 permissionCancel.addEventListener('click', () => phone?.cancel());
 root.after(permissionCancel);
 phone = new PhoneCapture(store, { upload: '/api/recordings', analysis: '/api/analyze', coaching: '/api/coach' }, () => {
+  root.dispatchEvent(new CustomEvent('encore:mode-change'));
   connection.message(phone?.error ?? (phone?.busy && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));
   permissionCancel.hidden = !(phone?.busy && !phone.recording && store.state.screen === 'ready');
 });
+const unsubscribeSettings = settings.subscribe(() => connection.setVisible(!settings.isOpen));
 window.addEventListener('pagehide', () => {
   clearTimeout(captureLimit);
   for (const timer of pending) clearTimeout(timer);
   store.interrupt();
-  phone?.dispose(); connection.dispose(); unmount();
+  unsubscribeSettings(); phone?.dispose(); connection.dispose(); unmount();
 }, { once: true });

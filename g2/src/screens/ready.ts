@@ -1,37 +1,190 @@
-import { HEADER_Y, HINT_Y, MARGIN_X, splitRow, text } from '../layout'
+import { ImageContainerProperty } from '@evenrealities/even_hub_sdk'
+import type { Page } from '../glasses'
+import { HEADER_Y, HINT_BRIGHTNESS, HINT_Y, MARGIN_X, rightText, splitRow, text } from '../layout'
 import type { Passage } from '../passages'
-import type { Screen } from './screen'
+import { Recorder, type Take } from '../recorder'
+import { STAFF_H, TILE_W, renderStaffTiles } from '../staff'
+import { status } from '../status'
+import type { Screen, ScreenContext } from './screen'
+
+const STAFF_Y = 46
+const FOCUS_Y = 168
+const STAFF_LEFT = { id: 10, name: 'staffL' }
+const STAFF_RIGHT = { id: 11, name: 'staffR' }
+const TITLE_L = { id: 1, name: 'titleL' }
+const TITLE_R = { id: 2, name: 'titleR' }
+const FOCUS = { id: 3, name: 'focus' }
+const HINT_L = { id: 4, name: 'hintL' }
+const HINT_R = { id: 5, name: 'hintR' }
+const REC = { id: 6, name: 'rec' }
+
+const RECORD_HINT = 'tap  ●'
+const STOP_HINT = 'tap  ■'
+const DISCARD_HINT = '2×  discard'
+// Spec §8: bound clip duration. Seed passages last 8 beats (≤ 8s at 60 bpm).
+const MAX_TAKE_MS = 30000
+
+type Phase = 'ready' | 'starting' | 'recording' | 'stopping'
 
 type ReadyOptions = {
   passage: Passage
+  sheetMusic(): boolean
+  onTake(take: Take): void
   onBack(): void
 }
 
-// 02 · Ready. Placeholder until the preview (staff + focus line) lands in the next PR;
-// it exists so selection and back navigation can be tested on hardware now.
-export function readyScreen({ passage, onBack }: ReadyOptions): Screen {
-  return {
-    name: 'ready',
+function staffTile(container: { id: number; name: string }, x: number) {
+  return new ImageContainerProperty({
+    xPosition: x,
+    yPosition: STAFF_Y,
+    width: TILE_W,
+    height: STAFF_H,
+    containerID: container.id,
+    containerName: container.name,
+  })
+}
 
-    page: () => ({
-      textObject: [
-        ...splitRow(1, 'title', HEADER_Y, passage.title, `${passage.bpm} bpm · RH`),
-        text({
-          id: 3,
-          name: 'body',
-          x: MARGIN_X,
-          y: 104,
-          width: 528,
-          height: 64,
-          content: 'Preview coming in the next build.',
-          capture: true,
-        }),
-        ...splitRow(4, 'hint', HINT_Y, '', '2× tap  back'),
-      ],
-    }),
+// 02 · Ready and 03 · Recording share one screen because, with sheet music on,
+// Recording is the Ready page with its text swapped in place: the staff images
+// stay on the glasses and nothing is sent over BLE once capture starts
+// (spec §4). With sheet music off, Recording rebuilds to a page with just ■.
+export function readyScreen({ passage, sheetMusic, onTake, onBack }: ReadyOptions): Screen {
+  let phase: Phase = 'ready'
+  // True when the recording view is drawn over the Ready page.
+  let inPlace = false
+  let recorder: Recorder | null = null
+  let context: ScreenContext | null = null
+  let autoStop: ReturnType<typeof setTimeout> | undefined
+
+  const readyPage = (): Page => ({
+    textObject: [
+      ...splitRow(TITLE_L.id, 'title', HEADER_Y, passage.title, `${passage.tempoBpm} bpm · RH`),
+      // Taps go to whichever container captures events; any one will do.
+      text({ ...FOCUS, x: MARGIN_X, y: FOCUS_Y, width: 528, content: `Focus: ${passage.focus}`, capture: true }),
+      // Recording only: ■ and the discard hint, kept blank until capture starts.
+      rightText({ ...REC, y: HEADER_Y, content: ' ', sizeFor: '■' }),
+      // Only the record hint: recording must never start by surprise. Back is a system convention.
+      text({ ...HINT_L, x: MARGIN_X, y: HINT_Y, width: 260, content: RECORD_HINT, brightness: HINT_BRIGHTNESS }),
+      rightText({ ...HINT_R, y: HINT_Y, content: ' ', sizeFor: DISCARD_HINT, brightness: HINT_BRIGHTNESS }),
+    ],
+    imageObject: [staffTile(STAFF_LEFT, 0), staffTile(STAFF_RIGHT, TILE_W)],
+  })
+
+  const recordingOnlyPage = (): Page => ({
+    textObject: [
+      text({ ...FOCUS, x: 0, y: 0, width: 576, height: 288, content: ' ', capture: true }),
+      rightText({ ...REC, y: HEADER_Y, content: '■' }),
+      text({ ...HINT_L, x: MARGIN_X, y: HINT_Y, width: 260, content: STOP_HINT, brightness: HINT_BRIGHTNESS }),
+      rightText({ ...HINT_R, y: HINT_Y, content: DISCARD_HINT, brightness: HINT_BRIGHTNESS }),
+    ],
+  })
+
+  function swapText(texts: [{ id: number; name: string }, string][]) {
+    for (const [container, content] of texts) context?.glasses.updateText(container, content || ' ')
+  }
+
+  function showRecordingView() {
+    inPlace = sheetMusic()
+    if (!inPlace) return context?.redraw()
+    swapText([
+      [TITLE_L, ''],
+      [TITLE_R, ''],
+      [FOCUS, ''],
+      [REC, '■'],
+      [HINT_L, STOP_HINT],
+      [HINT_R, DISCARD_HINT],
+    ])
+  }
+
+  function showReadyView() {
+    phase = 'ready'
+    recorder = null
+    if (!inPlace) return context?.redraw()
+    swapText([
+      [TITLE_L, passage.title],
+      [TITLE_R, `${passage.tempoBpm} bpm · RH`],
+      [FOCUS, `Focus: ${passage.focus}`],
+      [REC, ''],
+      [HINT_L, RECORD_HINT],
+      [HINT_R, ''],
+    ])
+  }
+
+  async function startRecording() {
+    phase = 'starting'
+    showRecordingView()
+    try {
+      recorder = await Recorder.start(context!.glasses, passage)
+      phase = 'recording'
+      autoStop = setTimeout(() => {
+        status(`take reached ${MAX_TAKE_MS / 1000}s; stopping`)
+        stopRecording()
+      }, MAX_TAKE_MS)
+    } catch (error) {
+      status(`could not start recording: ${String(error)}`, 'error')
+      showReadyView()
+    }
+  }
+
+  async function stopRecording() {
+    if (phase !== 'recording' || !recorder) return
+    phase = 'stopping'
+    clearTimeout(autoStop)
+    const take = await recorder.stop()
+    if (take) onTake(take)
+  }
+
+  async function discardRecording() {
+    if (phase !== 'recording' || !recorder) return
+    phase = 'stopping'
+    clearTimeout(autoStop)
+    await recorder.discard()
+    showReadyView()
+  }
+
+  return {
+    get name() {
+      return phase === 'ready' ? 'ready' : 'recording'
+    },
+
+    get allowsMenu() {
+      return phase === 'ready'
+    },
+
+    page: () => (phase === 'ready' ? readyPage() : recordingOnlyPage()),
+
+    enter(ctx) {
+      context = ctx
+      if (phase !== 'ready') return
+      renderStaffTiles(passage)
+        .then(tiles => {
+          if (!tiles.hasClef) status('treble clef font failed to load; staff drawn without it', 'error')
+          // Never start an image send once recording has begun.
+          const wanted = () => ctx.isActive() && phase === 'ready'
+          ctx.glasses.updateImage(STAFF_LEFT, tiles.left, wanted)
+          ctx.glasses.updateImage(STAFF_RIGHT, tiles.right, wanted)
+        })
+        .catch(error => status(`staff render failed: ${String(error)}`, 'error'))
+    },
 
     onInput(input) {
-      if (input.kind === 'doubleTap') onBack()
+      if (phase === 'ready') {
+        if (input.kind === 'tap') startRecording()
+        else if (input.kind === 'doubleTap') onBack()
+      } else if (phase === 'recording') {
+        if (input.kind === 'tap') stopRecording()
+        else if (input.kind === 'doubleTap') discardRecording()
+      }
+      // 'starting' / 'stopping': ignore input until the mic has settled.
+    },
+
+    dispose() {
+      // App closing or glasses gone mid-take: an interrupted capture is never kept.
+      clearTimeout(autoStop)
+      if (recorder && phase === 'recording') {
+        status('capture interrupted', 'error')
+        recorder.discard()
+      }
     },
   }
 }

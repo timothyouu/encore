@@ -1,0 +1,156 @@
+{
+  "file": {
+    "id": "01M56HHCC29GHEHZ2V9FPV5FTR",
+    "name": "G2 Mobile App"
+  },
+  "contentHash": {
+    "tokens": "201c032a"
+  }
+}
+(
+    <div style={{ backgroundColor: '#F6F2EA', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', fontSize: '12px', fontSynthesis: 'none', height: '844px', lineHeight: '16px', MozOsxFontSmoothing: 'grayscale', overflow: 'clip', overflowWrap: 'anywhere', paddingTop: '62px', WebkitFontSmoothing: 'antialiased', width: '390px' }}>
+      <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'space-between', paddingInline: '24px' }}>
+        <div style={{ boxSizing: 'border-box', color: '#000000', flexShrink: '0', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px', width: '90px' }}>
+          ‹ Even Hub
+        </div>
+        <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '28px', lineHeight: '34px' }}>
+          encore
+        </div>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '22px', justifyContent: 'end', width: '90px' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <polygon points="12.00,3.40 13.95,2.19 15.83,2.76 16.78,4.85 18.08,5.92 20.31,6.44 21.24,8.17 20.43,10.32 20.60,12.00 21.81,13.95 21.24,15.83 19.15,16.78 18.08,18.08 17.56,20.31 15.83,21.24 13.68,20.43 12.00,20.60 10.05,21.81 8.17,21.24 7.22,19.15 5.92,18.08 3.69,17.56 2.76,15.83 3.57,13.68 3.40,12.00 2.19,10.05 2.76,8.17 4.85,7.22 5.92,5.92 6.44,3.69 8.17,2.76 10.32,3.57" fill="none" stroke="#625F58" strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="12" cy="12" r="3.5" fill="none" stroke="#625F58" strokeWidth="1.5" />
+          </svg>
+        </div>
+      </div>
+      <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', minHeight: '0px', paddingInline: '24px', paddingTop: '20px' }}>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '20px', paddingTop: '12px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '32px', lineHeight: '40px' }}>
+            First Steps
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+            Recording 04 · Sample
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '56px', justifyContent: 'space-between' }}>
+          <div style={{ alignItems: 'center', borderColor: 'var(--color-line)', borderRadius: '22px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '44px', justifyContent: 'center', opacity: '0.35', width: '44px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+              <path d="m14 6-6 6 6 6" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+              Mistake 1 of 3
+            </div>
+            <div style={{ boxSizing: 'border-box', display: 'flex', gap: '8px' }}>
+              <div style={{ backgroundColor: 'var(--color-ink)', borderColor: 'var(--color-ink)', borderRadius: '50%', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', flexShrink: '0', height: '7px', width: '7px' }} />
+              <div style={{ borderColor: 'var(--color-muted)', borderRadius: '50%', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', flexShrink: '0', height: '7px', width: '7px' }} />
+              <div style={{ borderColor: 'var(--color-muted)', borderRadius: '50%', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', flexShrink: '0', height: '7px', width: '7px' }} />
+            </div>
+          </div>
+          <div style={{ alignItems: 'center', borderColor: 'var(--color-line)', borderRadius: '22px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '44px', justifyContent: 'center', width: '44px' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+              <path d="m10 6 6 6-6 6" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '24px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '28px', lineHeight: '36px' }}>
+            Your correction
+          </div>
+        </div>
+        <div style={{ alignItems: 'center', backgroundColor: '#EDE7DC', borderRadius: '8px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '52px', justifyContent: 'center' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '21px', lineHeight: '26px' }}>
+            Play E4 on beat 3.
+          </div>
+        </div>
+        <div style={{ alignSelf: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', position: 'relative', translate: '0px 16px', width: '336px' }}>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              C
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              D
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#AD8C50', borderStyle: 'solid', borderWidth: '3px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              E
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              F
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              G
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              A
+            </div>
+          </div>
+          <div style={{ alignItems: 'end', backgroundColor: '#FAF7F0', borderBottomLeftRadius: '5px', borderBottomRightRadius: '5px', borderColor: '#8B877E', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '112px', justifyContent: 'center', paddingBottom: '12px', width: '48px' }}>
+            <div style={{ boxSizing: 'border-box', color: '#000000', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '15px', lineHeight: '18px' }}>
+              B
+            </div>
+          </div>
+          <div style={{ backgroundColor: '#242421', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', boxSizing: 'border-box', height: '60px', left: '36px', position: 'absolute', top: '0px', width: '24px' }} />
+          <div style={{ backgroundColor: '#242421', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', boxSizing: 'border-box', height: '60px', left: '84px', position: 'absolute', top: '0px', width: '24px' }} />
+          <div style={{ backgroundColor: '#242421', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', boxSizing: 'border-box', height: '60px', left: '180px', position: 'absolute', top: '0px', width: '24px' }} />
+          <div style={{ backgroundColor: '#242421', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', boxSizing: 'border-box', height: '60px', left: '228px', position: 'absolute', top: '0px', width: '24px' }} />
+          <div style={{ backgroundColor: '#242421', borderBottomLeftRadius: '4px', borderBottomRightRadius: '4px', boxSizing: 'border-box', height: '60px', left: '276px', position: 'absolute', top: '0px', width: '24px' }} />
+        </div>
+        <div style={{ boxSizing: 'border-box', paddingBottom: '12px', paddingTop: '30px', textAlign: 'center' }}>
+          <div style={{ boxSizing: 'border-box', color: '#625F58', display: 'flex', flexWrap: 'wrap', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '13px', justifyContent: 'center', lineHeight: '16px', textAlign: 'center' }}>
+            Quarter note · Hold for 1 beat
+          </div>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: '10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px' }}>
+          <div style={{ boxSizing: 'border-box', display: 'flex', gap: '24px' }}>
+            <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', gap: '10px' }}>
+              <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+                <ellipse cx="8" cy="28" rx="6" ry="4" fill="#171714" />
+                <path d="M14 28V4" fill="#000000" stroke="#171714" strokeWidth="2" />
+              </svg>
+              <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '13px', lineHeight: '16px', whiteSpace: 'pre-wrap' }}>
+                Quarter note<br />1 beat
+              </div>
+            </div>
+            <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', gap: '10px' }}>
+              <svg width="24" height="36" viewBox="0 0 24 36" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+                <ellipse cx="8" cy="28" rx="6" ry="4" fill="none" stroke="#171714" strokeWidth="2" />
+                <path d="M14 28V4" fill="#000000" stroke="#171714" strokeWidth="2" />
+              </svg>
+              <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '13px', lineHeight: '16px', whiteSpace: 'pre-wrap' }}>
+                Half note<br />2 beats
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', flexShrink: '0', paddingTop: '16px', width: '342px' }}>
+          <div style={{ alignItems: 'center', borderColor: 'var(--color-line)', borderRadius: '22px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', gap: '10px', height: '44px', justifyContent: 'center' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+              <path d="M3 5h18M3 9h18M3 13h18M3 17h18M15 4v12" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" />
+              <ellipse cx="12" cy="17" rx="3" ry="2" fill="none" stroke="var(--color-ink)" strokeWidth="1.5" />
+            </svg>
+            <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+              View in sheet music
+            </div>
+          </div>
+        </div>
+        <div style={{ boxSizing: 'border-box', flexBasis: '0%', flexGrow: '1', minHeight: '24px' }} />
+        <div style={{ alignItems: 'center', backgroundColor: 'var(--color-ink)', borderColor: '#8B877E', borderRadius: '28px', borderStyle: 'solid', borderWidth: '1px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'center' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-paper)', display: 'flex', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '19px', lineHeight: '24px' }}>
+            ‹ Back to review
+          </div>
+        </div>
+      </div>
+      <div style={{ alignItems: 'end', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '42px', justifyContent: 'center', paddingBottom: '8px' }} />
+    </div>
+  )

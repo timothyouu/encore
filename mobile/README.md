@@ -6,7 +6,7 @@ This folder contains the mobile UI independently of `../g2/`, which remains the 
 
 Use Node 22.14 or newer and existing installed dependencies. From this folder run `npm run dev`, `npm test`, and `npm run build`. The development URL is http://localhost:5176. Vite listens on loopback by default and forwards `/api/*` to `http://127.0.0.1:8788/v1/*`; run the local API there before a real capture. Physical phone access requires a separately secured connection to the server. The glasses app can run separately on port 5173.
 
-`src/phone.ts` and `phone.css` implement the Paper-derived UI. `session.ts` and `passages.ts` provide validated attempt state and reference data. `capture.ts` handles phone microphone recording and configured analysis/coaching services. Tests live in `tests/`.
+`src/phone.ts` and `phone.css` implement the Paper-derived UI. `session.ts` provides validated attempt state. `src/passages.ts` exposes the pure authored reference data in `../shared/passages.ts`, which both phone and G2 consume; the phone Guide shows a finger only when that note has a supported authored suggestion. `capture.ts` handles phone microphone recording and configured analysis/coaching services. Tests live in `tests/`.
 
 This app renders only on the phone. It must not import an Even Hub/native glasses bridge, write glasses containers, or handle glasses gestures. The former `display.ts` adapter violated this boundary and has been removed. Glasses integration is unavailable here; future integration needs a separately authorized contract with the owner of `g2/`. `npm test` includes a boundary regression to prevent reintroduction. See [repository instructions](../AGENTS.md).
 

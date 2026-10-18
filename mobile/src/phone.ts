@@ -2,12 +2,14 @@ import './paper-renderer.css';
 import { mountPaperVisualization } from './paper-renderer.ts';
 import { resolveVisualPlan, visibleFindings } from './paper-evidence.ts';
 import './phone.css';
-import { noteName, passages, type Passage, type ReferenceNote } from './passages.ts';
+import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, type MistakeVisualization } from './visualization.ts';
 
+import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
+
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => 'demo' | 'phone' };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -125,43 +127,51 @@ function svgText(x: number, y: number, value: string, className = ''): SVGTextEl
 }
 
 // This staff uses actual reference beats, pitches, durations, and unoccupied beats.
-function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement {
-  const frame = node('div', 'score-frame');
+function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number, preferences?: Readonly<DisplaySettings>): HTMLElement {
+  const large = preferences?.sheetMusicSize === 'large';
+  const showNames = preferences?.showNoteNames ?? false;
+  const scale = large ? 1.25 : 1;
+  const step = 48;
+  const start = 48;
+  const frame = node('div', `score-frame${large ? ' score-large' : ''}`);
   const totalBeats = Math.max(8, ...passage.notes.map((note) => note.onsetBeat + note.durationBeats));
-  const width = Math.max(460, 54 + totalBeats * 48);
+  const width = Math.max(460, 54 + totalBeats * step);
   const occupied = new Set<number>();
   for (const note of passage.notes) for (let beat = note.onsetBeat; beat < note.onsetBeat + note.durationBeats; beat += 1) occupied.add(beat);
   const restBeats = Array.from({ length: Math.ceil(totalBeats) }, (_unused, beat) => beat).filter((beat) => !occupied.has(beat));
   const restLabel = restBeats.length ? `; quarter rests on beat${restBeats.length === 1 ? '' : 's'} ${restBeats.map((beat) => beat + 1).join(', ')}` : '';
-  const svg = svgElement('svg', { viewBox: `0 0 ${width} 144`, role: 'img', 'aria-label': `Reference sheet music for ${passage.title}; ${passage.notes.map((note) => `${noteName(note.midiPitch)} at beat ${note.onsetBeat + 1} for ${note.durationBeats} beat${note.durationBeats === 1 ? '' : 's'}`).join(', ')}${restLabel}` });
+  const svg = svgElement('svg', { viewBox: `0 0 ${width * scale} ${(showNames ? 158 : 144) * scale}`, role: 'img', 'aria-label': `Reference sheet music for ${passage.title}; ${passage.notes.map((note) => `${noteName(note.midiPitch)} at beat ${note.onsetBeat + 1} for ${note.durationBeats} beat${note.durationBeats === 1 ? '' : 's'}`).join(', ')}${restLabel}` });
+  const canvas = large ? svgElement('g', { transform: 'scale(1.25)' }) : svg;
+  if (large) svg.append(canvas);
   if (extraBeat !== undefined && Number.isFinite(extraBeat)) {
-    const x = Math.max(48, Math.min(width - 24, 48 + extraBeat * 48));
-    svg.append(svgElement('rect', { x: String(x - 18), y: '25', width: '36', height: '69', rx: '5', class: 'extra-beat-ring' }));
+    const x = Math.max(start, Math.min(width - 24, start + extraBeat * step));
+    canvas.append(svgElement('rect', { x: String(x - 18), y: '25', width: '36', height: '69', rx: '5', class: 'extra-beat-ring' }));
   }
-  for (let line = 0; line < 5; line += 1) svg.append(svgElement('line', { x1: '24', y1: String(36 + line * 10), x2: String(width - 20), y2: String(36 + line * 10), class: 'staff-line' }));
-  svg.append(svgText(3, 56, '𝄞', 'clef'));
+  for (let line = 0; line < 5; line += 1) canvas.append(svgElement('line', { x1: '24', y1: String(36 + line * 10), x2: String(width - 20), y2: String(36 + line * 10), class: 'staff-line' }));
+  canvas.append(svgText(3, 56, '𝄞', 'clef'));
   for (let bar = passage.beatsPerBar; bar < totalBeats; bar += passage.beatsPerBar) {
-    const x = 48 + bar * 48 - 16;
-    svg.append(svgElement('line', { x1: String(x), y1: '36', x2: String(x), y2: '76', class: 'bar-line' }));
+    const x = start + bar * step - 16;
+    canvas.append(svgElement('line', { x1: String(x), y1: '36', x2: String(x), y2: '76', class: 'bar-line' }));
   }
   for (const note of passage.notes) {
-    const x = 48 + note.onsetBeat * 48;
+    const x = start + note.onsetBeat * step;
     const naturalOffset = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].indexOf(note.midiPitch % 12);
     const diatonic = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6][naturalOffset];
     // E4 sits on the bottom staff line at y=76; C4 needs one ledger line at y=86.
     const y = 86 - ((Math.floor(note.midiPitch / 12) - 5) * 7 + diatonic) * 5;
-    for (let ledgerY = 86; ledgerY <= y; ledgerY += 10) svg.append(svgElement('line', { x1: String(x - 12), y1: String(ledgerY), x2: String(x + 12), y2: String(ledgerY), class: 'staff-line' }));
-    if (note.midiPitch % 12 === 1 || note.midiPitch % 12 === 3 || note.midiPitch % 12 === 6 || note.midiPitch % 12 === 8 || note.midiPitch % 12 === 10) svg.append(svgText(x - 22, y + 5, '♯', 'accidental'));
-    if (note.id === selected?.id) svg.append(svgElement('circle', { cx: String(x), cy: String(y), r: '17', class: 'selected-note-ring' }));
-    svg.append(svgElement('ellipse', { cx: String(x), cy: String(y), rx: '8', ry: '5', transform: `rotate(-18 ${x} ${y})`, class: note.durationBeats >= 2 ? 'half-note' : 'quarter-note' }));
-    svg.append(svgElement('line', { x1: String(x + 7), y1: String(y - 1), x2: String(x + 7), y2: String(y - 32), class: 'note-stem' }));
-    svg.append(svgText(x - 5, 128, String(note.onsetBeat + 1), 'beat-number'));
+    for (let ledgerY = 86; ledgerY <= y; ledgerY += 10) canvas.append(svgElement('line', { x1: String(x - 12), y1: String(ledgerY), x2: String(x + 12), y2: String(ledgerY), class: 'staff-line' }));
+    if (note.midiPitch % 12 === 1 || note.midiPitch % 12 === 3 || note.midiPitch % 12 === 6 || note.midiPitch % 12 === 8 || note.midiPitch % 12 === 10) canvas.append(svgText(x - 22, y + 5, '♯', 'accidental'));
+    if (note.id === selected?.id) canvas.append(svgElement('circle', { cx: String(x), cy: String(y), r: '17', class: 'selected-note-ring' }));
+    canvas.append(svgElement('ellipse', { cx: String(x), cy: String(y), rx: '8', ry: '5', transform: `rotate(-18 ${x} ${y})`, class: note.durationBeats >= 2 ? 'half-note' : 'quarter-note' }));
+    canvas.append(svgElement('line', { x1: String(x + 7), y1: String(y - 1), x2: String(x + 7), y2: String(y - 32), class: 'note-stem' }));
+    if (showNames) canvas.append(svgText(x, 120, noteName(note.midiPitch), 'score-note-name'));
+    canvas.append(svgText(x - 5, showNames ? 146 : 128, String(note.onsetBeat + 1), 'beat-number'));
   }
   for (let beat = 0; beat < totalBeats; beat += 1) {
     if (occupied.has(beat)) continue;
-    const x = 48 + beat * 48;
-    svg.append(svgElement('path', { d: `M ${x - 4} 39 l 8 9 -6 7 8 9 -8 8 c -4 4 -1 9 5 8`, class: 'quarter-rest' }));
-    svg.append(svgText(x - 5, 128, String(beat + 1), 'beat-number'));
+    const x = start + beat * step;
+    canvas.append(svgElement('path', { d: `M ${x - 4} 39 l 8 9 -6 7 8 9 -8 8 c -4 4 -1 9 5 8`, class: 'quarter-rest' }));
+    canvas.append(svgText(x - 5, showNames ? 146 : 128, String(beat + 1), 'beat-number'));
   }
   frame.append(svg);
   return frame;
@@ -214,16 +224,18 @@ function durationLabel(note?: ReferenceNote): string {
   return note?.durationBeats === 2 ? 'Half note · Hold for 2 beats' : note?.durationBeats === 1 ? 'Quarter note · Hold for 1 beat' : note ? `Hold for ${note.durationBeats} beats` : 'Follow the reference rhythm';
 }
 
-export function mountPhone(root: HTMLElement, store: SessionStore, actions: Actions): () => void {
+export function mountPhone(root: HTMLElement, store: SessionStore, actions: Actions, settings: DisplaySettingsStore = new DisplaySettingsStore()): () => void {
   let query = '';
   let scenario: Scenario = 'mistakes';
-  let menuOpen = false;
   let cancelOpen = false;
+  let settingsLayer: HTMLElement | null = null;
+  let settingsScrollY = 0;
   let timer: number | undefined;
   let recordingTime: HTMLElement | null = null;
   let touchStart: number | null = null;
-  let focusReturnSelector = '.menu-trigger';
+  let focusReturnSelector = '.recording-page .secondary-action';
   const mode = (): 'demo' | 'phone' => actions.getMode?.() ?? 'demo';
+  const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement => notation(passage, selected, extraBeat, settings.value);
 
   function currentRecord(): AttemptRecord | undefined { return store.records.find((record) => record.attemptId === store.state.attemptId); }
   function currentPassage(): Passage | undefined { return passageOf(store.state.passageId) ?? passageOf(currentRecord()?.passageId ?? null); }
@@ -231,24 +243,151 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   function playAgain(): void { store.showLibrary(); }
   function openSheet(): void { store.showSheet(); }
   function closeSheet(): void { store.closeSheet(); root.querySelector<HTMLButtonElement>('.outline-action')?.focus(); }
-  function openDialog(kind: 'menu' | 'cancel'): void {
+  function openDialog(): void {
     const trigger = document.activeElement;
-    focusReturnSelector = trigger instanceof HTMLElement && trigger.classList.contains('hub-link') ? '.hub-link'
-      : kind === 'menu' ? '.menu-trigger' : '.recording-page .secondary-action';
-    menuOpen = kind === 'menu'; cancelOpen = kind === 'cancel'; render();
+    focusReturnSelector = trigger instanceof HTMLElement && trigger.classList.contains('hub-link') ? '.hub-link' : '.recording-page .secondary-action';
+    cancelOpen = true; render();
     root.querySelector<HTMLElement>('[role="dialog"] button')?.focus();
   }
-  function closeDialog(): void { menuOpen = false; cancelOpen = false; render(); root.querySelector<HTMLElement>(focusReturnSelector)?.focus(); }
+  function closeDialog(): void { cancelOpen = false; render(); root.querySelector<HTMLElement>(focusReturnSelector)?.focus(); }
+
+  function openSettings(): void {
+    if (store.state.screen === 'recording' || store.state.screen === 'processing' || actions.isBusy?.()) return;
+    settings.open(store.state.screen);
+  }
+
+  function gearIcon(): SVGSVGElement {
+    const svg = svgElement('svg', { width: '22', height: '22', viewBox: '0 0 24 24', 'aria-hidden': 'true' });
+    svg.append(
+      svgElement('polygon', { points: '12.00,3.40 13.95,2.19 15.83,2.76 16.78,4.85 18.08,5.92 20.31,6.44 21.24,8.17 20.43,10.32 20.60,12.00 21.81,13.95 21.24,15.83 19.15,16.78 18.08,18.08 17.56,20.31 15.83,21.24 13.68,20.43 12.00,20.60 10.05,21.81 8.17,21.24 7.22,19.15 5.92,18.08 3.69,17.56 2.76,15.83 3.57,13.68 3.40,12.00 2.19,10.05 2.76,8.17 4.85,7.22 5.92,5.92 6.44,3.69 8.17,2.76 10.32,3.57', fill: 'none', stroke: '#625F58', 'stroke-width': '1.5', 'stroke-linejoin': 'round' }),
+      svgElement('circle', { cx: '12', cy: '12', r: '3.5', fill: 'none', stroke: '#625F58', 'stroke-width': '1.5' }),
+    );
+    return svg;
+  }
+
+  function glassesIcon(): SVGSVGElement {
+    const svg = svgElement('svg', { width: '20', height: '17', viewBox: '0 0 26 22', 'aria-hidden': 'true' });
+    svg.append(
+      svgElement('path', { d: 'M2 10L4 5H7M24 10L22 5H19M11 11C12 9.5 14 9.5 15 11', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
+      svgElement('rect', { x: '2', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8' }),
+      svgElement('rect', { x: '15', y: '9', width: '9', height: '7', rx: '2.5', fill: 'none', stroke: '#625F58', 'stroke-width': '1.8' }),
+    );
+    return svg;
+  }
 
   function header(): HTMLElement {
     const bar = node('header', 'app-header');
-    const back = control('‹ Library', 'hub-link', () => { if (store.state.screen === 'recording') openDialog('cancel'); else store.showLibrary(); });
+    const back = control('‹ Library', 'hub-link', () => { if (store.state.screen === 'recording') openDialog(); else store.showLibrary(); });
     const wordmark = node('div', 'wordmark', 'encore');
-    const menu = control('☰', 'menu-trigger', () => openDialog('menu'));
-    menu.setAttribute('aria-label', 'Open menu');
-    menu.setAttribute('aria-haspopup', 'dialog');
-    add(bar, back, wordmark, menu);
+    const gear = control('', 'settings-trigger', openSettings, store.state.screen === 'recording' || store.state.screen === 'processing' || Boolean(actions.isBusy?.()));
+    gear.setAttribute('aria-label', 'Open Settings');
+    gear.append(gearIcon());
+    add(bar, back, wordmark, gear);
     return bar;
+  }
+
+  function settingsSwitch(label: string, description: string, checked: boolean, action: () => void, disabled = false): HTMLElement {
+    const row = node('div', 'settings-row');
+    const labelId = label === 'Note names' ? 'encore-note-names-label' : 'encore-show-sheet-label';
+    const labelText = node('span', 'settings-label', label);
+    labelText.id = labelId;
+    const copy = add(node('div', 'settings-copy'), labelText, node('span', 'settings-description', description));
+    const toggle = control('', `settings-switch${checked ? ' is-on' : ''}`, action, disabled);
+    toggle.id = label === 'Note names' ? 'encore-note-names-switch' : 'encore-show-sheet-switch';
+    toggle.setAttribute('role', 'switch');
+    toggle.setAttribute('aria-labelledby', labelId);
+    toggle.setAttribute('aria-checked', String(checked));
+    toggle.append(node('span', 'settings-switch-thumb'));
+    return add(row, copy, toggle);
+  }
+
+  function settingsPage(): HTMLElement {
+    const page = node('main', 'settings-page');
+    const bar = node('header', 'app-header settings-header');
+    const back = control('‹ Back', 'hub-link settings-back', () => settings.close());
+    back.id = 'encore-settings-back';
+    back.setAttribute('aria-label', 'Return to previous screen');
+    const gear = add(node('span', 'settings-current-icon'), gearIcon());
+    add(bar, back, node('div', 'wordmark', 'encore'), gear);
+    const body = node('div', 'settings-body');
+    const intro = node('section', 'settings-intro');
+    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    add(intro, node('h1', '', 'Settings'), status);
+    body.append(intro);
+    const value = settings.value;
+    body.append(settingsSwitch('Show sheet music on glasses', 'See the sheet music while you play.', value.showSheetMusicWhilePlaying, () => settings.update({ showSheetMusicWhilePlaying: !value.showSheetMusicWhilePlaying })));
+    const sizeSection = node('section', 'settings-size');
+    const sizeLabel = node('h2', '', 'Sheet music size');
+    sizeLabel.id = 'sheet-size-label';
+    const choices = node('div', 'size-options');
+    choices.setAttribute('role', 'radiogroup');
+    choices.setAttribute('aria-labelledby', sizeLabel.id);
+    for (const [choice, text] of [['standard', 'Standard'], ['large', 'Large']] as const) {
+      const option = control(text, `size-option${value.sheetMusicSize === choice ? ' is-selected' : ''}`, () => settings.update({ sheetMusicSize: choice }), !value.showSheetMusicWhilePlaying);
+      option.id = `encore-sheet-size-${choice}`;
+      option.setAttribute('role', 'radio');
+      option.setAttribute('aria-checked', String(value.sheetMusicSize === choice));
+      option.tabIndex = value.sheetMusicSize === choice && value.showSheetMusicWhilePlaying ? 0 : -1;
+      choices.append(option);
+    }
+    choices.addEventListener('keydown', (event) => {
+      if (!value.showSheetMusicWhilePlaying || !['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+      event.preventDefault();
+      const next = value.sheetMusicSize === 'standard' ? 'large' : 'standard';
+      settings.update({ sheetMusicSize: next });
+      settingsLayer?.querySelector<HTMLButtonElement>(`#encore-sheet-size-${next}`)?.focus();
+    });
+    add(sizeSection, sizeLabel, choices);
+    body.append(sizeSection);
+    body.append(settingsSwitch('Note names', 'Show C4, D4, E4 below the notes.', value.showNoteNames, () => settings.update({ showNoteNames: !value.showNoteNames }), !value.showSheetMusicWhilePlaying));
+    if (settings.storageWarning) {
+      const warning = node('p', 'storage-warning settings-warning', settings.storageWarning);
+      warning.setAttribute('role', 'status');
+      body.append(warning);
+    }
+    body.append(node('p', 'settings-sheet-status', 'Preferences are saved on this phone only. Applying them to glasses will be available with device integration.'));
+    return add(page, bar, body);
+  }
+
+  function syncSettingsLayer(): void {
+    if (settings.isOpen) {
+      if (!settingsLayer) {
+        settingsScrollY = window.scrollY;
+        settingsLayer = settingsPage();
+        for (const child of [...root.children]) {
+          if (!(child instanceof HTMLElement)) continue;
+          child.dataset.settingsWasInert = String(child.inert);
+          child.inert = true;
+          child.setAttribute('aria-hidden', 'true');
+        }
+        root.append(settingsLayer);
+        settingsLayer.querySelector<HTMLButtonElement>('.settings-back')?.focus();
+      } else {
+        const focus = document.activeElement;
+        const focusId = focus instanceof HTMLButtonElement && settingsLayer.contains(focus) ? focus.id : null;
+        const scroll = settingsLayer.scrollTop;
+        settingsLayer.replaceWith(settingsPage());
+        settingsLayer = root.lastElementChild as HTMLElement;
+        settingsLayer.scrollTop = scroll;
+        if (focusId) {
+          const buttons = [...settingsLayer.querySelectorAll<HTMLButtonElement>('button')];
+          (buttons.find((button) => button.id === focusId && !button.disabled) ?? settingsLayer.querySelector<HTMLButtonElement>('.settings-back'))?.focus();
+        }
+      }
+      return;
+    }
+    if (!settingsLayer) return;
+    settingsLayer.remove();
+    settingsLayer = null;
+    for (const child of [...root.children]) {
+      if (!(child instanceof HTMLElement)) continue;
+      child.inert = child.dataset.settingsWasInert === 'true';
+      delete child.dataset.settingsWasInert;
+      child.removeAttribute('aria-hidden');
+    }
+    render();
+    window.scrollTo({ top: settingsScrollY, behavior: 'instant' });
+    root.querySelector<HTMLButtonElement>('.settings-trigger:not(:disabled)')?.focus();
   }
 
   function library(): HTMLElement {
@@ -288,7 +427,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page ready-page');
     const top = control('‹ All passages', 'back-link', () => store.showLibrary());
     const preview = node('section', 'preview-card');
-    add(preview, node('p', 'eyebrow', 'PASSAGE PREVIEW'), node('h2', '', passage.title), node('p', 'subtle', `${passage.tempoBpm} BPM · 4/4 · Right hand · No pedal`), notation(passage));
+    add(preview, node('p', 'eyebrow', 'PASSAGE PREVIEW'), node('h2', '', passage.title), node('p', 'subtle', `${passage.tempoBpm} BPM · 4/4 · Right hand · No pedal`), score(passage));
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
@@ -326,11 +465,28 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   function recording(passage: Passage, record?: AttemptRecord): HTMLElement {
     const page = node('main', 'page recording-page');
     const core = node('section', 'recording-core');
+    const source = record?.captureSource ?? mode();
+    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    connectionBadge.setAttribute('role', 'status');
+    page.append(connectionBadge);
     const dot = node('span', 'recording-dot'); dot.setAttribute('aria-hidden', 'true');
     recordingTime = node('span', 'recording-time', '00:00');
-    const indicator = add(node('div', 'recording-indicator'), dot, recordingTime);
-    add(core, indicator, node('h1', '', 'Recording'), node('p', 'subtle', passage.title), node('p', 'quiet-note', (record?.captureSource ?? mode()) === 'demo' ? 'Play the phrase. This is a simulated capture.' : 'Play the phrase into your phone microphone. Stop when you finish.'));
-    add(page, core, control('Stop recording', 'primary-action', actions.stop), control('Cancel recording', 'secondary-action', () => openDialog('cancel')));
+    const indicator = add(node('div', 'recording-indicator'), dot, node('span', '', 'Recording'), recordingTime);
+    add(core, node('h1', 'recording-passage-title', passage.title), indicator);
+    if (settings.value.showSheetMusicWhilePlaying && source !== 'demo') {
+      const preview = add(node('div', 'recording-score'), score(passage));
+      preview.setAttribute('aria-label', 'Static reference sheet music while recording');
+      core.append(preview);
+    } else if (source === 'demo') {
+      const bars = node('div', 'recording-bars');
+      bars.setAttribute('aria-hidden', 'true');
+      for (const height of [4, 6, 8, 14, 24, 36, 48, 38, 24, 14, 10, 18, 30, 46, 62, 52, 34, 20, 12, 8, 12, 22, 38, 56, 66, 52, 36, 24, 16, 10, 18, 30, 40, 32, 22, 14, 8, 6, 4, 4]) {
+        const bar = node('span', 'recording-bar'); bar.style.height = `${height}px`; bars.append(bar);
+      }
+      core.append(bars);
+    }
+    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture and decorative waveform; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Phone microphone · reference sheet music is static'));
+    add(page, core, control('Stop & analyze', 'primary-action', actions.stop), control('Cancel', 'secondary-action', openDialog));
     if (record) updateTime(record);
     return page;
   }
@@ -404,7 +560,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     }
     const findings = orderedFindings(record, passage);
     if (!findings.length) {
-      add(page, node('div', 'clean-card', 'No supported mistakes found'), node('p', 'subtle', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched. This result is not a grade.`), notation(passage), node('div', 'grow'), resultNav());
+      add(page, node('div', 'clean-card', 'No supported mistakes found'), node('p', 'subtle', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched. This result is not a grade.`), score(passage), node('div', 'grow'), resultNav());
       return page;
     }
     const finding = findings[Math.min(store.state.findingIndex, findings.length - 1)];
@@ -448,7 +604,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const visual = resolveMistakeVisualization(record, passage, finding);
     const correction = node('div', 'correction-card', cue);
     const metadata = node('div', 'teaching-card');
-    add(metadata, node('span', '', durationLabel(reference)), visual?.suggestedFinger ? node('span', '', `Suggested finger ${visual.suggestedFinger} · Authored for this passage`) : null);
+    const fingerLabel = suggestedFingerLabel(reference);
+    add(metadata, node('span', '', durationLabel(reference)), fingerLabel ? node('span', '', fingerLabel) : null);
     const paperCard = record.analysis ? resolveVisualPlan(record.analysis, passage, coaching).cards.find(card => card.evidence.findingIds.includes(finding.id)) : undefined;
     const paperView = paperCard ? mountPaperVisualization(paperCard) : null;
     if (paperView) paperViews.push(paperView);
@@ -491,7 +648,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       const first = findings[0];
       if (first) {
         const reference = referenceFor(first, passage);
-        add(page, node('p', 'subtle', 'Analysis was saved. Coaching could not finish, so this correction comes directly from the recorded finding.'), node('div', 'finding-card', `${findingTitle(first)} · ${detailFor(first, passage, record)}`), node('div', 'correction-card', correctionFor(first, passage)), notation(passage, reference));
+        add(page, node('p', 'subtle', 'Analysis was saved. Coaching could not finish, so this correction comes directly from the recorded finding.'), node('div', 'finding-card', `${findingTitle(first)} · ${detailFor(first, passage, record)}`), node('div', 'correction-card', correctionFor(first, passage)), score(passage, reference));
       } else add(page, node('p', 'subtle', `${record.analysis.metrics.matchedNotes} of ${record.analysis.metrics.expectedNotes} reference notes matched. Coaching could not finish.`));
     } else page.append(node('p', 'subtle', record?.captureStatus === 'completed' ? 'This completed recording remains in your history. No musical judgment was made.' : 'This attempt did not count as a completed recording.'));
     add(page, node('div', 'grow'), record?.captureStatus === 'completed' && actions.retry && actions.canRetry?.(record.attemptId) ? control('Retry saved recording', 'outline-action', actions.retry) : null, control('Play again · Choose a passage', 'primary-action', playAgain), control('View past results', 'text-link', () => store.showHistory()));
@@ -505,21 +662,17 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const finding = findings[Math.min(store.state.findingIndex, findings.length - 1)];
     const reference = referenceFor(finding, passage);
     const extraBeat = finding?.kind === 'extra_note' && record ? findingBeat(finding, passage, record) : undefined;
-    add(page, control('‹ Close sheet music', 'back-link', closeSheet), heading('Sheet music', passage.title), node('p', 'subtle', reference ? `${findingTitle(finding)} · ${noteName(reference.midiPitch)} · Beat ${reference.onsetBeat + 1}` : extraBeat !== undefined ? `Extra detected note near beat ${Math.floor(extraBeat) + 1}` : 'Reference phrase'), notation(passage, reference, extraBeat), node('p', 'duration-caption', durationLabel(reference)), node('p', 'fine-print', reference ? 'The outlined note is the selected reference finding.' : 'The outlined beat marks the extra detected note; no reference note is prescribed there.'), node('div', 'grow'), control(`‹ Back to ${store.state.sheetOrigin}`, 'primary-action', closeSheet));
+    add(page, control('‹ Close sheet music', 'back-link', closeSheet), heading('Sheet music', passage.title), node('p', 'subtle', reference ? `${findingTitle(finding)} · ${noteName(reference.midiPitch)} · Beat ${reference.onsetBeat + 1}` : extraBeat !== undefined ? `Extra detected note near beat ${Math.floor(extraBeat) + 1}` : 'Reference phrase'), score(passage, reference, extraBeat), node('p', 'duration-caption', durationLabel(reference)), node('p', 'fine-print', reference ? 'The outlined note is the selected reference finding.' : 'The outlined beat marks the extra detected note; no reference note is prescribed there.'), node('div', 'grow'), control(`‹ Back to ${store.state.sheetOrigin}`, 'primary-action', closeSheet));
     return page;
   }
 
   function dialog(): HTMLElement | null {
-    if (!menuOpen && !cancelOpen) return null;
+    if (!cancelOpen) return null;
     const overlay = node('div', 'dialog-overlay');
     const panel = node('div', 'dialog-panel'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true');
-    const title = node('h2', '', cancelOpen ? 'Cancel recording?' : 'Menu'); title.id = 'encore-dialog-title'; panel.setAttribute('aria-labelledby', title.id);
+    const title = node('h2', '', 'Cancel recording?'); title.id = 'encore-dialog-title'; panel.setAttribute('aria-labelledby', title.id);
     panel.append(title);
-    if (cancelOpen) {
-      add(panel, node('p', 'subtle', 'This capture will not count as a completed recording.'), control('Keep recording', 'primary-action', closeDialog), control('Cancel and return to library', 'secondary-action', () => { cancelOpen = false; actions.cancel(); }));
-    } else {
-      add(panel, control('Choose a passage', 'menu-action', () => { menuOpen = false; store.showLibrary(); }), control('View past results', 'menu-action', () => { menuOpen = false; store.showHistory(); }), control('Close menu', 'secondary-action', closeDialog));
-    }
+    add(panel, node('p', 'subtle', 'This capture will not count as a completed recording.'), control('Keep recording', 'primary-action', closeDialog), control('Cancel and return to library', 'secondary-action', () => { cancelOpen = false; actions.cancel(); }));
     overlay.append(panel);
     overlay.addEventListener('click', (event) => { if (event.target === overlay) closeDialog(); });
     return overlay;
@@ -529,6 +682,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   const paperViews: ReturnType<typeof mountPaperVisualization>[] = [];
   function clearPaperViews(): void { for (const view of paperViews.splice(0)) view.destroy(); }
   function render(): void {
+    if (settings.isOpen && settingsLayer) return;
     clearPaperViews();
     const screenChanged = lastScreen !== store.state.screen;
     lastScreen = store.state.screen;
@@ -564,10 +718,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     if (timer !== undefined) window.clearInterval(timer);
     timer = undefined;
     if (screen === 'recording' && record) timer = window.setInterval(() => updateTime(record), 1000);
+    if (settings.isOpen) syncSettingsLayer();
   }
 
   function onKeyDown(event: KeyboardEvent): void {
-    if (menuOpen || cancelOpen) {
+    if (settings.isOpen) {
+      if (event.key === 'Escape') { event.preventDefault(); settings.close(); }
+      return;
+    }
+    if (cancelOpen) {
       if (event.key === 'Escape') { event.preventDefault(); closeDialog(); }
       if (event.key === 'Tab') {
         const buttons = [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button:not(:disabled)')];
@@ -593,12 +752,14 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   }
 
   const unsubscribe = store.subscribe(render);
+  const unsubscribeSettings = settings.subscribe(syncSettingsLayer);
   root.addEventListener('keydown', onKeyDown);
   root.addEventListener('encore:mode-change', render);
   render();
   return () => {
     clearPaperViews();
     unsubscribe();
+    unsubscribeSettings();
     root.removeEventListener('keydown', onKeyDown);
     root.removeEventListener('encore:mode-change', render);
     if (timer !== undefined) window.clearInterval(timer);

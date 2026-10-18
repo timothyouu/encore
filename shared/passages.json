@@ -5,6 +5,8 @@
     "title": "First Steps",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "purpose": "Adjacent-note accuracy",
+    "focus": "Step cleanly to each next key",
     "notes": [
       {
         "id": "P01-N01",
@@ -52,7 +54,7 @@
         "onsetBeat": 5,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 4
       },
       {
         "id": "P01-N07",
@@ -60,7 +62,7 @@
         "onsetBeat": 6,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P01-N08",
@@ -68,7 +70,7 @@
         "onsetBeat": 7,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 1
       }
     ]
   },
@@ -78,6 +80,8 @@
     "title": "Little Echo",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "purpose": "Repeated onsets",
+    "focus": "Play each repeat cleanly",
     "notes": [
       {
         "id": "P02-N01",
@@ -85,7 +89,7 @@
         "onsetBeat": 0,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 3
       },
       {
         "id": "P02-N02",
@@ -93,7 +97,7 @@
         "onsetBeat": 1,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P02-N03",
@@ -101,7 +105,7 @@
         "onsetBeat": 2,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 5
       },
       {
         "id": "P02-N04",
@@ -109,7 +113,7 @@
         "onsetBeat": 3,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 4
+        "suggestedFinger": 5
       },
       {
         "id": "P02-N05",
@@ -117,7 +121,7 @@
         "onsetBeat": 4,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 5
+        "suggestedFinger": 4
       },
       {
         "id": "P02-N06",
@@ -125,7 +129,7 @@
         "onsetBeat": 5,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 4
       },
       {
         "id": "P02-N07",
@@ -141,7 +145,7 @@
         "onsetBeat": 7,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 2
       }
     ]
   },
@@ -151,6 +155,8 @@
     "title": "Open Windows",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "purpose": "Skipped-key selection",
+    "focus": "Land each skip on the right key",
     "notes": [
       {
         "id": "P03-N01",
@@ -166,7 +172,7 @@
         "onsetBeat": 1,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P03-N03",
@@ -174,7 +180,7 @@
         "onsetBeat": 2,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 5
       },
       {
         "id": "P03-N04",
@@ -182,7 +188,7 @@
         "onsetBeat": 3,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 4
+        "suggestedFinger": 3
       },
       {
         "id": "P03-N05",
@@ -190,7 +196,7 @@
         "onsetBeat": 4,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 5
+        "suggestedFinger": 1
       },
       {
         "id": "P03-N06",
@@ -198,7 +204,7 @@
         "onsetBeat": 5,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 3
       },
       {
         "id": "P03-N07",
@@ -206,7 +212,7 @@
         "onsetBeat": 6,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 5
       },
       {
         "id": "P03-N08",
@@ -224,6 +230,8 @@
     "title": "Hold the Moment",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "purpose": "Durations",
+    "focus": "Hold the long notes full length",
     "notes": [
       {
         "id": "P04-N01",
@@ -239,7 +247,7 @@
         "onsetBeat": 2,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P04-N03",
@@ -247,7 +255,7 @@
         "onsetBeat": 3,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 5
       },
       {
         "id": "P04-N04",
@@ -263,7 +271,7 @@
         "onsetBeat": 6,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 5
+        "suggestedFinger": 3
       },
       {
         "id": "P04-N06",
@@ -271,7 +279,7 @@
         "onsetBeat": 7,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 2
       }
     ]
   },
@@ -281,6 +289,8 @@
     "title": "Room to Breathe",
     "tempoBpm": 60,
     "beatsPerBar": 4,
+    "purpose": "Rests",
+    "focus": "Let the rests stay silent",
     "notes": [
       {
         "id": "P05-N01",
@@ -296,7 +306,7 @@
         "onsetBeat": 2,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P05-N03",
@@ -304,7 +314,7 @@
         "onsetBeat": 3,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 5
       },
       {
         "id": "P05-N04",
@@ -320,7 +330,7 @@
         "onsetBeat": 5,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 5
+        "suggestedFinger": 3
       },
       {
         "id": "P05-N06",
@@ -338,6 +348,8 @@
     "title": "Small Climb",
     "tempoBpm": 72,
     "beatsPerBar": 4,
+    "purpose": "Steady timing at a faster tempo",
+    "focus": "Keep a steady beat at 72",
     "notes": [
       {
         "id": "P06-N01",
@@ -385,7 +397,7 @@
         "onsetBeat": 5,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 1
+        "suggestedFinger": 4
       },
       {
         "id": "P06-N07",
@@ -393,7 +405,7 @@
         "onsetBeat": 6,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 2
+        "suggestedFinger": 3
       },
       {
         "id": "P06-N08",
@@ -401,7 +413,7 @@
         "onsetBeat": 7,
         "durationBeats": 1,
         "hand": "right",
-        "suggestedFinger": 3
+        "suggestedFinger": 2
       }
     ]
   }

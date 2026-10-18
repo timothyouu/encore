@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../src/session.ts';
-import { passages, noteName } from '../src/passages.ts';
+import { passages, noteName, suggestedFingerLabel } from '../src/passages.ts';
+import { PASSAGES } from '../../g2/src/passages.ts';
 
 function memory(initial = null) {
   let value = initial;
@@ -59,6 +60,25 @@ test('all passage notes have unique IDs and authored right hand metadata', () =>
     assert.equal(new Set(passage.notes.map(n => n.id)).size, passage.notes.length);
     assert.ok(passage.notes.every(n => n.hand === 'right' && n.suggestedFinger >= 1 && n.suggestedFinger <= 5));
   }
+});
+test('phone and G2 consume the same authored note IDs and fingerings for every passage', () => {
+  assert.strictEqual(passages, PASSAGES);
+  assert.deepEqual(passages.map(passage => passage.notes.map(note => note.suggestedFinger)), [
+    [1, 2, 3, 4, 5, 4, 3, 1],
+    [3, 3, 5, 5, 4, 4, 2, 2],
+    [1, 3, 5, 3, 1, 3, 5, 3],
+    [1, 3, 5, 4, 3, 2],
+    [1, 3, 5, 4, 3, 1],
+    [1, 2, 3, 4, 5, 4, 3, 2],
+  ]);
+  for (const passage of passages) {
+    assert.deepEqual(passage.notes.map(note => note.id), passage.notes.map((_note, index) => `${passage.id}-N${String(index + 1).padStart(2, '0')}`));
+  }
+  assert.equal(suggestedFingerLabel(passages[0].notes[5]), 'Suggested finger 4 · Authored for this passage');
+  for (const unsupported of [undefined, null, 0, 6, Number.NaN]) {
+    assert.equal(suggestedFingerLabel({ ...passages[0].notes[5], suggestedFinger: unsupported }), null);
+  }
+  assert.equal(suggestedFingerLabel(undefined), null);
 });
 test('note names use MIDI C4 = 60 and reject invalid pitches', () => {
   assert.equal(noteName(60), 'C4');
