@@ -131,25 +131,28 @@ The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.de
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
 | Recording | Small recording icon; plus static sheet music for the selected passage when sheet music is shown | Tap → Analyzing; double tap → discard → Ready |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
-| Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
-| Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
+| Review | One mistake card per screen from `CoachingResult.visualPlan` (up to 3, priority order): art (keys, staff, beat ruler, duration bars or mic), ●/○ Expected/Detected legend, one cue | Swipe down/up → next/previous card; tap → replay the card's correction; double tap → Selection (Play again) |
 | Recoverable error | Brief reason and Play again option | Play again → Selection |
 
 **Sheet music setting:** there is no app Settings screen on G2. The glasses OS draws a contextual menu on tap then hold, and Encore registers one item in it: **Hide sheet music** when shown, **Show sheet music** when hidden (verb labels, because the OS menu keeps no item state). Selecting it toggles the setting and re-declares the current page so the label updates; the player stays on the same state and view, with no capture started and no passage change. Recording and Analyzing omit the item, so the setting never changes mid-capture; change it before starting or after results.
 
-Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
+Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review remains read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
 ### Controls
 
-- Single tap: start from Ready; stop and analyze from Recording
-- Swipe down: next feedback/guide page; swipe up: previous page
+- Single tap: start from Ready; stop and analyze from Recording; replay the current card in Review
+- Swipe down: next mistake card; swipe up: previous card
 - Double tap: go back one level; at root use the platform's exit behavior
 - Tap then hold: OS contextual menu (system-drawn); Encore adds only the sheet-music item
 - During recording, double tap discards the take immediately and returns to Ready (a dimmed `2× discard` hint says so); a discarded take is never saved as completed, counted or submitted
 - Voice commands are optional later enhancements; do not block v1 on speech recognition
-- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review `▼ guide`
+- **Gesture hints:** do not label system conventions (tap to select or move forward, double tap back, swipe to scroll). Show a dimmed hint only where the action is app-specific, destructive or hidden: Ready `tap ●` (start recording), Recording `tap ■` / `2× discard`, Review `▼ next` when another card follows
 
 Test actual gesture events and exit behavior on G2. The SDK reports `LONG_PRESS_EVENT` at press start and a separate `LONG_PRESS_RELEASE_EVENT`; Encore assigns no action to them, but drops any tap that arrives during or just after a hold, and hardware tests must verify that opening the system menu never also registers as a single tap (which could start or stop a recording). Opening and closing the system menu deliver foreground enter/exit events; they must not trigger a redraw or state change. Debounce duplicate events. Disable duplicate submissions while processing. A late response from an older attempt must not replace the current attempt's view.
+
+### Review cards on G2
+
+The glasses adapt the shared visual plan (`shared/visual-contract.ts`) following the Paper **Mistake animations** page, except that what the mic heard is drawn as × rather than a hollow notehead (which would read as a half note): solid note = expected, × = detected, a shaded band marks the beat in question, and every card labels EXPECTED and DETECTED in words. The card the coach chose (its findings match `evidenceFindingIds`) uses `summary.next` as its cue when it fits three lines; other cards use their own `cue`. Evidence IDs cover each card's whole context, so the faulty note is found by pairing expected and detected notes one to one (same pitch, onset within 0.2 beats). Tap replays a card as keyframes in its picture slot, sent at Bluetooth pace: first only what was played (× marks, the heard onset, the held length), then the fix (the written notes, the onset on the beat, the full length), ending on the fix. At rest, staff cards show only the written passage with the mistake's beat shaded (and a dashed slot for a missed note); × marks appear only during the replay. Timing and wrong-note-on-keys cards keep their × at rest because it carries the finding. Staff cards reveal each phase note by note in time order (at most four steps per phase, 1 s per step, 2 s on the frame that ends a phase); captions update once each picture has landed; the bottom row shows the frame caption and ●○○ progress, and swiping or leaving cancels it. Validated missing-note, extra-note, timing and duration findings may include one keyboard-context frame before the written correction; duration context associates the key with expected and measured hold bars. It uses the same solid expected / cross detected convention, keeps the latest resting artwork, and still ends on the correction. G2 card paging selects the corresponding shared finding and closes an open phone sheet overlay without creating a recording. There is no separate G2 Guide state; phone Guide and Sheet remain available. Unclear audio shows words and a microphone only, because analysis reports no audio levels to meter.
 
 ### Sheet music while playing
 
@@ -448,7 +451,7 @@ Devin and other coding agents work within assigned modules and branches. Their h
 - [ ] Library gear button → Settings → Library works without starting capture or changing recording counts
 - [ ] Phone settings persist locally without device writes; future G2 application of size/note-name preferences requires an agreed glasses-owner contract
 - [ ] Verify both sheet-music visibility states, both sizes, note names on/off, and disconnected yellow status on the phone; validate notation legibility and static passage fit on physical G2
-- [ ] Tap then hold opens the system menu from Selection, Ready, Review, Guide, and error states with Hide/Show sheet music; selecting it toggles the setting and returns to the same state unchanged
+- [ ] Tap then hold opens the system menu from Selection, Ready, Review, and error states with Hide/Show sheet music; selecting it toggles the setting and returns to the same state unchanged
 - [ ] During Recording/Analyzing the menu offers no sheet-music item, and opening the menu never stops capture or registers as a tap
 - [ ] The sheet-music setting persists across app restarts and does not affect recording counts or analysis
 - [ ] Tap stops capture and sends exactly one attempt

@@ -3,15 +3,30 @@ import { timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import type { AnalysisResult, CoachingResult, Passage } from './contracts.js';
 import { coach, type ModelChooser } from './coaching.js';
-import { ArtifactStore, AttemptConflictError, MAX_JSON_BYTES, StoreFullError, parseId, parseRecording, type Artifact } from './recordings.js';
+import { ArtifactStore, AttemptConflictError, MAX_JSON_BYTES, PurgedAttemptError, StoreFullError, parseId, parseRecording, type Artifact } from './recordings.js';
 import { InputError, parseCoachRequest, parsePassages } from './validation.js';
 import { invokeBasicPitch } from './workflow.js';
 
 const RATE_LIMIT = 30;
 const RATE_WINDOW_MS = 60_000;
 type RateEntry = { startedAt: number; count: number };
+export type RequestObservation = {
+  method: string; path: string; origin?: string; attemptId?: string;
+  stage?: 'upload' | 'analysis' | 'coaching' | 'audio'; status: number; durationMs: number;
+};
+function canonicalPath(path: string): string {
+  return path.startsWith('/api/') ? '/v1/' + path.slice('/api/'.length) : path;
+}
+function observedStage(path: string): RequestObservation['stage'] {
+  if (/^\/(?:api|v1)\/recordings\/[0-9a-f-]{36}\/audio$/.test(path)) return 'audio';
+  if (path === '/api/recordings' || path === '/v1/recordings') return 'upload';
+  if (path === '/api/analyze' || path === '/v1/analyze') return 'analysis';
+  if (path === '/api/coach' || path === '/v1/coach') return 'coaching';
+  return undefined;
+}
 export type CoachServerOptions = {
   library: Passage[];
   chooser: ModelChooser | null;
@@ -23,6 +38,7 @@ export type CoachServerOptions = {
   timeoutMs?: number;
   analysisTimeoutMs?: number;
   now?: () => number;
+  observeRequest?: (event: RequestObservation) => void;
 };
 export async function loadLibrary(): Promise<Passage[]> {
   const path = fileURLToPath(new URL('../../shared/passages.json', import.meta.url));
@@ -111,7 +127,17 @@ export function createCoachServer(options: CoachServerOptions): Server {
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin;
     const corsOrigin = origin && options.allowedOrigin === origin ? origin : undefined;
-    const path = new URL(request.url ?? '/', 'http://localhost').pathname;
+    const incomingPath = new URL(request.url ?? '/', 'http://localhost').pathname;
+    const path = canonicalPath(incomingPath);
+    const startedAt = performance.now();
+    let observedAttemptId: string | undefined;
+    response.once('finish', () => {
+      try {
+        options.observeRequest?.({ method: request.method ?? '', path: incomingPath, origin,
+          attemptId: observedAttemptId, stage: observedStage(incomingPath),
+          status: response.statusCode, durationMs: Math.round(performance.now() - startedAt) });
+      } catch { /* diagnostic callback must not affect the HTTP response */ }
+    });
     try {
       if (request.method === 'GET' && path === '/health') {
         send(response, 200, { ok: true, passageLibraryReady: options.library.length > 0,
@@ -152,6 +178,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       const raw = await readJson(request, path === '/v1/recordings' ? MAX_JSON_BYTES : 256_000);
       if (path === '/v1/recordings') {
         const { metadata, bytes } = parseRecording(raw, options.library);
+        observedAttemptId = metadata.attemptId;
         const address = server.address();
         const port = typeof address === 'object' && address ? address.port : 8788;
         const base = options.publicBaseUrl ?? 'http://127.0.0.1:' + String(port);
@@ -159,6 +186,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       }
       const fields = requestFields(raw);
       const artifact = artifactFor(store, fields);
+      observedAttemptId = artifact.metadata.attemptId;
       if (path === '/v1/analyze') {
         if (artifact.analysis) { send(response, 200, artifact.analysis, corsOrigin); return; }
         if (!artifact.analysisPromise) {
@@ -214,7 +242,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       if (response.headersSent) return;
       if (isQuotaError(cause)) error(response, 429, 'gemini_quota_stopped', corsOrigin);
       else if (cause instanceof AttemptConflictError) error(response, 409, 'attempt_conflict', corsOrigin);
-      else if (cause instanceof ExpiredArtifactError) error(response, 410, 'artifact_expired', corsOrigin);
+      else if (cause instanceof ExpiredArtifactError || cause instanceof PurgedAttemptError) error(response, 410, 'artifact_expired', corsOrigin);
       else if (cause instanceof StoreFullError) error(response, 503, 'artifact_store_full', corsOrigin);
       else if (cause instanceof TooLargeError) error(response, 413, 'request_too_large', corsOrigin);
       else if (cause instanceof InputError) error(response, 400, 'invalid_request', corsOrigin);

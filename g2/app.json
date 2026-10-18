@@ -3,13 +3,18 @@
   "edition": "202601",
   "name": "Encore",
   "version": "0.1.0",
-  "min_app_version": "2.0.0",
+  "min_app_version": "2.2.10",
   "min_sdk_version": "0.0.16",
   "entrypoint": "index.html",
   "permissions": [
     {
       "name": "g2-microphone",
       "desc": "Record piano takes from the glasses microphone for practice feedback."
+    },
+    {
+      "name": "network",
+      "desc": "Send practice audio to the approved Encore service.",
+      "whitelist": []
     }
   ],
   "supported_languages": [

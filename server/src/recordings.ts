@@ -7,6 +7,8 @@ export const MAX_JSON_BYTES = 1_850_000;
 export const HARD_TTL_MS = 10 * 60 * 1000;
 export const RETRY_GRACE_MS = 60 * 1000;
 const MAX_ARTIFACTS = 24;
+const MAX_ATTEMPTS = 2_048;
+type PurgedAttempt = { metadata: RecordingMetadata; digest: string; expiresAt: number };
 type CleanupTimer = { cancel(): void };
 type ScheduleCleanup = (callback: () => void, delayMs: number) => CleanupTimer;
 const scheduleCleanupTimer: ScheduleCleanup = (callback, delayMs) => {
@@ -51,7 +53,7 @@ export function parseRecording(value: unknown, library: Passage[]): { metadata: 
   const sampleRate = numeric(raw.sampleRate, 'sampleRate', 22050, 22050);
   const channels = numeric(raw.channels, 'channels', 1, 1);
   if (raw.encoding !== 'pcm_s16le') throw new InputError('encoding invalid');
-  if (raw.captureSource !== 'phone' && raw.captureSource !== 'test') throw new InputError('captureSource invalid');
+  if (raw.captureSource !== 'phone' && raw.captureSource !== 'test' && raw.captureSource !== 'g2') throw new InputError('captureSource invalid');
   const metadata: RecordingMetadata = {
     attemptId: parseId(raw.attemptId, 'attemptId'), passageId, passageVersion,
     attemptTempoBpm: numeric(raw.attemptTempoBpm, 'attemptTempoBpm', 30, 240),
@@ -107,13 +109,17 @@ export function validateWav(bytes: Buffer, declaredDuration: number): void {
 export class ArtifactStore {
   private byId = new Map<string, Artifact>();
   private byAttempt = new Map<string, string>();
+  private purgedAttempts = new Map<string, PurgedAttempt>();
   private cleanupTimer: CleanupTimer | undefined;
   private disposed = false;
   constructor(private clock: () => number = Date.now, private schedule: ScheduleCleanup = scheduleCleanupTimer) {}
   private scheduleCleanup(): void {
     this.cleanupTimer?.cancel();
-    if (this.disposed || this.byId.size === 0) return;
-    const next = Math.min(...Array.from(this.byId.values(), artifact => artifact.purgeAt));
+    if (this.disposed || (this.byId.size === 0 && this.purgedAttempts.size === 0)) return;
+    const next = Math.min(
+      ...Array.from(this.byId.values(), artifact => artifact.purgeAt),
+      ...Array.from(this.purgedAttempts.values(), attempt => attempt.expiresAt),
+    );
     this.cleanupTimer = this.schedule(() => {
       this.cleanupTimer = undefined;
       this.cleanup();
@@ -125,7 +131,15 @@ export class ArtifactStore {
       if (artifact.purgeAt <= now) {
         this.byId.delete(id);
         this.byAttempt.delete(artifact.metadata.attemptId);
+        if (artifact.expiresAt > now) {
+          this.purgedAttempts.set(artifact.metadata.attemptId, {
+            metadata: artifact.metadata, digest: artifact.digest, expiresAt: artifact.expiresAt,
+          });
+        }
       }
+    }
+    for (const [id, attempt] of this.purgedAttempts) {
+      if (attempt.expiresAt <= now) this.purgedAttempts.delete(id);
     }
     this.scheduleCleanup();
   }
@@ -141,10 +155,18 @@ export class ArtifactStore {
     this.cleanupTimer = undefined;
     this.byId.clear();
     this.byAttempt.clear();
+    this.purgedAttempts.clear();
   }
   put(metadata: RecordingMetadata, bytes: Buffer, audioBase: string): RecordingReceipt {
     this.cleanup();
     const digest = createHash('sha256').update(bytes).digest('hex');
+    const purged = this.purgedAttempts.get(metadata.attemptId);
+    if (purged) {
+      if (purged.digest !== digest || JSON.stringify(purged.metadata) !== JSON.stringify(metadata)) {
+        throw new AttemptConflictError();
+      }
+      throw new PurgedAttemptError();
+    }
     const existingId = this.byAttempt.get(metadata.attemptId);
     let artifact = existingId ? this.byId.get(existingId) : undefined;
     if (artifact) {
@@ -152,7 +174,7 @@ export class ArtifactStore {
         throw new AttemptConflictError();
       }
     } else {
-      if (this.byId.size >= MAX_ARTIFACTS) throw new StoreFullError();
+      if (this.byId.size >= MAX_ARTIFACTS || this.byId.size + this.purgedAttempts.size >= MAX_ATTEMPTS) throw new StoreFullError();
       const expiresAt = this.clock() + HARD_TTL_MS;
       artifact = { id: randomUUID(), metadata, bytes: Buffer.from(bytes), digest, expiresAt, purgeAt: expiresAt };
       this.byId.set(artifact.id, artifact);
@@ -170,4 +192,5 @@ export class ArtifactStore {
   }
 }
 export class AttemptConflictError extends Error {}
+export class PurgedAttemptError extends Error {}
 export class StoreFullError extends Error {}

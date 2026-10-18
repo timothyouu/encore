@@ -10,7 +10,7 @@ export type RecordingMetadata = {
   channels: 1;
   encoding: 'pcm_s16le';
   durationSec: number;
-  captureSource: 'phone' | 'test';
+  captureSource: 'phone' | 'test' | 'g2';
 };
 export type RecordingReceipt = RecordingMetadata & {
   artifactId: string;

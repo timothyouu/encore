@@ -118,19 +118,23 @@ export class Glasses {
   // queued for a screen the player already left is dropped.
   updateImage(container: { id: number; name: string }, imageData: Uint8Array, stillWanted: () => boolean) {
     return this.enqueue(`image ${container.name}`, async () => {
-      if (!stillWanted()) return
+      if (!stillWanted()) return false
       const result = await this.bridge.updateImageRawData(
         new ImageRawDataUpdate({ containerID: container.id, containerName: container.name, imageData }),
       )
       if (result !== ImageRawDataUpdateResult.success) {
         status(`image ${container.name}: ${result}`, 'error')
+        return false
       }
+      return true
     })
   }
 
   // Flicker-free content change; the ID and name must match the live container.
-  updateText(container: { id: number; name: string }, content: string) {
+  // Like images, an update can be dropped if it went stale while queued.
+  updateText(container: { id: number; name: string }, content: string, stillWanted: () => boolean = () => true) {
     return this.enqueue(`text ${container.name}`, async () => {
+      if (!stillWanted()) return
       const ok = await this.bridge.textContainerUpgrade(
         new TextContainerUpgrade({ containerID: container.id, containerName: container.name, content }),
       )

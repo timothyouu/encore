@@ -1,5 +1,6 @@
 import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PhoneCapture } from '../src/capture.ts';
 import { SessionStore, fixtureAnalysis, fixtureCoaching } from '../src/session.ts';
 import {
@@ -12,12 +13,11 @@ const endpoints = {
   analysis: 'https://analysis.example/v1/analyze',
   coaching: 'https://coaching.example/v1/coach',
 };
-const artifact = attemptId => ({ artifactId: 'artifact-1', attemptId,
-  audioUrl: '/v1/recordings/artifact-1', expiresAt: new Date(Date.now() + 60_000).toISOString(),
-  sha256: 'a'.repeat(64) });
 function uploadReply(options) {
-  const attemptId = JSON.parse(options.body).metadata.attemptId;
-  return { ok: true, json: async () => artifact(attemptId) };
+  const { metadata, wavBase64 } = JSON.parse(options.body);
+  const sha256 = createHash('sha256').update(Buffer.from(wavBase64, 'base64')).digest('hex');
+  return { ok: true, json: async () => ({ ...metadata, artifactId: 'artifact-1',
+    audioUrl: '/v1/recordings/artifact-1', expiresAt: new Date(Date.now() + 60_000).toISOString(), sha256 }) };
 }
 
 function spySink() {

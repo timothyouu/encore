@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Encore Review art fixture</title>
+<style>
+  body { margin: 24px; background: #202020; color: #eee; font: 16px system-ui, sans-serif; }
+  img { width: 576px; height: 288px; image-rendering: pixelated; border: 1px solid #555; }
+  button { margin: 12px 8px 0 0; padding: 8px 12px; }
+  #caption { min-height: 1.5em; }
+</style>
+<h1>DEMO fixture · Review art</h1>
+<p>Local visual inspection only. No bridge, recording, backend or model request.</p>
+<img id="art" alt="Selected Review card art">
+<p id="title"></p><p id="legend"></p><p id="cue"></p><p id="caption"></p>
+<button id="previous">Previous</button><button id="next">Next</button><button id="context">Show key context</button><button id="replay">Replay correction</button>
+<script type="module">
+  import { demoReview } from '../src/demo.ts'
+  import { renderCardArt, renderReplayFrame, replaySteps } from '../src/review/art.ts'
+  import { flaggedNotes, noteName } from '../src/review/model.ts'
+
+  // This page uses synthetic fixture notes solely for raster inspection.
+  // Production Review accepts context only from a validated saved finding.
+  function fixtureContext(card) {
+    if (!['missing_note', 'extra_note', 'timing', 'duration'].includes(card.kind)) return null
+    const flagged = flaggedNotes(card)
+    const expected = flagged.expected[0] ?? card.expected.notes[0]
+    const played = flagged.detected[0] ?? card.detected.notes[0]
+    const event = note => note && ({ midiPitch: note.midiPitch, label: noteName(note.midiPitch) })
+    const duration = card.kind === 'duration' && {
+      expectedBeats: card.metrics.expectedDurationBeats,
+      playedBeats: card.metrics.detectedDurationBeats,
+    }
+    return { findingId: card.id, kind: card.kind,
+      ...(card.kind !== 'extra_note' && expected && { expected: event(expected) }),
+      ...(card.kind !== 'missing_note' && played && { played: event(played) }),
+      ...(duration && { duration }),
+    }
+  }
+
+  const views = demoReview().views
+  const art = document.querySelector('#art')
+  let index = 0
+  let generation = 0
+  let imageUrl = ''
+  function showPng(bytes) {
+    if (imageUrl) URL.revokeObjectURL(imageUrl)
+    imageUrl = URL.createObjectURL(new Blob([bytes], { type: 'image/png' }))
+    art.src = imageUrl
+  }
+  async function showCard() {
+    const mine = ++generation
+    const view = views[index]
+    document.querySelector('#title').textContent = `${index + 1}/${views.length} · ${view.header}`
+    document.querySelector('#legend').textContent = view.legend.join(' | ')
+    document.querySelector('#cue').textContent = view.cue
+    document.querySelector('#caption').textContent = ''
+    document.querySelector('#context').disabled = !fixtureContext(view.card)
+    document.querySelector('#replay').disabled = !replaySteps(view.card, Boolean(fixtureContext(view.card))).length
+    const png = await renderCardArt(view.card)
+    if (mine === generation) showPng(png)
+  }
+  document.querySelector('#previous').onclick = () => { index = (index - 1 + views.length) % views.length; void showCard() }
+  document.querySelector('#next').onclick = () => { index = (index + 1) % views.length; void showCard() }
+  document.querySelector('#context').onclick = async () => {
+    const mine = ++generation
+    const card = views[index].card
+    const context = fixtureContext(card)
+    if (!context) return
+    const step = replaySteps(card, true).find(item => item.art === 'context')
+    const png = await renderReplayFrame(card, step, context)
+    if (mine === generation) {
+      showPng(png)
+      document.querySelector('#caption').textContent = `Synthetic ${card.kind} key context`
+    }
+  }
+  document.querySelector('#replay').onclick = async () => {
+    const mine = ++generation
+    const card = views[index].card
+    const context = fixtureContext(card)
+    for (const step of replaySteps(card, Boolean(context))) {
+      const png = await renderReplayFrame(card, step, context)
+      if (mine !== generation) return
+      showPng(png)
+      document.querySelector('#caption').textContent = step.caption
+      await new Promise(resolve => setTimeout(resolve, step.hold === 'end' ? 2000 : 1000))
+    }
+    if (mine === generation) document.querySelector('#caption').textContent = 'Correction shown'
+  }
+  void showCard()
+</script>
+</html>
