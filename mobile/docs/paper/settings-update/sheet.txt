@@ -1,0 +1,127 @@
+{
+  "file": {
+    "id": "01M56HHCC29GHEHZ2V9FPV5FTR",
+    "name": "G2 Mobile App"
+  },
+  "contentHash": {
+    "tokens": "201c032a"
+  }
+}
+(
+    <div style={{ backgroundColor: 'var(--color-paper)', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', fontSize: '12px', fontSynthesis: 'none', height: '844px', lineHeight: '16px', MozOsxFontSmoothing: 'grayscale', overflow: 'clip', overflowWrap: 'anywhere', paddingTop: '62px', WebkitFontSmoothing: 'antialiased', width: '390px' }}>
+      <div style={{ alignItems: 'center', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'space-between', paddingInline: '24px' }}>
+        <div style={{ boxSizing: 'border-box', color: '#000000', flexShrink: '0', fontFamily: '"Inter", system-ui, sans-serif', fontSize: '14px', lineHeight: '18px', width: '90px' }}>
+          ‹ Even Hub
+        </div>
+        <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '28px', lineHeight: '34px' }}>
+          encore
+        </div>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexShrink: '0', justifyContent: 'end', width: '90px' }}>
+          <svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <polygon points="12.00,3.40 13.95,2.19 15.83,2.76 16.78,4.85 18.08,5.92 20.31,6.44 21.24,8.17 20.43,10.32 20.60,12.00 21.81,13.95 21.24,15.83 19.15,16.78 18.08,18.08 17.56,20.31 15.83,21.24 13.68,20.43 12.00,20.60 10.05,21.81 8.17,21.24 7.22,19.15 5.92,18.08 3.69,17.56 2.76,15.83 3.57,13.68 3.40,12.00 2.19,10.05 2.76,8.17 4.85,7.22 5.92,5.92 6.44,3.69 8.17,2.76 10.32,3.57" fill="none" stroke="#625F58" strokeWidth="1.5" strokeLinejoin="round" />
+            <circle cx="12" cy="12" r="3.5" fill="none" stroke="#625F58" strokeWidth="1.5" />
+          </svg>
+        </div>
+      </div>
+      <div style={{ boxSizing: 'border-box', display: 'flex', flexBasis: '0%', flexDirection: 'column', flexGrow: '1', gap: '20px', padding: '24px' }}>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '30px', lineHeight: '36px' }}>
+            First Steps
+          </div>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '18px' }}>
+            Sheet music · Mistake 1 of 3
+          </div>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: 'system-ui, sans-serif', fontSize: '13px', lineHeight: '16px' }}>
+            Treble · 4/4 · 60 BPM
+          </div>
+        </div>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: 'system-ui, sans-serif', fontSize: '12px', lineHeight: '16px' }}>
+            MEASURE 1 · BEATS 1–4
+          </div>
+          <svg width="342" height="142" viewBox="0 0 342 142" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <g>
+              <path d="M10 48H332" fill="none" stroke="#8B877E" />
+              <path d="M10 60H332" fill="none" stroke="#8B877E" />
+              <path d="M10 72H332" fill="none" stroke="#8B877E" />
+              <path d="M10 84H332" fill="none" stroke="#8B877E" />
+              <path d="M10 96H332" fill="none" stroke="#8B877E" />
+              <path d="M10 48v48M332 48v48" fill="none" stroke="#8B877E" />
+            </g>
+            <path d="M49 108h26" fill="#000000" stroke="#171714" />
+            <ellipse cx="62" cy="108" rx="7" ry="5" transform="rotate(-20 62 108)" fill="#171714" />
+            <path d="M68 108v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="62" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              C4
+            </text>
+            <ellipse cx="138" cy="102" rx="7" ry="5" transform="rotate(-20 138 102)" fill="#171714" />
+            <path d="M144 102v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="138" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              D4
+            </text>
+            <rect x="190" y="28" width="48" height="90" rx="8" fill="none" stroke="#AD8C50" strokeWidth="2" />
+            <ellipse cx="214" cy="96" rx="7" ry="5" transform="rotate(-20 214 96)" fill="#171714" />
+            <path d="M220 96v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="214" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              E4
+            </text>
+            <ellipse cx="290" cy="90" rx="7" ry="5" transform="rotate(-20 290 90)" fill="#171714" />
+            <path d="M296 90v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="290" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              F4
+            </text>
+          </svg>
+        </div>
+        <div style={{ boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: 'system-ui, sans-serif', fontSize: '12px', lineHeight: '16px' }}>
+            MEASURE 2 · BEATS 5–8
+          </div>
+          <svg width="342" height="142" viewBox="0 0 342 142" xmlns="http://www.w3.org/2000/svg" style={{ display: 'inline-block', flexShrink: '0' }}>
+            <g>
+              <path d="M10 48H332" fill="none" stroke="#8B877E" />
+              <path d="M10 60H332" fill="none" stroke="#8B877E" />
+              <path d="M10 72H332" fill="none" stroke="#8B877E" />
+              <path d="M10 84H332" fill="none" stroke="#8B877E" />
+              <path d="M10 96H332" fill="none" stroke="#8B877E" />
+              <path d="M10 48v48M332 48v48" fill="none" stroke="#8B877E" />
+            </g>
+            <ellipse cx="62" cy="84" rx="7" ry="5" transform="rotate(-20 62 84)" fill="#171714" />
+            <path d="M68 84v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="62" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              G4
+            </text>
+            <ellipse cx="138" cy="90" rx="7" ry="5" transform="rotate(-20 138 90)" fill="#171714" />
+            <path d="M144 90v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="138" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              F4
+            </text>
+            <ellipse cx="214" cy="96" rx="7" ry="5" transform="rotate(-20 214 96)" fill="#171714" />
+            <path d="M220 96v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="214" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              E4
+            </text>
+            <path d="M277 108h26" fill="#000000" stroke="#171714" />
+            <ellipse cx="290" cy="108" rx="7" ry="5" transform="rotate(-20 290 108)" fill="#171714" />
+            <path d="M296 108v-36" fill="#000000" stroke="#171714" strokeWidth="2" />
+            <text x="290" y="136" textAnchor="middle" fontFamily="Inter" fontSize="12" fill="#625F58">
+              C4
+            </text>
+          </svg>
+        </div>
+        <div style={{ backgroundColor: 'var(--color-surface)', borderRadius: '10px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: '8px', padding: '16px' }}>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '23px', lineHeight: '28px' }}>
+            Beat 3 · E4
+          </div>
+          <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '22px' }}>
+            Expected E4; heard F4.
+          </div>
+        </div>
+        <div style={{ boxSizing: 'border-box', flexBasis: '0%', flexGrow: '1', minHeight: '0px' }} />
+        <div style={{ alignItems: 'center', backgroundColor: 'var(--color-ink)', borderRadius: '28px', boxSizing: 'border-box', display: 'flex', flexShrink: '0', height: '48px', justifyContent: 'center' }}>
+          <div style={{ boxSizing: 'border-box', color: 'var(--color-paper)', display: 'flex', fontFamily: 'system-ui, sans-serif', fontSize: '16px', lineHeight: '20px' }}>
+            Close sheet music
+          </div>
+        </div>
+      </div>
+    </div>
+  )

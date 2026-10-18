@@ -2,6 +2,7 @@
 
 ## Project structure and ownership
 - `mobile/` is Timothy's phone UI, phone microphone capture, session state, and history workstream.
+- `glasses-integration/` documents the deferred device integration contract; it is not a runtime and mobile must not import it.
 - `g2/` is the teammate's glasses UI, bridge, gestures, microphone, and display transport workstream. Mobile-only tasks must not edit it.
 - `spec.md` describes the complete product; a glasses feature in that document does not authorize implementing it in `mobile/`.
 
