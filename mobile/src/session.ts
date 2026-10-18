@@ -25,6 +25,20 @@ type Storage = { getItem(key: string): string | null; setItem(key: string, value
 const STORAGE_KEY = 'encore.attempts.v1';
 export const SESSION_STORAGE_KEY = STORAGE_KEY;
 export const HISTORY_CAP = 1000;
+
+function createAttemptId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi?.randomUUID === 'function') return cryptoApi.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (typeof cryptoApi?.getRandomValues === 'function') cryptoApi.getRandomValues(bytes);
+  else for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 const POSE_IDS = new Set(['finger-1', 'finger-2', 'finger-3', 'finger-4', 'finger-5', 'neutral']);
 const KINDS = new Set(['wrong_note', 'missing_note', 'extra_note', 'timing', 'duration']);
 const STATUSES = new Set(['ok', 'uncertain', 'insufficient_audio', 'error']);
@@ -300,7 +314,7 @@ export class SessionStore {
     const passage = passages.find((item) => item.id === this.state.passageId);
     if (!passage) return null;
     const record: AttemptRecord = {
-      attemptId: crypto.randomUUID(), passageId: passage.id, passageVersion: passage.version,
+      attemptId: createAttemptId(), passageId: passage.id, passageVersion: passage.version,
       startedAt: new Date().toISOString(), completedAt: null, captureStatus: 'recording',
       processingStatus: 'not_started', analysis: null, coaching: null, error: null, captureSource: source,
     };

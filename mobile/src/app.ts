@@ -20,7 +20,7 @@ export type CaptureDriver = {
 /** What a host source gets: the session, the shared processing pipeline, and a change callback. */
 export type HostSourceContext = {
   store: SessionStore;
-  /** Normalize, upload, analyze and coach a completed attempt, exactly like a phone recording. */
+  /** Normalize, upload, analyze and coach a completed G2 attempt. */
   submit(record: AttemptRecord, audio: Blob): Promise<void>;
   onChange(): void;
 };
@@ -29,7 +29,7 @@ export type PhoneAppOptions = {
   storage: LegacyStorage;
   indexedDB?: IDBFactory;
   sentry?: Parameters<typeof initializeSentry>[0];
-  /** A source supplied by the hosting page, e.g. a glasses microphone. The phone app never creates one itself. */
+  /** The G2 capture driver supplied by the hosting page. */
   hostSource?: { id: 'g2'; create(context: HostSourceContext): CaptureDriver };
   /** Device connection text from the host; omitted, the phone says glasses are not connected. */
   deviceStatus?: () => string | null;
@@ -51,7 +51,7 @@ export type PhoneApp = {
 
 const DEFAULT_ENDPOINTS: CaptureEndpoints = { upload: '/api/recordings', analysis: '/api/analyze', coaching: '/api/coach' };
 
-/** Boots the phone UI into `root`. Phone DOM only; any device work belongs to the host's driver. */
+/** Boots the phone UI into `root`. Capture is supplied by the G2 host. */
 export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions): Promise<PhoneApp> {
   if (options.sentry) initializeSentry(options.sentry);
   const storage = options.storage;
@@ -70,23 +70,21 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
     settings.storageWarning = 'Local display settings storage is unavailable. Changes may last only for this session.';
     persistence = undefined;
   }
-  const sources: RecordingSource[] = options.hostSource ? ['phone', options.hostSource.id] : ['phone'];
-  let mode: RecordingSource = 'phone';
-  // Phone capture also runs the processing pipeline for host recordings, so retry and import work for both.
+  const sources: RecordingSource[] = ['g2'];
+  let mode: RecordingSource = 'g2';
+  // The shared pipeline processes host recordings, while capture itself stays in G2.
   let phone: PhoneCapture | undefined;
   let driver: CaptureDriver | undefined;
   async function start(): Promise<void> {
     if (settings.isOpen) return;
-    if (mode === 'phone') { await phone?.start(); return; }
-    await driver?.start();
+    if (!driver) { connection.message('G2 is unavailable. Start the G2 app to record.'); return; }
+    await driver.start();
   }
   async function stop(): Promise<void> {
-    if (mode === 'phone') { await phone?.stop(); return; }
     await driver?.stop();
   }
   function cancel(): void {
-    if (mode === 'phone') phone?.cancel();
-    else { driver?.cancel(); phone?.cancel(); }
+    driver?.cancel(); phone?.cancel();
   }
   const refresh = (): void => { root.dispatchEvent(new CustomEvent('encore:mode-change')); };
   const busy = (): boolean => Boolean(phone?.busy || driver?.busy);
@@ -95,12 +93,11 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
     start: () => { void start(); }, stop: () => { void stop(); }, cancel,
     retry: () => { void phone?.retry(); },
     canRetry: (attemptId: string) => phone?.canRetry(attemptId) ?? false,
-    getMode: () => mode, isBusy: busy, deviceStatus: options.deviceStatus,
-    getWaveform: () => mode === 'phone' ? phone?.getWaveform() ?? null : null,
+    getMode: () => mode, isBusy: busy, isCaptureAvailable: () => Boolean(driver), deviceStatus: options.deviceStatus,
   }, settings);
   function onChange(): void {
     refresh();
-    connection.message(driver?.error ?? phone?.error ?? (busy() && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));
+    connection.message(driver?.error ?? phone?.error ?? (busy() && store.state.screen === 'ready' ? 'Waiting for G2 input. You can cancel below.' : null));
     permissionCancel.hidden = !(busy() && !recording() && store.state.screen === 'ready');
   }
   function pipeline(endpoints: CaptureEndpoints): PhoneCapture {
@@ -122,23 +119,25 @@ export async function startPhoneApp(root: HTMLElement, options: PhoneAppOptions)
     phone?.dispose(); phone = undefined;
     mode = next.mode;
     phone = pipeline(next);
-    if (mode === 'g2' && options.hostSource?.id === mode) {
-      const processor = phone;
-      driver = options.hostSource.create({
-        store, onChange,
-        submit: (record, audio) => processor ? processor.processRecording(record, audio) : Promise.resolve(),
-      });
-    }
+    driver = createHostDriver(phone);
     refresh();
     return null;
   }, { sources, defaults: options.service?.endpoints ?? DEFAULT_ENDPOINTS,
     locked: Boolean(options.service), onSessionToken: options.service?.setSessionToken });
+  function createHostDriver(processor: PhoneCapture | undefined): CaptureDriver | undefined {
+    if (!processor || options.hostSource?.id !== 'g2') return undefined;
+    return options.hostSource.create({
+      store, onChange,
+      submit: (record, audio) => processor.processRecording(record, audio),
+    });
+  }
   const permissionCancel = document.createElement('button');
-  permissionCancel.type = 'button'; permissionCancel.hidden = true; permissionCancel.textContent = 'Cancel microphone request';
+  permissionCancel.type = 'button'; permissionCancel.hidden = true; permissionCancel.textContent = 'Cancel input request';
   permissionCancel.style.cssText = 'margin:12px auto;min-height:44px;padding:12px 24px;border:1px solid #625F58;border-radius:24px;';
   permissionCancel.addEventListener('click', () => { driver?.cancel(); phone?.cancel(); });
   root.after(permissionCancel);
   phone = pipeline(options.service?.endpoints ?? DEFAULT_ENDPOINTS);
+  driver = createHostDriver(phone);
   const unsubscribeSettings = settings.subscribe(() => connection.setVisible(!settings.isOpen));
   let disposed = false;
   return {

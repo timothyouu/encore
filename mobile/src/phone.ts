@@ -16,7 +16,7 @@ import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, referenceFor, segmentLabel, locationLabel } from './feedback.ts';
 
 type Mode = 'phone' | 'g2';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; getMode?: () => Mode; isBusy?: () => boolean; isCaptureAvailable?: () => boolean; deviceStatus?: () => string | null; getWaveform?: () => readonly number[] | null };
 // deviceStatus comes from a host that owns a real device connection; the phone-only app has none.
 const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
@@ -57,7 +57,7 @@ function dateLabel(value: string): string {
 }
 
 function sourceLabel(record: AttemptRecord): string {
-  return record.captureSource === 'test' ? 'Test WAV' : record.captureSource === 'g2' ? 'G2' : record.captureSource === 'phone' ? 'Microphone' : 'Demo';
+  return record.captureSource === 'test' ? 'Test WAV' : record.captureSource === 'g2' ? 'G2' : record.captureSource === 'phone' ? 'Legacy' : 'Demo';
 }
 
 function coachingLabel(record: AttemptRecord): string | null {
@@ -400,14 +400,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
 
   function ready(passage: Passage): HTMLElement {
     const page = node('main', 'page ready-page');
+    const captureAvailable = actions.isCaptureAvailable?.() ?? true;
     const top = control('‹ All passages', 'back-link', () => store.showLibrary());
     const preview = node('section', 'preview-card');
     add(preview, node('p', 'eyebrow', 'PASSAGE PREVIEW'), node('h2', '', passage.title), node('p', 'subtle', `${passage.tempoBpm} BPM · 4/4 · Right hand · No pedal`), score(passage));
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
-    const start = control('Start recording →', 'primary-action', actions.start);
+    add(source, node('strong', '', 'Before you play'), node('p', '', captureAvailable ? 'Start a G2 recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Open this screen from the G2 app to record.'));
+    const start = control('Start recording →', 'primary-action', actions.start, !captureAvailable);
     add(page, top, heading(passage.title, 'Read the score, then play the phrase'), preview, source, node('div', 'grow'), start);
     return page;
   }
@@ -442,7 +443,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       preview.setAttribute('aria-label', 'Static reference sheet music while recording');
       core.append(preview);
     }
-    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture; no microphone audio' : source === 'g2' ? 'G2 microphone · reference sheet music is static' : 'Microphone · live audio level; reference sheet music is static'));
+    core.append(node('p', 'recording-provenance', source === 'demo' ? 'Demo · simulated capture; no live audio' : source === 'g2' ? 'G2 · reference sheet music is static' : 'Legacy input · reference sheet music is static'));
     add(page, core, control('Stop & analyze', 'primary-action', actions.stop), control('Cancel', 'secondary-action', openDialog));
     if (record) updateTime(record);
     return page;

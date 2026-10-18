@@ -34,8 +34,10 @@ function failureCode(cause: unknown): FailureCode {
 type Artifact = { artifactId: string; audioUrl: string; expiresAt: string; sha256: string; attemptId: string };
 export type SessionAuthorization = { token: string; origin: string };
 
-async function sha256(bytes: Uint8Array): Promise<string> {
-  if (!globalThis.crypto?.subtle) throw new Error('Secure audio verification is unavailable.');
+async function sha256(bytes: Uint8Array): Promise<string | null> {
+  // Some embedded WebViews lack SubtleCrypto. In that case the upload service
+  // remains the digest authority; keep local comparison when WebCrypto exists.
+  if (!globalThis.crypto?.subtle) return null;
   const digest = await globalThis.crypto.subtle.digest('SHA-256', new Uint8Array(bytes));
   return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -96,7 +98,7 @@ function message(error: unknown): string {
 }
 
 function artifactValid(value: unknown, record: AttemptRecord, normalized: NormalizedAudio,
-  attemptTempoBpm: number, digest: string): value is Artifact {
+  attemptTempoBpm: number, digest: string | null): value is Artifact {
   if (!value || typeof value !== 'object') return false;
   const item = value as Record<string, unknown>;
   return item.attemptId === record.attemptId &&
@@ -107,7 +109,8 @@ function artifactValid(value: unknown, record: AttemptRecord, normalized: Normal
     typeof item.durationSec === 'number' && Math.abs(item.durationSec - normalized.durationSec) < 0.0001 &&
     typeof item.artifactId === 'string' && item.artifactId.length > 0 &&
     typeof item.audioUrl === 'string' && item.audioUrl.length > 0 && typeof item.expiresAt === 'string' &&
-    Date.parse(item.expiresAt) > Date.now() && item.sha256 === digest;
+    Date.parse(item.expiresAt) > Date.now() && typeof item.sha256 === 'string' && /^[a-f0-9]{64}$/.test(item.sha256) &&
+    (digest === null || item.sha256 === digest);
 }
 
 export class PhoneCapture {
@@ -256,7 +259,7 @@ export class PhoneCapture {
   }
 
   private readonly onTrackEnded = (): void => {
-    if (this.recording || this.rejectRecording) this.interruptCapture('Microphone disconnected.');
+    if (this.recording || this.rejectRecording) this.interruptCapture('Audio input disconnected.');
   };
 
   private readonly onRecorderError = (): void => {
@@ -285,7 +288,7 @@ export class PhoneCapture {
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      this.error = 'Microphone recording is unavailable in this browser.';
+      this.error = 'Audio recording is unavailable in this browser.';
       recordTelemetryFailure('capture', 'microphone_unavailable');
       this.changed();
       return;
@@ -500,7 +503,7 @@ export class PhoneCapture {
       this.requestStage = 'upload';
       this.startStep('phone.upload_request');
       try {
-        saved.digest ??= await sha256(normalized.wav);
+        if (saved.digest === undefined) saved.digest = await sha256(normalized.wav);
         const response = await this.post(this.endpoints.upload, {
           metadata: { attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
             attemptTempoBpm: passage.tempoBpm, sourceSampleRate: normalized.sourceSampleRate,
@@ -514,6 +517,7 @@ export class PhoneCapture {
         if (!artifactValid(response, record, normalized, passage.tempoBpm, saved.digest)) throw new InvalidResponseError('Upload returned a mismatched or invalid artifact.');
         artifact = response;
         saved.artifact = artifact;
+        saved.digest ??= artifact.sha256;
         uploaded = true;
         this.endStep('ok');
       } catch (cause) {
@@ -634,8 +638,8 @@ export class PhoneCapture {
 
   /**
    * Processes an attempt that another capture source already completed (e.g. a
-   * hosting page's G2 microphone): the same normalization, upload, retry window
-   * and history as a phone recording. The caller owns the device; this only
+   * hosting page's G2 input): the same normalization, upload, retry window
+   * and history as a G2 recording. The caller owns the device; this only
    * handles the audio bytes.
    */
   async processRecording(record: AttemptRecord, blob: Blob): Promise<void> {
