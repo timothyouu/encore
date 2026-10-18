@@ -59,7 +59,7 @@ const connection = mountConnection(store, root, next => {
   if (phone?.busy || phone?.recording || ['recording', 'processing'].includes(store.state.screen)) return 'Finish or cancel the current recording first.';
   if (next.mode === 'phone' && !validateEndpoints(next)) return 'Enter both complete HTTPS endpoints (or HTTP localhost). URLs cannot include passwords or fragments.';
   phone?.dispose(); phone = undefined;
-  mode = next.mode;
+  mode = next.mode === 'phone' ? 'phone' : 'demo'; // the phone-only app offers no G2 source
   if (mode === 'phone') phone = new PhoneCapture(store, next, () => {
     root.dispatchEvent(new CustomEvent('encore:mode-change'));
     connection.message(phone?.error ?? (phone?.busy && store.state.screen === 'ready' ? 'Waiting for microphone permission. You can cancel below.' : null));

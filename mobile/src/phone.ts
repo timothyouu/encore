@@ -4,7 +4,10 @@ import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
+type Mode = 'demo' | 'phone' | 'g2';
+// deviceStatus is supplied by a host that owns a real device connection; the phone-only app has none.
+type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null };
+const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -192,7 +195,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   let recordingTime: HTMLElement | null = null;
   let touchStart: number | null = null;
   let focusReturnSelector = '.recording-page .secondary-action';
-  const mode = (): 'demo' | 'phone' => actions.getMode?.() ?? 'demo';
+  const mode = (): Mode => actions.getMode?.() ?? 'demo';
+  const deviceStatus = (): string => actions.deviceStatus?.() ?? NO_DEVICE;
   const score = (passage: Passage, selected?: ReferenceNote, extraBeat?: number): HTMLElement => notation(passage, selected, extraBeat, settings.value);
 
   function currentRecord(): AttemptRecord | undefined { return store.records.find((record) => record.attemptId === store.state.attemptId); }
@@ -269,7 +273,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     add(bar, back, node('div', 'wordmark', 'encore'), gear);
     const body = node('div', 'settings-body');
     const intro = node('section', 'settings-intro');
-    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    const status = add(node('div', 'settings-connection'), glassesIcon(), node('span', '', deviceStatus()));
     add(intro, node('h1', '', 'Settings'), status);
     body.append(intro);
     const value = settings.value;
@@ -389,7 +393,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const noteLine = node('p', 'note-line', passage.notes.map((note) => noteName(note.midiPitch)).join('  ·  '));
     preview.append(noteLine);
     const source = node('div', 'source-card');
-    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
+    add(source, node('strong', '', 'Before you play'), node('p', '', mode() === 'demo' ? 'Start a simulated recording when you are ready. The demo uses prepared results and no microphone audio.' : mode() === 'g2' ? 'Start a G2 microphone recording here or tap on the glasses. Analysis requires the configured services to be reachable.' : 'Start a phone microphone recording when you are ready. Analysis requires the configured services to be reachable.'));
     const selector = node('label', 'scenario-label', 'Demo result');
     if (mode() === 'demo') {
       const select = node('select'); select.setAttribute('aria-label', 'Demo result scenario');
@@ -412,7 +416,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page recording-page');
     const core = node('section', 'recording-core');
     const source = record?.captureSource ?? mode();
-    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', 'Glasses integration not connected'));
+    const connectionBadge = add(node('div', 'recording-connection'), glassesIcon(), node('span', '', deviceStatus()));
     connectionBadge.setAttribute('role', 'status');
     page.append(connectionBadge);
     const dot = node('span', 'recording-dot'); dot.setAttribute('aria-hidden', 'true');

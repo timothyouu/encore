@@ -1,9 +1,11 @@
 import type { SessionStore } from './session.ts';
 
-export type Connection = { mode: 'demo' | 'phone'; analysis: string; coaching: string };
+export type RecordingSource = 'demo' | 'phone' | 'g2';
+export type Connection = { mode: RecordingSource; analysis: string; coaching: string };
+const SOURCE_LABELS: Record<RecordingSource, string> = { demo: 'Demo (simulated)', phone: 'Phone microphone', g2: 'G2 microphone' };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
-export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null): { message(value: string | null): void; setVisible(visible: boolean): void; dispose(): void } {
+export function mountConnection(store: SessionStore, root: HTMLElement, change: (next: Connection) => string | null, sources: RecordingSource[] = ['demo', 'phone']): { message(value: string | null): void; setVisible(visible: boolean): void; dispose(): void } {
   const panel = document.createElement('details');
   panel.className = 'connection-settings';
   panel.style.cssText = 'max-width:390px;margin:0 auto 24px;padding:16px 24px;font:14px/1.5 system-ui;color:#625F58;box-sizing:border-box;';
@@ -20,8 +22,8 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   modeLabel.textContent = 'Recording source';
   const mode = document.createElement('select');
   mode.name = 'source'; mode.setAttribute('aria-label', 'Recording source');
-  for (const [value, label] of [['demo', 'Demo (simulated)'], ['phone', 'Phone microphone']]) {
-    const option = document.createElement('option'); option.value = value; option.textContent = label; mode.append(option);
+  for (const value of sources) {
+    const option = document.createElement('option'); option.value = value; option.textContent = SOURCE_LABELS[value]; mode.append(option);
   }
   modeLabel.append(mode); form.append(modeLabel);
   function field(label: string, placeholder: string): HTMLInputElement {
@@ -38,7 +40,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   form.addEventListener('submit', event => {
     event.preventDefault();
     if (apply.disabled) return;
-    const error = change({ mode: mode.value === 'phone' ? 'phone' : 'demo', analysis: analysis.value.trim(), coaching: coaching.value.trim() });
+    const error = change({ mode: sources.find(source => source === mode.value) ?? 'demo', analysis: analysis.value.trim(), coaching: coaching.value.trim() });
     status.textContent = error ?? 'Connection applied. Choose a passage to begin.';
     if (!error) panel.open = false;
   });

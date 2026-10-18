@@ -46,6 +46,78 @@ function extension(mimeType: string): string {
   return 'audio';
 }
 
+export type SubmissionStage = 'upload' | 'coaching';
+export type RecordedAudio = { blob: Blob; filename: string; metadata: Record<string, unknown> };
+/** Lets the capture source cancel requests and ignore responses for an abandoned attempt. */
+export type SubmissionContext = {
+  isCurrent(): boolean;
+  track(request: AbortController, stage: SubmissionStage): void;
+  untrack(request: AbortController): void;
+  fail(record: AttemptRecord, stage: 'capture' | 'upload' | 'analysis' | 'coaching', detail: string): void;
+};
+
+async function post(url: string, body: BodyInit, context: SubmissionContext, stage: SubmissionStage, headers?: HeadersInit): Promise<unknown> {
+  const controller = new AbortController();
+  context.track(controller, stage);
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(url, { method: 'POST', body, headers, credentials: 'same-origin', signal: controller.signal });
+    if (!response.ok) throw new Error(`Service returned HTTP ${response.status}.`);
+    try {
+      return await response.json() as unknown;
+    } catch {
+      throw new InvalidResponseError('Service returned invalid JSON.');
+    }
+  } finally {
+    clearTimeout(timeout);
+    context.untrack(controller);
+  }
+}
+
+/** Sends one completed recording to analysis, then coaching, and applies validated results to the store. */
+export async function submitAttempt(
+  store: SessionStore, endpoints: CaptureEndpoints, record: AttemptRecord, audio: RecordedAudio, context: SubmissionContext,
+): Promise<void> {
+  const passage = passages.find((item) => item.id === record.passageId && item.version === record.passageVersion);
+  if (!passage) { context.fail(record, 'analysis', 'The selected passage is unavailable.'); return; }
+  const metadata = {
+    attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
+    attemptTempoBpm: passage.tempoBpm, captureSource: record.captureSource ?? 'demo',
+    ...audio.metadata,
+  };
+  const form = new FormData();
+  form.append('audio', audio.blob, audio.filename);
+  form.append('metadata', JSON.stringify(metadata));
+  let analysis: unknown;
+  try {
+    analysis = await post(endpoints.analysis, form, context, 'upload');
+  } catch (cause) {
+    if (context.isCurrent()) {
+      context.fail(record, cause instanceof InvalidResponseError ? 'analysis' : 'upload',
+        cause instanceof InvalidResponseError ? message(cause) : `Analysis upload failed: ${message(cause)}`);
+    }
+    return;
+  }
+  if (!context.isCurrent()) return;
+  if (!store.applyAnalysis(record.attemptId, analysis)) {
+    context.fail(record, 'analysis', 'The analysis response was invalid.');
+    return;
+  }
+  if (record.analysis?.status !== 'ok') return;
+  try {
+    const coaching = await post(endpoints.coaching, JSON.stringify({
+      schemaVersion: '1', attemptId: record.attemptId, passageId: record.passageId,
+      passageVersion: record.passageVersion, passage, analysis: record.analysis,
+    }), context, 'coaching', { 'Content-Type': 'application/json' });
+    if (!context.isCurrent()) return;
+    if (!store.applyCoaching(record.attemptId, coaching)) {
+      context.fail(record, 'coaching', 'The coaching response was invalid.');
+    }
+  } catch (cause) {
+    if (context.isCurrent()) context.fail(record, 'coaching', `Coaching failed: ${message(cause)}`);
+  }
+}
+
 export class PhoneCapture {
   busy = false;
   recording = false;
@@ -226,24 +298,6 @@ export class PhoneCapture {
     }
   }
 
-  private async post(url: string, body: BodyInit, headers?: HeadersInit): Promise<unknown> {
-    const controller = new AbortController();
-    this.request = controller;
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      const response = await fetch(url, { method: 'POST', body, headers, credentials: 'same-origin', signal: controller.signal });
-      if (!response.ok) throw new Error(`Service returned HTTP ${response.status}.`);
-      try {
-        return await response.json() as unknown;
-      } catch {
-        throw new InvalidResponseError('Service returned invalid JSON.');
-      }
-    } finally {
-      clearTimeout(timeout);
-      if (this.request === controller) this.request = null;
-    }
-  }
-
   private fail(record: AttemptRecord, stage: 'capture' | 'upload' | 'analysis' | 'coaching', detail: string): void {
     this.error = detail;
     this.store.fail(record.attemptId, stage, detail);
@@ -254,47 +308,15 @@ export class PhoneCapture {
     record: AttemptRecord, blob: Blob, mimeType: string, durationMs: number,
     settings: MediaTrackSettings | undefined, generation: number,
   ): Promise<void> {
-    const passage = passages.find((item) => item.id === record.passageId && item.version === record.passageVersion);
-    if (!passage) { this.fail(record, 'analysis', 'The selected passage is unavailable.'); return; }
-    const metadata = {
-      attemptId: record.attemptId, passageId: record.passageId, passageVersion: record.passageVersion,
-      attemptTempoBpm: passage.tempoBpm, captureSource: 'phone',
-      sampleRateHz: settings?.sampleRate ?? null, channelCount: settings?.channelCount ?? null,
-      encoding: mimeType, durationMs,
-    };
-    const form = new FormData();
-    form.append('audio', blob, `attempt.${extension(mimeType)}`);
-    form.append('metadata', JSON.stringify(metadata));
-    let analysis: unknown;
-    try {
-      this.requestStage = 'upload';
-      analysis = await this.post(this.endpoints.analysis, form);
-    } catch (cause) {
-      if (generation === this.generation) {
-        this.fail(record, cause instanceof InvalidResponseError ? 'analysis' : 'upload',
-          cause instanceof InvalidResponseError ? message(cause) : `Analysis upload failed: ${message(cause)}`);
-      }
-      return;
-    }
-    if (generation !== this.generation || this.disposed) return;
-    if (!this.store.applyAnalysis(record.attemptId, analysis)) {
-      this.fail(record, 'analysis', 'The analysis response was invalid.');
-      return;
-    }
-    if (record.analysis?.status !== 'ok') return;
-    try {
-      this.requestStage = 'coaching';
-      const coaching = await this.post(this.endpoints.coaching, JSON.stringify({
-        schemaVersion: '1', attemptId: record.attemptId, passageId: record.passageId,
-        passageVersion: record.passageVersion, passage, analysis: record.analysis,
-      }), { 'Content-Type': 'application/json' });
-      if (generation !== this.generation || this.disposed) return;
-      if (!this.store.applyCoaching(record.attemptId, coaching)) {
-        this.fail(record, 'coaching', 'The coaching response was invalid.');
-      }
-    } catch (cause) {
-      if (generation === this.generation) this.fail(record, 'coaching', `Coaching failed: ${message(cause)}`);
-    }
+    await submitAttempt(this.store, this.endpoints, record, {
+      blob, filename: `attempt.${extension(mimeType)}`,
+      metadata: { sampleRateHz: settings?.sampleRate ?? null, channelCount: settings?.channelCount ?? null, encoding: mimeType, durationMs },
+    }, {
+      isCurrent: () => generation === this.generation && !this.disposed,
+      track: (request, stage) => { this.request = request; this.requestStage = stage; },
+      untrack: (request) => { if (this.request === request) this.request = null; },
+      fail: (failed, stage, detail) => this.fail(failed, stage, detail),
+    });
   }
 
   cancel(): void {

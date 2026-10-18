@@ -204,8 +204,9 @@ export class SessionStore {
     this.state = { ...this.state, screen: 'ready', passageId: id, attemptId: null, findingIndex: 0, historyOrigin: false };
     this.emit();
   }
-  start(source: 'demo' | 'phone' = 'demo'): AttemptRecord | null {
-    if (this.state.screen !== 'ready' || (source !== 'demo' && source !== 'phone')) return null;
+  // 'g2' only labels the record; the store never talks to a device.
+  start(source: 'demo' | 'phone' | 'g2' = 'demo'): AttemptRecord | null {
+    if (this.state.screen !== 'ready' || !['demo', 'phone', 'g2'].includes(source)) return null;
     const passage = passages.find((item) => item.id === this.state.passageId);
     if (!passage) return null;
     const record: AttemptRecord = {
