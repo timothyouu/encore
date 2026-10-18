@@ -11,7 +11,7 @@
 
 ## Package identity
 
-Even Hub version **0.1.1** replaces **0.1.0**. The manifest, npm package and lockfile agree. `npm run pack -- https://timothylggram.tail51e140.ts.net` builds the package using the existing installed CLI and writes `g2/out.ehpk`. The adjacent `package-build.json` records package version, source revision, build ID, service origin, byte count and SHA-256. Generated packages and real configuration remain outside Git.
+Even Hub version **0.1.2** replaces **0.1.1**. The manifest, npm package and lockfile agree. `npm run pack -- https://timothylggram.tail51e140.ts.net` builds the package using the existing installed CLI and writes `g2/out.ehpk`. The adjacent `package-build.json` records package version, source revision, build ID, service origin, byte count and SHA-256. Generated packages and real configuration remain outside Git.
 
 The EHPK contains the phone/glasses client. Python tuning runs in the analysis backend and is identified by its `/health` detector version. Update that backend when applying this release to another machine.
 
