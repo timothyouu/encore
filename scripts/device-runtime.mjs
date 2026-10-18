@@ -16,9 +16,10 @@ const tokenPath = process.env.ENCORE_DEVICE_TOKEN_FILE ?? `${run}/device-session
 const token = readFileSync(tokenPath, 'utf8').trim();
 if (token.length < 32) throw new Error('Existing session token is unavailable.');
 const port = Number(process.env.ENCORE_DEVICE_PORT ?? '8799');
+const allowLoopbackClientOrigins = process.env.ENCORE_ALLOW_LOOPBACK_CLIENT_ORIGINS === 'true';
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
 const server = createCoachServer({
-  library: await loadLibrary(), chooser: null, token, allowedOrigin: origin,
+  library: await loadLibrary(), chooser: null, token, allowedOrigin: origin, allowLoopbackClientOrigins,
   analysisUrl: process.env.ENCORE_ANALYSIS_URL ?? 'http://127.0.0.1:8012/v1/analyze',
   publicBaseUrl: JSON.parse(readFileSync(new URL('../g2/service-origin.json', import.meta.url), 'utf8')).origin,
   observeRequest(event) {
@@ -30,6 +31,6 @@ server.requestTimeout = 70_000;
 server.headersTimeout = 10_000;
 server.keepAliveTimeout = 5_000;
 server.listen(port, '127.0.0.1', () => {
-  console.log(JSON.stringify({ event: 'device-backend-ready', port, allowedOrigin: origin, modelConfigured: false }));
+  console.log(JSON.stringify({ event: 'device-backend-ready', port, allowedOrigin: origin, allowLoopbackClientOrigins, modelConfigured: false }));
 });
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));

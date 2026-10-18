@@ -36,6 +36,7 @@ export type CoachServerOptions = {
   fetchImpl?: typeof fetch;
   token?: string;
   allowedOrigin?: string;
+  allowLoopbackClientOrigins?: boolean;
   publicBaseUrl?: string;
   timeoutMs?: number;
   analysisTimeoutMs?: number;
@@ -62,6 +63,14 @@ function validToken(actual: string | undefined, expected: string): boolean {
   const provided = Buffer.from(actual.slice(7));
   const wanted = Buffer.from(expected);
   return provided.length === wanted.length && timingSafeEqual(provided, wanted);
+}
+function clientOriginAllowed(origin: string, options: CoachServerOptions): boolean {
+  if (origin === options.allowedOrigin) return true;
+  if (!options.allowLoopbackClientOrigins) return false;
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'http:' && url.origin === origin && isLoopbackHost(url.hostname);
+  } catch { return false; }
 }
 async function readJson(request: IncomingMessage, maximum: number): Promise<unknown> {
   const length = Number(request.headers['content-length']);
@@ -119,6 +128,9 @@ function analysisEndpoint(input: string): string {
   return url.toString();
 }
 export function createCoachServer(options: CoachServerOptions): Server {
+  if (options.allowLoopbackClientOrigins && (!options.token || options.token.length < 32)) {
+    throw new Error('Loopback app origins require a session token of at least 32 characters');
+  }
   const clock = options.now ?? Date.now;
   const store = new ArtifactStore(clock);
   const rates = new Map<string, RateEntry>();
@@ -128,7 +140,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
   const coachTimeoutMs = Math.min(60_000, Math.max(1, options.timeoutMs ?? 12_000));
   const server = createServer(async (request, response) => {
     const origin = request.headers.origin;
-    const corsOrigin = origin && options.allowedOrigin === origin ? origin : undefined;
+    const corsOrigin = origin && clientOriginAllowed(origin, options) ? origin : undefined;
     const incomingPath = new URL(request.url ?? '/', 'http://localhost').pathname;
     const path = canonicalPath(incomingPath);
     const startedAt = performance.now();
@@ -150,7 +162,7 @@ export function createCoachServer(options: CoachServerOptions): Server {
       if (!audioMatch && !['/v1/recordings', '/v1/analyze', '/v1/coach'].includes(path)) {
         error(response, 404, 'not_found', corsOrigin); return;
       }
-      if (origin && origin !== options.allowedOrigin) { error(response, 403, 'origin_not_allowed'); return; }
+      if (origin && !corsOrigin) { error(response, 403, 'origin_not_allowed'); return; }
       if (request.method === 'OPTIONS') {
         if (!corsOrigin) { error(response, 403, 'origin_not_allowed'); return; }
         response.writeHead(204, { ...headers(corsOrigin), 'access-control-allow-methods': 'GET, POST, OPTIONS',
