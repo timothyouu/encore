@@ -1,0 +1,388 @@
+import { passages, type Passage } from './passages.ts';
+
+export type DetectedNote = {
+  id: string; midiPitch: number; onsetSec: number; durationSec: number; detectorScore?: number;
+};
+export type Finding = {
+  id: string; kind: 'wrong_note' | 'missing_note' | 'extra_note' | 'timing';
+  referenceNoteId?: string; detectedNoteId?: string; timingDeltaMs?: number;
+};
+export type AnalysisResult = {
+  schemaVersion: '1'; attemptId: string; passageId: string; passageVersion: string;
+  attemptTempoBpm: number; status: 'ok' | 'uncertain' | 'insufficient_audio' | 'error';
+  detectorVersion: string; scoringVersion: string;
+  audioQuality: { clipped: boolean; hasDropouts: boolean; warnings: string[] };
+  alignment: { offsetSec: number | null; reliable: boolean };
+  detectedNotes: DetectedNote[]; findings: Finding[];
+  metrics: { matchedNotes: number; expectedNotes: number; medianAbsTimingErrorMs: number | null };
+};
+export type CoachingResult = {
+  schemaVersion: '1'; attemptId: string; cue: string; evidenceFindingIds: string[];
+  visual: { kind: 'keyboard' | 'rhythm_strip' | 'none'; referenceNoteIds: string[]; poseIds: string[] };
+};
+export type AttemptRecord = {
+  attemptId: string; passageId: string; passageVersion: string; startedAt: string; completedAt: string | null;
+  captureStatus: 'recording' | 'completed' | 'canceled' | 'interrupted';
+  processingStatus: 'not_started' | 'processing' | 'result' | 'error';
+  analysis: AnalysisResult | null; coaching: CoachingResult | null;
+  error: { stage: 'capture' | 'upload' | 'analysis' | 'coaching'; message: string } | null;
+  captureSource?: 'demo' | 'phone' | 'g2';
+};
+
+type Screen = 'library' | 'ready' | 'recording' | 'processing' | 'review' | 'guide' | 'sheet' | 'history' | 'error';
+export type SessionState = {
+  screen: Screen; passageId: string | null; attemptId: string | null; findingIndex: number;
+  historyOrigin: boolean; sheetOrigin: 'review' | 'guide';
+};
+type Storage = { getItem(key: string): string | null; setItem(key: string, value: string): void };
+const STORAGE_KEY = 'encore.attempts.v1';
+const POSE_IDS = new Set(['finger-1', 'finger-2', 'finger-3', 'finger-4', 'finger-5', 'neutral']);
+const KINDS = new Set(['wrong_note', 'missing_note', 'extra_note', 'timing']);
+const STATUSES = new Set(['ok', 'uncertain', 'insufficient_audio', 'error']);
+const STAGES = new Set(['capture', 'upload', 'analysis', 'coaching']);
+
+function object(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+function string(value: unknown, max = 200): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= max;
+}
+function finite(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+}
+function integer(value: unknown, min: number, max: number): value is number {
+  return finite(value, min, max) && Number.isInteger(value);
+}
+function strings(value: unknown, maxItems = 100, maxLength = 200): value is string[] {
+  return Array.isArray(value) && value.length <= maxItems && value.every((item: unknown) => string(item, maxLength));
+}
+function unique(values: string[]): boolean {
+  return new Set(values).size === values.length;
+}
+function iso(value: unknown): value is string {
+  return string(value, 40) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+}
+function passageFor(record: AttemptRecord): Passage | undefined {
+  return passages.find((passage) => passage.id === record.passageId && passage.version === record.passageVersion);
+}
+function analysisValid(value: unknown, record: AttemptRecord): value is AnalysisResult {
+  const passage = passageFor(record);
+  if (!passage || !object(value)) return false;
+  if (value.schemaVersion !== '1' || value.attemptId !== record.attemptId ||
+      value.passageId !== record.passageId || value.passageVersion !== record.passageVersion ||
+      !finite(value.attemptTempoBpm, 20, 300) || !STATUSES.has(String(value.status)) ||
+      !string(value.detectorVersion, 80) || !string(value.scoringVersion, 80) ||
+      !object(value.audioQuality) || typeof value.audioQuality.clipped !== 'boolean' ||
+      typeof value.audioQuality.hasDropouts !== 'boolean' || !strings(value.audioQuality.warnings, 20, 240) ||
+      !object(value.alignment) || typeof value.alignment.reliable !== 'boolean' ||
+      !(value.alignment.offsetSec === null || finite(value.alignment.offsetSec, -120, 120)) ||
+      !Array.isArray(value.detectedNotes) || value.detectedNotes.length > 500 ||
+      !Array.isArray(value.findings) || value.findings.length > 500 || !object(value.metrics)) return false;
+  const notes = value.detectedNotes;
+  if (!notes.every((note: unknown) => object(note) && string(note.id, 80) && integer(note.midiPitch, 0, 127) &&
+      finite(note.onsetSec, 0, 600) && finite(note.durationSec, 0.001, 600) &&
+      (note.detectorScore === undefined || finite(note.detectorScore, 0, 1)))) return false;
+  const detectedIds = notes.map((note: DetectedNote) => note.id);
+  if (!unique(detectedIds)) return false;
+  const referenceIds = new Set(passage.notes.map((note) => note.id));
+  const detectedSet = new Set(detectedIds);
+  const findings = value.findings;
+  if (!findings.every((finding: unknown) => object(finding) && string(finding.id, 80) &&
+      KINDS.has(String(finding.kind)) &&
+      (finding.referenceNoteId === undefined || (string(finding.referenceNoteId, 80) && referenceIds.has(finding.referenceNoteId))) &&
+      (finding.detectedNoteId === undefined || (string(finding.detectedNoteId, 80) && detectedSet.has(finding.detectedNoteId))) &&
+      (finding.timingDeltaMs === undefined || finite(finding.timingDeltaMs, -600000, 600000)) &&
+      (finding.kind !== 'timing' || (finding.referenceNoteId !== undefined && finding.timingDeltaMs !== undefined)) &&
+      (finding.kind !== 'wrong_note' || (finding.referenceNoteId !== undefined && finding.detectedNoteId !== undefined)) &&
+      (finding.kind !== 'missing_note' || finding.referenceNoteId !== undefined) &&
+      (finding.kind !== 'extra_note' || finding.detectedNoteId !== undefined))) return false;
+  if (!unique(findings.map((finding: Finding) => finding.id))) return false;
+  if (value.status === 'ok' && (value.audioQuality.clipped || value.audioQuality.hasDropouts ||
+      !value.alignment.reliable || value.alignment.offsetSec === null)) return false;
+  if (value.status !== 'ok' && findings.length > 0) return false;
+  const metrics = value.metrics;
+  return integer(metrics.expectedNotes, 0, passage.notes.length) &&
+    metrics.expectedNotes === passage.notes.length &&
+    integer(metrics.matchedNotes, 0, passage.notes.length) &&
+    (metrics.medianAbsTimingErrorMs === null || finite(metrics.medianAbsTimingErrorMs, 0, 600000));
+}
+function coachingValid(value: unknown, record: AttemptRecord): value is CoachingResult {
+  const passage = passageFor(record);
+  if (!passage || !record.analysis || record.analysis.status !== 'ok' || !object(value) || !object(value.visual)) return false;
+  const findingIds = new Set(record.analysis.findings.map((finding) => finding.id));
+  const referenceIds = new Set(passage.notes.map((note) => note.id));
+  const visual = value.visual;
+  return value.schemaVersion === '1' && value.attemptId === record.attemptId &&
+    string(value.cue, 120) && !/[<>]/.test(value.cue) &&
+    strings(value.evidenceFindingIds, 10, 80) && unique(value.evidenceFindingIds) &&
+    value.evidenceFindingIds.every((id: string) => findingIds.has(id)) &&
+    (findingIds.size === 0 || value.evidenceFindingIds.length > 0) &&
+    (visual.kind === 'keyboard' || visual.kind === 'rhythm_strip' || visual.kind === 'none') &&
+    strings(visual.referenceNoteIds, 20, 80) && unique(visual.referenceNoteIds) &&
+    visual.referenceNoteIds.every((id: string) => referenceIds.has(id)) &&
+    strings(visual.poseIds, 20, 40) && visual.poseIds.every((id: string) => POSE_IDS.has(id)) &&
+    (visual.kind !== 'none' || (visual.referenceNoteIds.length === 0 && visual.poseIds.length === 0));
+}
+function recordValid(value: unknown): value is AttemptRecord {
+  if (!object(value) || !string(value.attemptId, 100) || !string(value.passageId, 40) ||
+      !string(value.passageVersion, 40) || !iso(value.startedAt) ||
+      !(value.completedAt === null || iso(value.completedAt)) ||
+      !['recording', 'completed', 'canceled', 'interrupted'].includes(String(value.captureStatus)) ||
+      !['not_started', 'processing', 'result', 'error'].includes(String(value.processingStatus)) ||
+      !(value.captureSource === undefined || ['demo', 'phone', 'g2'].includes(String(value.captureSource)))) return false;
+  const record = value as AttemptRecord;
+  if (!passageFor(record) || (record.captureStatus === 'completed') !== (record.completedAt !== null)) return false;
+  if (record.error !== null && (!object(record.error) || !STAGES.has(String(record.error.stage)) ||
+      !string(record.error.message, 240))) return false;
+  if (record.analysis !== null && !analysisValid(record.analysis, record)) return false;
+  if (record.coaching !== null && !coachingValid(record.coaching, record)) return false;
+  return true;
+}
+
+export class SessionStore {
+  state: SessionState = {
+    screen: 'library', passageId: null, attemptId: null, findingIndex: 0,
+    historyOrigin: false, sheetOrigin: 'review',
+  };
+  records: AttemptRecord[] = [];
+  storageWarning: string | null = null;
+  private storage: Storage | undefined;
+  private listeners = new Set<() => void>();
+
+  constructor(storage?: Storage) {
+    try {
+      this.storage = storage ?? (typeof localStorage !== 'undefined' ? localStorage : undefined);
+      const raw = this.storage?.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved: unknown = JSON.parse(raw);
+        if (!object(saved) || saved.version !== 1 || !Array.isArray(saved.records) ||
+            saved.records.length > 1000 || !saved.records.every(recordValid) ||
+            !unique(saved.records.map((record: AttemptRecord) => record.attemptId))) {
+          throw new Error('Invalid saved session data');
+        }
+        this.records = saved.records;
+        let changed = false;
+        for (const record of this.records) {
+          if (record.captureStatus === 'recording') {
+            record.captureStatus = 'interrupted';
+            record.processingStatus = 'error';
+            record.error = { stage: 'capture', message: 'Recording was interrupted when the app closed.' };
+            changed = true;
+          } else if (record.captureStatus === 'completed' &&
+              (record.processingStatus === 'processing' || record.processingStatus === 'not_started')) {
+            record.processingStatus = 'error';
+            record.error = { stage: record.analysis ? 'coaching' : 'analysis', message: 'Processing was interrupted. Try again from the library.' };
+            changed = true;
+          }
+        }
+        if (changed) this.persist();
+      }
+    } catch {
+      this.records = [];
+      this.storageWarning = 'Saved history could not be loaded.';
+    }
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  }
+  private emit(): void { for (const listener of this.listeners) listener(); }
+  private persist(): void {
+    try {
+      this.storage?.setItem(STORAGE_KEY, JSON.stringify({ version: 1, records: this.records }));
+    } catch {
+      this.storageWarning = 'History could not be saved on this device.';
+    }
+  }
+  private save(): void { this.persist(); this.emit(); }
+  private current(): AttemptRecord | undefined {
+    return this.records.find((record) => record.attemptId === this.state.attemptId);
+  }
+  selectPassage(id: string): void {
+    if (this.state.screen !== 'library' || !passages.some((passage) => passage.id === id)) return;
+    this.state = { ...this.state, screen: 'ready', passageId: id, attemptId: null, findingIndex: 0, historyOrigin: false };
+    this.emit();
+  }
+  start(source: 'demo' | 'phone' | 'g2' = 'demo'): AttemptRecord | null {
+    if (this.state.screen !== 'ready') return null;
+    const passage = passages.find((item) => item.id === this.state.passageId);
+    if (!passage) return null;
+    const record: AttemptRecord = {
+      attemptId: crypto.randomUUID(), passageId: passage.id, passageVersion: passage.version,
+      startedAt: new Date().toISOString(), completedAt: null, captureStatus: 'recording',
+      processingStatus: 'not_started', analysis: null, coaching: null, error: null, captureSource: source,
+    };
+    this.records.push(record);
+    this.state = { ...this.state, screen: 'recording', attemptId: record.attemptId };
+    this.save();
+    return record;
+  }
+  stop(): AttemptRecord | null {
+    if (this.state.screen !== 'recording') return null;
+    const record = this.current();
+    if (!record || record.captureStatus !== 'recording') return null;
+    record.captureStatus = 'completed';
+    record.completedAt = new Date().toISOString();
+    this.persist();
+    record.processingStatus = 'processing';
+    this.state = { ...this.state, screen: 'processing' };
+    this.save();
+    return record;
+  }
+  cancel(): void {
+    if (this.state.screen !== 'recording') return;
+    const record = this.current();
+    if (!record || record.captureStatus !== 'recording') return;
+    record.captureStatus = 'canceled';
+    this.state = { ...this.state, screen: 'library', passageId: null, attemptId: null };
+    this.save();
+  }
+  interrupt(): void {
+    if (this.state.screen !== 'recording') return;
+    const record = this.current();
+    if (!record || record.captureStatus !== 'recording') return;
+    record.captureStatus = 'interrupted';
+    record.processingStatus = 'error';
+    record.error = { stage: 'capture', message: 'Recording was interrupted.' };
+    this.state = { ...this.state, screen: 'error' };
+    this.save();
+  }
+  showLibrary(): void {
+    if (this.state.screen === 'recording') return;
+    this.state = { ...this.state, screen: 'library', passageId: null, attemptId: null,
+      findingIndex: 0, historyOrigin: false };
+    this.emit();
+  }
+  showHistory(): void {
+    if (!['library', 'review', 'guide', 'sheet', 'error', 'processing', 'history'].includes(this.state.screen)) return;
+    this.state = { ...this.state, screen: 'history', passageId: null, attemptId: null,
+      findingIndex: 0, historyOrigin: true };
+    this.emit();
+  }
+  openAttempt(id: string): void {
+    if (this.state.screen !== 'history') return;
+    const record = this.records.find((item) => item.attemptId === id);
+    if (!record) return;
+    const screen: Screen = record.processingStatus === 'result' ? 'review' :
+      record.processingStatus === 'processing' ? 'processing' : 'error';
+    this.state = { ...this.state, screen, passageId: record.passageId, attemptId: id,
+      findingIndex: 0, historyOrigin: true };
+    this.emit();
+  }
+  showGuide(): void {
+    if (this.state.screen !== 'review' || !this.current()?.analysis) return;
+    this.state = { ...this.state, screen: 'guide' };
+    this.emit();
+  }
+  showReview(): void {
+    if (this.state.screen !== 'guide') return;
+    this.state = { ...this.state, screen: 'review' };
+    this.emit();
+  }
+  showSheet(): void {
+    if (this.state.screen !== 'review' && this.state.screen !== 'guide') return;
+    this.state = { ...this.state, sheetOrigin: this.state.screen, screen: 'sheet' };
+    this.emit();
+  }
+  closeSheet(): void {
+    if (this.state.screen !== 'sheet') return;
+    this.state = { ...this.state, screen: this.state.sheetOrigin };
+    this.emit();
+  }
+  moveFinding(delta: number): void {
+    if (!Number.isInteger(delta) || !['review', 'guide', 'sheet'].includes(this.state.screen)) return;
+    const length = this.current()?.analysis?.findings.length ?? 0;
+    const next = Math.max(0, Math.min(Math.max(0, length - 1), this.state.findingIndex + delta));
+    if (next === this.state.findingIndex) return;
+    this.state = { ...this.state, findingIndex: next };
+    this.emit();
+  }
+  applyAnalysis(attemptId: string, input: unknown): boolean {
+    const record = this.records.find((item) => item.attemptId === attemptId);
+    if (!record || record.captureStatus !== 'completed' || record.processingStatus !== 'processing' ||
+        record.analysis !== null || !analysisValid(input, record)) return false;
+    record.analysis = input;
+    if (input.status === 'ok') {
+      // Coaching remains pending. The deterministic analysis is already saved.
+    } else if (input.status === 'error') {
+      record.processingStatus = 'error';
+      record.error = { stage: 'analysis', message: 'Analysis could not complete.' };
+    } else {
+      record.processingStatus = 'result';
+    }
+    if (this.state.attemptId === attemptId && this.state.screen === 'processing' &&
+        record.processingStatus !== 'processing') {
+      this.state = { ...this.state, screen: record.processingStatus === 'result' ? 'review' : 'error' };
+    }
+    this.save();
+    return true;
+  }
+  applyCoaching(attemptId: string, input: unknown): boolean {
+    const record = this.records.find((item) => item.attemptId === attemptId);
+    if (!record || record.captureStatus !== 'completed' || record.processingStatus !== 'processing' ||
+        record.coaching !== null || !coachingValid(input, record)) return false;
+    record.coaching = input;
+    record.processingStatus = 'result';
+    record.error = null;
+    if (this.state.attemptId === attemptId && this.state.screen === 'processing') {
+      this.state = { ...this.state, screen: 'review' };
+    }
+    this.save();
+    return true;
+  }
+  fail(attemptId: string, stage: 'capture' | 'upload' | 'analysis' | 'coaching', message: string): void {
+    const record = this.records.find((item) => item.attemptId === attemptId);
+    if (!record || record.captureStatus !== 'completed' || record.processingStatus !== 'processing' ||
+        !STAGES.has(stage)) return;
+    record.processingStatus = 'error';
+    record.error = { stage, message: string(message, 240) ? message : 'Processing failed.' };
+    if (this.state.attemptId === attemptId && this.state.screen === 'processing') {
+      this.state = { ...this.state, screen: 'error' };
+    }
+    this.save();
+  }
+  count(passageId?: string): number {
+    return this.records.filter((record) => record.captureStatus === 'completed' &&
+      (passageId === undefined || record.passageId === passageId)).length;
+  }
+}
+
+export function fixtureAnalysis(record: AttemptRecord, scenario: 'mistakes' | 'clean' | 'uncertain' | 'error'): AnalysisResult {
+  const passage = passageFor(record);
+  if (!passage) throw new Error('Unknown passage');
+  const detectedNotes: DetectedNote[] = passage.notes.map((note, index) => ({
+    id: 'detected-' + String(index + 1), midiPitch: note.midiPitch + (scenario === 'mistakes' && index === 2 ? 1 : 0),
+    onsetSec: note.onsetBeat * 60 / passage.tempoBpm + (scenario === 'mistakes' && index === 4 ? 0.25 : 0),
+    durationSec: note.durationBeats * 60 / passage.tempoBpm,
+    detectorScore: 0.9,
+  })).filter((_note, index) => scenario !== 'mistakes' || index !== 5);
+  const findings: Finding[] = scenario === 'mistakes' ? [
+    { id: 'finding-1', kind: 'wrong_note', referenceNoteId: passage.notes[2].id, detectedNoteId: 'detected-3' },
+    { id: 'finding-2', kind: 'timing', referenceNoteId: passage.notes[4].id, detectedNoteId: 'detected-5', timingDeltaMs: 250 },
+    { id: 'finding-3', kind: 'missing_note', referenceNoteId: passage.notes[5].id },
+  ] : [];
+  return {
+    schemaVersion: '1', attemptId: record.attemptId, passageId: record.passageId,
+    passageVersion: record.passageVersion, attemptTempoBpm: passage.tempoBpm,
+    status: scenario === 'uncertain' ? 'uncertain' : scenario === 'error' ? 'error' : 'ok',
+    detectorVersion: 'demo-fixture-1', scoringVersion: 'demo-fixture-1',
+    audioQuality: { clipped: false, hasDropouts: false, warnings: scenario === 'uncertain' ? ['Demo: unclear audio'] : [] },
+    alignment: { offsetSec: scenario === 'uncertain' ? null : 0, reliable: scenario !== 'uncertain' },
+    detectedNotes: scenario === 'error' ? [] : detectedNotes, findings: scenario === 'error' ? [] : findings,
+    metrics: { matchedNotes: scenario === 'error' ? 0 : scenario === 'mistakes' ? passage.notes.length - 2 : passage.notes.length,
+      expectedNotes: passage.notes.length, medianAbsTimingErrorMs: scenario === 'uncertain' || scenario === 'error' ? null : 0 },
+  };
+}
+export function fixtureCoaching(record: AttemptRecord): CoachingResult {
+  const passage = passageFor(record);
+  if (!passage) throw new Error('Unknown passage');
+  const finding = record.analysis?.findings[0];
+  return {
+    schemaVersion: '1', attemptId: record.attemptId,
+    cue: finding ? 'Try the highlighted key, then play the phrase again.' : 'That phrase matches the reference. Keep practicing.',
+    evidenceFindingIds: finding ? [finding.id] : [],
+    visual: finding ? { kind: 'keyboard', referenceNoteIds: finding.referenceNoteId ? [finding.referenceNoteId] : [],
+      poseIds: ['finger-3'] } : { kind: 'none', referenceNoteIds: [], poseIds: [] },
+  };
+}
