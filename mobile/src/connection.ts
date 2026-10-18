@@ -1,7 +1,7 @@
 import type { SessionStore } from './session.ts';
 
 export type RecordingSource = 'demo' | 'phone' | 'g2';
-export type Connection = { mode: RecordingSource; analysis: string; coaching: string };
+export type Connection = { mode: RecordingSource; upload: string; analysis: string; coaching: string };
 const SOURCE_LABELS: Record<RecordingSource, string> = { demo: 'Demo (simulated)', phone: 'Phone microphone', g2: 'G2 microphone' };
 
 /** Optional deployment connection controls, separate from the quiet practice flow. */
@@ -42,7 +42,7 @@ export function mountConnection(store: SessionStore, root: HTMLElement, change: 
   form.addEventListener('submit', event => {
     event.preventDefault();
     if (apply.disabled) return;
-    const error = change({ mode: sources.find(source => source === mode.value) ?? 'demo', analysis: analysis.value.trim(), coaching: coaching.value.trim() });
+    const error = change({ mode: sources.find(source => source === mode.value) ?? 'demo', upload: upload.value.trim(), analysis: analysis.value.trim(), coaching: coaching.value.trim() });
     status.textContent = error ?? 'Connection applied. Choose a passage to begin.';
     if (!error) panel.open = false;
   });

@@ -1,3 +1,4 @@
+import { visibleFindings } from './paper-evidence.ts';
 import { noteName, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding } from './session.ts';
 
@@ -12,7 +13,7 @@ export function findingBeat(finding: Finding, passage: Passage, record: AttemptR
 }
 
 export function orderedFindings(record: AttemptRecord, passage: Passage): Finding[] {
-  return [...(record.analysis?.findings ?? [])].sort((a, b) => findingBeat(a, passage, record) - findingBeat(b, passage, record));
+  return record.analysis ? visibleFindings(record.analysis, passage, record.coaching) : [];
 }
 
 export function referenceFor(finding: Finding | undefined, passage: Passage): ReferenceNote | undefined {
@@ -20,7 +21,7 @@ export function referenceFor(finding: Finding | undefined, passage: Passage): Re
 }
 
 export function findingTitle(finding: Finding): string {
-  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing' }[finding.kind];
+  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing', duration: 'Hold duration' }[finding.kind];
 }
 
 export function detailFor(finding: Finding, passage: Passage, record: AttemptRecord): string {
@@ -29,6 +30,7 @@ export function detailFor(finding: Finding, passage: Passage, record: AttemptRec
   if (finding.kind === 'wrong_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Heard ${detected ? noteName(detected.midiPitch) : 'another note'}`;
   if (finding.kind === 'missing_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Not detected`;
   if (finding.kind === 'extra_note') return `Heard ${detected ? noteName(detected.midiPitch) : 'an extra note'} outside the reference`;
+  if (finding.kind === 'duration') return `${reference ? noteName(reference.midiPitch) : 'Note'} · Hold duration differs from the reference`;
   const delta = finding.timingDeltaMs ?? 0;
   return `${reference ? noteName(reference.midiPitch) : 'Note'} · ${Math.abs(Math.round(delta))} ms ${delta >= 0 ? 'late' : 'early'}`;
 }
@@ -38,5 +40,6 @@ export function correctionFor(finding: Finding, passage: Passage): string {
   if (!reference) return 'Listen for the next expected note, then try the passage again.';
   const beat = reference.onsetBeat + 1;
   if (finding.kind === 'timing') return `Place ${noteName(reference.midiPitch)} on beat ${beat}.`;
+  if (finding.kind === 'duration') return `Hold ${noteName(reference.midiPitch)} for ${reference.durationBeats} beat${reference.durationBeats === 1 ? '' : 's'}.`;
   return `Play ${noteName(reference.midiPitch)} on beat ${beat}.`;
 }

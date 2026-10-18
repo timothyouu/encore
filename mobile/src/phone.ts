@@ -1,6 +1,6 @@
 import './paper-renderer.css';
 import { mountPaperVisualization } from './paper-renderer.ts';
-import { resolveVisualPlan, visibleFindings } from './paper-evidence.ts';
+import { resolveVisualPlan } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
@@ -12,8 +12,8 @@ import { correctionFor, detailFor, findingBeat, findingTitle, orderedFindings, r
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
 type Mode = 'demo' | 'phone' | 'g2';
-// deviceStatus is supplied by a host that owns a real device connection; the phone-only app has none.
-type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => Mode; isBusy?: () => boolean; deviceStatus?: () => string | null };
+// deviceStatus comes from a host that owns a real device connection; the phone-only app has none.
 const NO_DEVICE = 'Glasses integration not connected';
 type NodeContent = Node | string | null | undefined;
 

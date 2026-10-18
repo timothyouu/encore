@@ -251,8 +251,12 @@ export class SessionStore {
     this.emit();
   }
   // 'g2' only labels the record; the store never talks to a device.
-  start(source: 'demo' | 'phone' | 'g2' = 'demo'): AttemptRecord | null {
-    if (this.state.screen !== 'ready' || !['demo', 'phone', 'g2'].includes(source)) return null;
+  start(source: 'demo' | 'phone' | 'test' | 'g2' = 'demo'): AttemptRecord | null {
+    if (this.state.screen !== 'ready' || !['demo', 'phone', 'test', 'g2'].includes(source)) return null;
+    if (this.records.length >= HISTORY_CAP) {
+      this.warnStorage('History is full at 1,000 attempts. Existing results are preserved; a new attempt cannot be recorded.');
+      return null;
+    }
     const passage = passages.find((item) => item.id === this.state.passageId);
     if (!passage) return null;
     const record: AttemptRecord = {
