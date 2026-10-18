@@ -1,6 +1,6 @@
 # Encore for Even G2 — Engineering Specification
 
-**Status:** Build-ready draft; unresolved choices are explicitly marked OPEN or PROPOSED. This specification describes intended behavior, not verified implementation.
+**Status:** Draft with unresolved review issues; choices and proposed defaults are explicitly marked OPEN or PROPOSED. This specification describes intended behavior, not verified implementation, and is not yet build-ready.
 
 **Updated:** October 17, 2026 (Pacific time)  
 **Audience:** Timothy, teammate, Devin, and coding agents  
@@ -11,9 +11,11 @@
 
 ## 1. Product and scope
 
-A glasses-first piano practice mentor helps a learner understand a mistake, see how to correct it, and try again without repeatedly reaching for a phone. The experience is a focused loop:
+A glasses-first piano practice mentor helps a learner understand a mistake, see how to correct it, and choose what to play next. The experience is a simple loop:
 
-**Choose passage → preview → play → review one issue → see correction → focused retry → compare progress.**
+**Choose song/passage → preview → record → review results and correction → return to song/passage selection → play again.**
+
+Keep a count of recordings and let the player reopen past results from History. Playing again always begins with song/passage selection; there is no separate focused-practice, original-tempo retry, or progress state.
 
 The proposed initial audience is beginner piano learners practicing short prepared passages. The phone handles setup and detailed history. G2 provides concise, glanceable feedback between attempts while keeping the player's attention on the instrument.
 
@@ -26,8 +28,8 @@ The proposed initial audience is beginner piano learners practicing short prepar
 - Basic Pitch runs on a **laptop**, not in the phone WebView
 - Two feedback views: mistake review and corrective keyboard/finger schematic
 - Static diagrams with slow pose changes; no beat-synchronized animation requirement
-- Focused practice followed by retry at the original passage tempo
-- Phone mirrors feedback and provides session history
+- Return to song/passage selection after results to choose the same passage or another and play again
+- Phone mirrors feedback, shows total and per-passage recording counts, and lets the player revisit past results
 - No smartwatch integration
 
 ### Out of scope for the first build
@@ -38,12 +40,12 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 
 1. **Empty is the default:** while playing, hide notation and coaching; retain only a small recording indicator
 2. **One useful cue:** prioritize a single supported issue after each phrase
-3. **Show only meaningful changes:** recording, processing, feedback, and retry states must be distinguishable
+3. **Show only meaningful changes:** selection, recording, processing, and feedback states must be distinguishable
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
-5. **Trust before detail:** if the recording or alignment is uncertain, request a retry instead of claiming a musical mistake
+5. **Trust before detail:** if the recording or alignment is uncertain, invite another recording through song/passage selection instead of claiming a musical mistake
 6. **Preserve agency:** never start recording without the player's action; allow cancellation and return to selection
 
-Each feedback result answers: **Where? What happened? What should I try? What improved?**
+Each feedback result answers: **Where? What happened? What should I try next?** Recording counts describe practice activity, not proof of improvement.
 
 ## 3. System architecture and tech stack
 
@@ -70,7 +72,7 @@ Each feedback result answers: **Where? What happened? What should I try? What im
 | Visual renderer | Deterministic code from validated note/pose data | Proposed implementation of agreed diagrams |
 | Coaching API host | Protected HTTPS TypeScript service | Provider/runtime OPEN |
 | Laptop connectivity | HTTPS endpoint/tunnel reachable by the phone | Method/owner OPEN |
-| History | Demo session results and retry comparisons | No real accounts in v1; storage/retention details OPEN |
+| History | Demo recording counts and saved attempt results | No real accounts in v1; storage/retention details OPEN |
 | Observability | Sentry | Selected integration; implementation pending |
 
 “Laptop” is a deployment choice for analysis, not an offline guarantee. The laptop must remain awake and reachable. Gemini still requires network access. Never embed permanent provider keys in the phone bundle, G2 package, public repository, or client logs. Secrets belong in the protected service environment.
@@ -81,27 +83,30 @@ An HTTPS tunnel may be necessary if venue networking prevents direct access. Whi
 
 ### Phone screens
 
-- **Library:** prepared passages, tempo, difficulty, brief learning objective
+- **Library:** song/passage selection with prepared passages, tempo, difficulty, brief learning objective, total recording count, per-passage recording counts, and access to History
 - **Passage:** notation/reference preview, connection state, recording-source selection
 - **Session:** mirrors current G2 state; start/stop fallback controls and explicit errors
-- **Results:** evidence, concise coach cue, correction diagram, focused retry and original-tempo retry
-- **History:** past attempts and comparisons; raw-audio playback remains OPEN
+- **Results:** evidence, concise coach cue, correction diagram, recording counts, **Play again** → Library, and **View past results** → History
+- **History:** individual attempts with passage, recording time, and processing/result/error status; select an entry to reopen its saved Results or status detail, and return to History without starting a recording. Raw-audio playback remains OPEN
 
 Search applies only to the prepared library in v1.
+
+**Confirmed navigation:** Library → Passage → Session (recording/processing) → Results → Library. **Play again** always returns to Library, even when the player wants the same passage. The player selects a passage, previews it, and explicitly starts a new recording. Library and Results both provide access to History; History → saved Results → History is read-only. Opening a past result must never start capture, resubmit analysis, or increment a recording count. Historical results identify their original passage and attempt rather than being presented as a new result.
 
 ### G2 states
 
 | State | Display | Allowed transition |
 |---|---|---|
-| Disconnected | Phone explains reconnect | Connected → Ready |
-| Ready | Passage preview and start prompt | Tap → Recording |
-| Recording | Small recording icon only | Tap → Uploading/Analyzing |
+| Disconnected | Phone explains reconnect | Connected → Selection |
+| Selection | Song/passage selection prompt; phone shows Library | Select passage → Ready |
+| Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
+| Recording | Small recording icon only | Tap → Analyzing; confirmed cancel → Selection |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
-| Review | Boxed note/beat and one short cue | Swipe down → Guide; retry action → Ready |
-| Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; retry action → Ready |
-| Retry ready | Focused notes and slower tempo | Tap → Recording |
-| Progress | Comparable original-tempo attempt result | Repeat or next passage |
-| Recoverable error | Brief reason and retry option | Retry → Ready or back → selection |
+| Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
+| Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
+| Recoverable error | Brief reason and Play again option | Play again → Selection |
+
+Detailed History navigation is on the phone. When a saved result is mirrored on G2, Review and Guide remain read-only for that attempt; Play again returns to Selection. Opening a processing or failed entry shows its saved/current status rather than inventing a result or starting capture.
 
 ### Controls
 
@@ -191,11 +196,40 @@ type CoachingResult = {
     referenceNoteIds: string[];
     poseIds: string[];
   };
-  retry: { referenceNoteIds: string[]; tempoBpm: number } | null;
 };
 ```
 
-Validate every ID against the selected passage, findings, and an allowlisted pose library. Validate tempo bounds and cue length. Proposed cue target: one sentence, at most 120 characters, shortened further if the hardware layout requires it. The model must not return executable drawing code, invented measurements, or arbitrary remote image URLs.
+Validate every ID against the selected passage, findings, and an allowlisted pose library. Validate cue length. Proposed cue target: one sentence, at most 120 characters, shortened further if the hardware layout requires it. The model must not return executable drawing code, invented measurements, or arbitrary remote image URLs. Coaching does not define a separate retry exercise or change navigation; Play again is an application action that returns to Library.
+
+### Recording counts and saved results
+
+The user confirmed recording counts and access to past results. **PROPOSED default for count edge cases:** a completed capture counts once when the player stops and submits it, even if upload, analysis, or coaching later fails or the audio is insufficient. Canceled or interrupted captures do not count. These edge cases were not specified by the user and remain subject to review.
+
+```ts
+type AttemptRecord = {
+  attemptId: string;       // unique per capture; reused for processing retries
+  passageId: string;
+  passageVersion: string;
+  startedAt: string;       // ISO timestamp
+  completedAt: string | null;
+  captureStatus: 'recording' | 'completed' | 'canceled' | 'interrupted';
+  processingStatus: 'not_started' | 'processing' | 'result' | 'error';
+  analysis: AnalysisResult | null;
+  coaching: CoachingResult | null;
+  error: {
+    stage: 'capture' | 'upload' | 'analysis' | 'coaching';
+    message: string;
+  } | null;
+};
+```
+
+- Create one record with a unique attempt ID for each explicitly started capture. Persist completed capture metadata before starting upload/analysis, then update that same record with processing, result, or error status
+- Derive the total recording count from records where `captureStatus === 'completed'`; derive each passage's count from the same records filtered by `passageId`. Counts cover the retained demo history, not an account-wide or cross-device lifetime total
+- Count completion once per unique attempt ID. Duplicate stop events, request retries, repeated callbacks, reopening History, or viewing a result must not create another record or increment the count
+- Preserve completed recordings in History while processing and after errors, even when no successful result exists. Keep any available analysis or coaching data if a later stage fails; show the relevant status and fallback rather than dropping the attempt
+- Preserve an explicit canceled/interrupted state for incomplete captures, exclude them from recording counts, and never label them as completed results
+- Bind stored analysis and coaching to the record's attempt ID and passage ID/version. Opening an entry reads that record; it does not rerun capture or analysis. Back returns to History; Play again returns to Library
+- Browser-local storage of these records is PROPOSED for the demo, consistent with Section 8. Raw audio is not required to revisit structured results; exact storage and retention remain OPEN
 
 ## 6. Analysis and coaching behavior
 
@@ -239,9 +273,9 @@ Proposed endpoints:
 
 For v1, bounded request/response is sufficient if measured inference fits the host time limit. Otherwise introduce a job ID and status polling. Enforce maximum clip duration, payload size, request timeout, and rate limits. Exact limits are OPEN pending tests.
 
-Use attempt IDs for idempotency and correlation. Retry transient transport errors with bounded backoff; never create duplicate history entries or unlimited model charges. On disconnect, stop the microphone, preserve an explicit interrupted state, and offer restart. Backend errors must not look like musical errors.
+Use attempt IDs for idempotency and correlation. Retry transient transport errors with bounded backoff against the same attempt record; never create duplicate history entries or unlimited model charges. If capture is interrupted by a disconnect, stop the microphone, preserve an explicit interrupted state, and offer a return to Library to start again. A disconnect after capture completed does not remove its recording count; preserve the completed attempt's processing/error status. Backend errors must not look like musical errors.
 
-Demo-first is agreed: no real accounts in v1. Use a demo session; proposed history implementation is browser-local structured results, with no cross-device persistence promise. Exact storage and retention details remain OPEN. No-login demo mode still needs protected provider credentials and abuse controls. Raw audio retention is OPEN; recommended default is delete after analysis, save only structured session results, and require explicit opt-in for audio playback storage. Do not log audio or full personal content to Sentry.
+Demo-first is agreed: no real accounts in v1. Use a demo session; proposed history implementation is browser-local attempt records and structured results, with counts derived from those records and no cross-device persistence promise. Exact storage and retention details remain OPEN. No-login demo mode still needs protected provider credentials and abuse controls. Raw audio retention is OPEN; recommended default is delete after analysis, save only structured session results, and require explicit opt-in for audio playback storage. Do not log audio or full personal content to Sentry.
 
 ## 9. Ownership and coding-agent boundaries
 
@@ -275,13 +309,17 @@ Devin and other coding agents work within assigned modules and branches. Their h
 - [ ] Analysis finds a deliberate mistake and cites the correct note
 - [ ] Strands/Gemini returns one evidence-grounded cue
 - [ ] Renderer shows the correct key/pose; swipes and back work on hardware
-- [ ] Focused retry runs, then original-tempo retry provides a valid comparison
+- [ ] Results → Play again returns to Library; selecting the same or another passage and explicitly starting capture creates a new attempt
+- [ ] Library and Results show total and per-passage recording counts derived from the saved attempt records
+- [ ] Library/Results → History → selected past Results → History works without capture, resubmission, or count changes
 
 ### Phase 3: Reliability and delivery
 
 - [ ] Noisy input produces uncertainty, not false confidence
 - [ ] Network loss, duplicate taps, stale responses and Gemini failure recover cleanly
-- [ ] Phone history matches G2 results and does not duplicate attempts
+- [ ] Phone history matches G2 results, retains each attempt's processing/result/error status, and does not duplicate attempts
+- [ ] Under the proposed count default, completed captures count once even if upload/analysis/coaching fails; canceled and interrupted captures do not count
+- [ ] Duplicate stop events, processing retries, late responses, and reopening past results leave counts unchanged and update only the matching attempt
 - [ ] Bluetooth image updates remain bounded and readable
 - [ ] Test on physical G2 and package/deploy to Even Hub Beta
 - [ ] Prepare simulator mirror, live demo, README and submission video
@@ -303,15 +341,15 @@ Track selection is not proof of eligibility. Confirm final submission requiremen
 
 ## 12. Remaining choices
 
-1. Frontend framework; app name is Encore and verified repository is timothyouu/encore, reported empty when checked
+1. Frontend framework remains OPEN; app name is Encore and verified repository is timothyouu/encore, which contains the G2 app scaffold and this specification
 2. Phone OS and actual G2 capture compatibility; G2 microphone capture has not been tested. Planned demo/test input is laptop-speaker recorded playback, visibly labeled as such. Live piano availability remains unconfirmed.
 3. Exact Gemini model/version, pinned Strands/Even SDK versions
 4. Hosted coaching provider, laptop endpoint method and who configures access
-5. Demo history storage and raw-audio retention/playback; no real accounts for v1
+5. Demo history storage and raw-audio retention/playback; review proposed completed/canceled/interrupted recording-count defaults; no real accounts for v1
 6. Partner name; there is no third teammate
 7. Final passage selection, timing tolerances and acceptable measured demo latency
 
-These choices can be resolved during setup; they must not silently become claims that implementation is complete.
+These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision updates the confirmed selection, recording-count, and result-history flow only; broader review recommendations remain unresolved unless separately approved.
 
 ## References
 
