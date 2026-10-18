@@ -26,7 +26,7 @@ The proposed initial audience is beginner piano learners practicing short prepar
 - Audio recording through G2; phone microphone is a fallback to validate
 - Measured note/timing comparison followed by Gemini coaching through the **Strands TypeScript SDK**
 - Basic Pitch runs on a **laptop**, not in the phone WebView
-- Two feedback views: mistake review and corrective keyboard/finger schematic
+- Two feedback views: mistake review and corrective keyboard/finger schematic, each tailored to the specific supported error found in that attempt
 - Static diagrams with slow pose changes; no beat-synchronized animation requirement
 - Optional static sheet music for the selected passage on G2 while playing, toggled with a **Hide/Show sheet music** item in the G2 system contextual menu (tap then hold)
 - Return to song/passage selection after results to choose the same passage or another and play again
@@ -45,6 +45,8 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
 5. **Trust before detail:** if the recording or alignment is uncertain, invite another recording through song/passage selection instead of claiming a musical mistake
 6. **Preserve agency:** never start recording without the player's action; allow cancellation and return to selection
+
+Visualizations are error-specific, not generic decorations. Select the view and its highlights from the validated finding: for example, mark the expected and played keys for a wrong note, show the omitted key for a missed note, or use a beat/rhythm cue for an early or late note. Include only information supported by the audio analysis and passage data; if the finding is uncertain, do not show a corrective visualization.
 
 Each feedback result answers: **Where? What happened? What should I try next?** Recording counts describe practice activity, not proof of improvement.
 
@@ -269,6 +271,8 @@ Basic Pitch produces candidate note events. Ordinary code aligns these to the re
 - No observation of fingering, posture, hand tension, or technique can be claimed from pitch data alone
 
 Gemini receives the passage, validated findings, attempt history needed for comparison, and the permitted output schema. It chooses one priority cue and a bounded practice suggestion. If coaching fails, show the deterministic finding with a plain fallback instruction. If analysis is uncertain, show “I couldn't hear that clearly. Try again” rather than a grade.
+
+The chosen visualization must correspond to the same evidence-backed finding as the cue. The renderer uses the finding kind and validated reference/detected note IDs to select and populate the appropriate deterministic diagram; it must not return a generic visual unrelated to the student's mistake or infer unsupported technique errors. If no suitable visualization is supported, return `kind: 'none'` and show the text cue only.
 
 Use one Strands coaching workflow initially. Additional models or agents require a separate justified responsibility and measured benefit. Lyria is excluded from note detection because its role is music generation.
 
