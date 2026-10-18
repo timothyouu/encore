@@ -11,8 +11,20 @@ import type { Screen } from './screens/screen.ts'
 import { selectionScreen } from './screens/selection.ts'
 import { SHEET_MUSIC_MENU_ITEM, loadSettings, saveSettings, sheetMusicMenu } from './settings.ts'
 import { loadUploadUrl, uploadTake } from './upload.ts'
+import { startPhoneApp } from '../../mobile/src/app.ts'
+
+// The phone UI (mobile/) renders in this same WebView. It mounts before the
+// bridge so the phone is usable even if the glasses never connect. Glasses
+// side effects stay in g2/; the phone app only renders phone DOM.
+function mountPhoneUi() {
+  const root = document.getElementById('app')
+  if (!root) return status('phone UI root #app is missing', 'error')
+  const app = startPhoneApp(root, { storage: window.localStorage })
+  window.addEventListener('pagehide', () => app.dispose(), { once: true })
+}
 
 async function main() {
+  mountPhoneUi()
   status('script loaded; waiting for Even bridge…')
   const slowBridge = setTimeout(() => status('still waiting for the Even bridge after 5s', 'error'), 5000)
   const glasses = new Glasses(await waitForEvenAppBridge())
