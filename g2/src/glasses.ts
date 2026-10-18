@@ -129,8 +129,10 @@ export class Glasses {
   }
 
   // Flicker-free content change; the ID and name must match the live container.
-  updateText(container: { id: number; name: string }, content: string) {
+  // Like images, an update can be dropped if it went stale while queued.
+  updateText(container: { id: number; name: string }, content: string, stillWanted: () => boolean = () => true) {
     return this.enqueue(`text ${container.name}`, async () => {
+      if (!stillWanted()) return
       const ok = await this.bridge.textContainerUpgrade(
         new TextContainerUpgrade({ containerID: container.id, containerName: container.name, content }),
       )
