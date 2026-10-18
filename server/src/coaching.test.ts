@@ -308,3 +308,18 @@ test('HTTP reports quota stop instead of a successful fallback', async () => {
     assert.deepEqual(await response.json(), { error: 'gemini_quota_stopped' });
   } finally { await close(server); }
 });
+
+test('explicit model, bounded JSON output and one provider call are preserved on failure', async () => {
+  for (const modelId of ['gemini-3.5-flash-lite', 'gemini-2.5-flash']) {
+    const requests: GenerateContentParameters[] = [];
+    const fake = { models: { generateContentStream: async (params: GenerateContentParameters): Promise<never> => {
+      requests.push(params);
+      throw new Error('test provider unavailable');
+    } } } as unknown as GoogleGenAI;
+    const chooser = createGeminiChooser('test-only', modelId, fake);
+    await assert.rejects(() => chooser('Select one supported finding.', wav(), new AbortController().signal));
+    assert.deepEqual(requests.map(request => request.model), [modelId]);
+    assert.equal(requests[0].config?.responseMimeType, 'application/json');
+    assert.equal(requests[0].config?.maxOutputTokens, 512);
+  }
+});

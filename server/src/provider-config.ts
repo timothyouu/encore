@@ -8,10 +8,11 @@ export function parseProviderConfig(values: Record<string, string | undefined>):
       !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(values.ENCORE_FREE_TIER_PROJECT_ID ?? '')) {
     throw new Error('Confirm the key/project Free-tier status in server/.env before enabling Gemini.');
   }
-  if (values.ENCORE_GEMINI_MODEL !== 'gemini-2.5-flash') {
+  const modelId = values.ENCORE_GEMINI_MODEL;
+  if (modelId !== 'gemini-3.5-flash-lite' && modelId !== 'gemini-2.5-flash') {
     throw new Error('Only the configured Gemini model is allowed; no model fallback.');
   }
-  return { apiKey, modelId: 'gemini-2.5-flash' };
+  return { apiKey, modelId };
 }
 
 export function loadProviderConfig(): ReturnType<typeof parseProviderConfig> {

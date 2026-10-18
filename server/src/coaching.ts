@@ -166,7 +166,7 @@ export function withInlineWav(params: GenerateContentParameters, wav: Uint8Array
   const inlineData = { mimeType: 'audio/wav', data: Buffer.from(wav).toString('base64') };
   return { ...params, contents: [...contents.slice(0, -1), { ...last, parts: [...(last.parts ?? []), { inlineData }] }] };
 }
-export function createGeminiChooser(apiKey: string, modelId = 'gemini-2.5-flash', google?: GoogleGenAI): ModelChooser {
+export function createGeminiChooser(apiKey: string, modelId: string, google?: GoogleGenAI): ModelChooser {
   let quotaStopped = false;
   return async (prompt: string, wav: Uint8Array, signal: AbortSignal): Promise<unknown> => {
     if (quotaStopped) throw new QuotaStoppedError();
@@ -192,7 +192,7 @@ export function createGeminiChooser(apiKey: string, modelId = 'gemini-2.5-flash'
       }
     } } as unknown as GoogleGenAI;
     const agent = new Agent({
-      model: new GoogleModel({ client, modelId, params: { temperature: 0.2, maxOutputTokens: 160 } }),
+      model: new GoogleModel({ client, modelId, params: { temperature: 0.2, maxOutputTokens: 512, responseMimeType: 'application/json' } }),
       printer: false,
       retryStrategy: null,
       systemPrompt: 'You select a single evidence-backed piano practice action from server-provided options. Output compact JSON only.'
