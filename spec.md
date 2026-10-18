@@ -9,6 +9,8 @@
 
 **Team:** Two people: Timothy and one partner. There is no third teammate.
 
+**Latest scope decision:** The October 17 Granola discussion, [Recording page audio pipeline and visualization architecture](https://notes.granola.ai/d/32613d5d-34e4-4c80-bbf1-be861adc3f34), defines two model responsibilities: **Spotify Basic Pitch for note detection and Gemini for the Coach Agent**. Gemini is the coach provider confirmed by Timothy's accompanying direction. There is no separate visual-generation model. The contracts below are proposed implementation details where the discussion did not specify them.
+
 ## 1. Product and scope
 
 A glasses-first piano practice mentor helps a learner understand a mistake, see how to correct it, and choose what to play next. The experience is a simple loop:
@@ -24,10 +26,11 @@ The proposed initial audience is beginner piano learners practicing short prepar
 - Piano only; begin with one hand and single notes
 - A small prepared passage library with reference notes/MIDI and tempo
 - Audio recording through G2; phone microphone is a fallback to validate
-- Measured note/timing comparison followed by Gemini coaching through the **Strands TypeScript SDK**
+- Two model stages: Spotify Basic Pitch detection, then Gemini coaching through the **Strands TypeScript SDK**; reference comparison and visualization use ordinary code
+- Recording page captures audio, stops and saves WAV, normalizes its sample rate, and uploads it to a server URL; both analysis and coaching endpoints receive the same normalized WAV
 - Basic Pitch runs on a **laptop**, not in the phone WebView
 - Two feedback views: mistake review and corrective keyboard/finger schematic
-- Static diagrams with slow pose changes; no beat-synchronized animation requirement
+- Deterministic HTML/JavaScript piano-key animations show incorrect notes and durations (for example quarter notes versus half notes); no separate Gemini visual model or live beat-synchronized animation requirement
 - Return to song/passage selection after results to choose the same passage or another and play again
 - Phone mirrors feedback, shows total and per-passage recording counts, and lets the player revisit past results
 - No smartwatch integration
@@ -38,7 +41,7 @@ Arbitrary song transcription, unrestricted song search, two-handed polyphonic co
 
 ## 2. Quiet Tech design rules
 
-1. **Empty is the default:** while playing, hide notation and coaching; retain only a small recording indicator
+1. **Quiet while playing:** retain a small recording indicator and hide coaching. Show reference sheet music only when the player enables it in Settings; otherwise hide notation. The initial setting is OPEN pending hardware validation.
 2. **One useful cue:** prioritize a single supported issue after each phrase
 3. **Show only meaningful changes:** selection, recording, processing, and feedback states must be distinguishable
 4. **Monochrome first:** use outlines, labels, boxes, and symbols rather than color-dependent meaning
@@ -51,25 +54,27 @@ Each feedback result answers: **Where? What happened? What should I try next?** 
 
 ### Settled architectural flow
 
-1. G2 microphone sends audio through Bluetooth and EvenAppBridge to the phone's Even Hub WebView
-2. The phone collects a bounded recording and sends it, with passage identity, to a reachable laptop analysis service
-3. Laptop Python runs Basic Pitch and deterministic reference alignment/scoring
-4. Structured analysis returns to the phone
-5. The phone sends validated analysis to a protected hosted TypeScript endpoint
-6. A Strands TypeScript workflow calls Gemini Flash-family coaching with those findings
-7. The endpoint returns a short cue and constrained visual specification
-8. The phone validates the response and renders deterministic monochrome assets/text
-9. Even Hub SDK sends containers and updates to G2; the phone mirrors results
+1. The recording page receives a bounded capture from the selected source. G2 microphone/bridge capture belongs to the glasses workstream; phone microphone capture belongs to mobile. Hardware integration remains unverified.
+2. On stop/save, finalize WAV, normalize the sample rate through actual resampling, and upload the normalized recording to a server that returns its audio URL. Keep one attempt identity throughout.
+3. Deliver that WAV to the reachable laptop analysis endpoint. Python runs Spotify Basic Pitch for pitch, note events and detector confidence, then deterministic reference alignment/scoring.
+4. Forward the validated Basic Pitch output and reference findings to the protected coaching endpoint, together with the same WAV and passage identity. Both endpoints must receive the audio; analysis JSON alone is insufficient for the coaching request.
+5. One Strands TypeScript workflow calls the Gemini Coach Agent with audio and structured evidence. It summarizes performance, flags supported specific mistakes, and prepares structured mistake data for visualization.
+6. The endpoint returns a short cue, evidence references and constrained visualization data. It does not call a second visual model or generate executable rendering code.
+7. Phone-owned HTML/JavaScript validates that data and deterministically renders the results and piano-key/duration animations in the phone DOM. Layout and animation rules are application code.
+8. Separately, the glasses workstream adapts the shared result data to G2-compatible assets/text and owns SDK container updates. Mobile does not transmit visuals or control glasses (Section 9).
+
+**Pipeline:** Recording → normalized WAV + server URL → Basic Pitch + reference comparison → Gemini Coach (same WAV + analysis) → validated mistake data → deterministic renderer. These are two model responsibilities, not two total infrastructure components; upload, alignment, validation, storage and rendering remain ordinary services/code. Endpoint names and WAV transfer mechanics remain proposed in Section 8.
 
 ### Components
 
 | Component | Technology / responsibility | Status |
 |---|---|---|
-| Phone client | TypeScript web app in Even Hub WebView; `@evenrealities/even_hub_sdk` | Agreed platform; framework OPEN |
+| Phone client | TypeScript web app; recording/session UI and phone DOM rendering; no Even Hub SDK import in mobile | Phone workstream; framework OPEN |
 | G2 integration | EvenAppBridge, display containers, gestures, audio events | Agreed; hardware validation required |
 | Audio analysis | Python + Spotify Basic Pitch, reference alignment | Agreed laptop placement; Python 3.10 proposed |
 | Coaching | Strands SDK for TypeScript + Gemini Flash-family model | Agreed; exact model/package versions OPEN |
-| Visual renderer | Deterministic code from validated note/pose data | Proposed implementation of agreed diagrams |
+| Visual renderer | HTML/JavaScript piano-key and duration animations from validated coach mistake data | Agreed deterministic architecture; exact schema/layout proposed |
+| Recording upload | Normalize WAV and store at a server URL; deliver the same audio to both model endpoints | Agreed flow; host, target format and transfer contract OPEN |
 | Coaching API host | Protected HTTPS TypeScript service | Provider/runtime OPEN |
 | Laptop connectivity | HTTPS endpoint/tunnel reachable by the phone | Method/owner OPEN |
 | History | Demo recording counts and saved attempt results | No real accounts in v1; storage/retention details OPEN |
@@ -85,13 +90,34 @@ An HTTPS tunnel may be necessary if venue networking prevents direct access. Whi
 
 - **Library:** song/passage selection with prepared passages, tempo, difficulty, brief learning objective, total recording count, per-passage recording counts, and access to History
 - **Passage:** notation/reference preview, connection state, recording-source selection
-- **Session:** mirrors current G2 state; start/stop fallback controls and explicit errors
+- **Session / Recording:** explicit record and stop/save controls; finalize WAV, normalize sample rate, upload, analyze, then coach. Show the current stage and actionable errors; never imply a G2 connection from phone capture alone
 - **Results:** evidence, concise coach cue, correction diagram, recording counts, **Play again** → Library, and **View past results** → History
 - **History:** individual attempts with passage, recording time, and processing/result/error status; select an entry to reopen its saved Results or status detail, and return to History without starting a recording. Raw-audio playback remains OPEN
+- **Settings:** Library's top-right gear button → Settings; back returns to Library. Configure sheet music shown on G2 while playing, its size, and optional note names, as described below.
 
 Search applies only to the prepared library in v1.
 
 **Confirmed navigation:** Library → Passage → Session (recording/processing) → Results → Library. **Play again** always returns to Library, even when the player wants the same passage. The player selects a passage, previews it, and explicitly starts a new recording. Library and Results both provide access to History; History → saved Results → History is read-only. Opening a past result must never start capture, resubmit analysis, or increment a recording count. Historical results identify their original passage and attempt rather than being presented as a new result.
+
+### Recording page and processing states
+
+**Ready → Recording → Saving/normalizing WAV → Uploading → Analyzing → Coaching → Results.** These are stages within Session, not additional navigation destinations. Stop/save completes one capture; it does not create a second attempt for upload or coaching. Keep coaching hidden during capture. Disable duplicate submissions during processing and retain the completed attempt if a later stage fails. Cancellation before capture completion produces no submitted WAV. Show normalization, upload, analysis and coaching failures at their actual stage, with a retry of the same saved attempt where possible. Exact duration limits, target sample rate/channel format and temporary audio storage are OPEN.
+
+### App Settings — agreed design
+
+The editable Settings design is in [G2 Mobile App in Paper](https://app.paper.design/file/01M56HHCC29GHEHZ2V9FPV5FTR/p-1-0). These are intended app behaviors, not implemented or hardware-verified features.
+
+| Control | Behavior |
+|---|---|
+| Show sheet music on glasses | Toggle reference sheet music for the selected passage on G2 during recording. When off, show only the recording indicator. This is prepared notation, not live transcription or coaching. |
+| Sheet music size | Choose **Standard** or **Large** for the displayed notes and staff. “Score” means sheet music; use the clearer label **Sheet music size** in the app. Large increases notation size and may show less of the passage at once; it does not change pitch, tempo, or grading. |
+| Note names | Toggle pitch labels such as C4, D4, and E4 beneath the displayed notes. This affects reference notation only, not analysis. |
+
+- Keep Settings visually consistent with the app: paper background, existing typography, editable controls, and a compact G2 connection status. A disconnected status uses the agreed yellow warning treatment.
+- Size and note-name controls apply when sheet music is enabled; disable them when it is off without discarding their selected values.
+- Do not include **Preview on glasses** or **Keep phone awake during recording**; both were removed from the agreed design.
+- No coaching or mistake suggestions appear during recording. Feedback remains after the attempt.
+- **OPEN implementation decisions:** initial defaults (Paper illustrates sheet music on, Large, and note names on), preference persistence, readable notation dimensions on physical G2, and how longer passages advance through the display. Do not imply automatic score following is implemented.
 
 ### G2 states
 
@@ -100,7 +126,7 @@ Search applies only to the prepared library in v1.
 | Disconnected | Phone explains reconnect | Connected → Selection |
 | Selection | Song/passage selection prompt; phone shows Library | Select passage → Ready |
 | Ready | Selected passage preview and start prompt | Tap → Recording; back → Selection |
-| Recording | Small recording icon only | Tap → Analyzing; confirmed cancel → Selection |
+| Recording | Small recording icon; reference sheet music when enabled in Settings, using the chosen size and note-name preference; no coaching | Tap → Analyzing; confirmed cancel → Selection |
 | Analyzing | Short processing status | Success → Review; failure → Recoverable error |
 | Review | Boxed note/beat and one short cue | Swipe down → Guide; Play again → Selection |
 | Guide | Keyboard schematic and static/slow pose sequence | Swipe up → Review; Play again → Selection |
@@ -159,10 +185,11 @@ type DetectedNote = {
 };
 type Finding = {
   id: string;
-  kind: 'wrong_note' | 'missing_note' | 'extra_note' | 'timing';
+  kind: 'wrong_note' | 'missing_note' | 'extra_note' | 'timing' | 'duration';
   referenceNoteId?: string;
   detectedNoteId?: string;
   timingDeltaMs?: number; // positive = late, negative = early
+  durationDeltaMs?: number; // positive = held too long, negative = too short
 };
 type AnalysisResult = {
   schemaVersion: '1';
@@ -181,7 +208,9 @@ type AnalysisResult = {
 };
 ```
 
-Recording metadata includes attempt ID, capture source, actual sample rate, channel count, encoding, duration, and passage version. Preserve G2's actual PCM format when wrapping WAV; never change only the sample-rate label. For chunked capture, use sequence numbers and sample counts to detect gaps; packet arrival times are not note onset times.
+Recording metadata includes attempt ID, capture source, source and normalized sample rates, channel count, encoding, duration, and passage version. Decode using the actual capture format, resample to the agreed target format, then encode a valid WAV; never normalize by changing only the sample-rate label. Retain source metadata for diagnosis. Both endpoints receive the same normalized artifact. For chunked capture, use sequence numbers and sample counts to detect gaps; packet arrival times are not note onset times.
+
+**PROPOSED uploaded-audio contract:** an attempt-bound artifact ID, server audio URL, expiry, MIME type, normalized sample rate/channel count and duration. A server URL does not imply permanent public access. Define endpoint access and expiry before integration; do not persist an expiring URL as the only way to reopen structured results.
 
 ### Coaching and visual response
 
@@ -195,11 +224,18 @@ type CoachingResult = {
     kind: 'keyboard' | 'rhythm_strip' | 'none';
     referenceNoteIds: string[];
     poseIds: string[];
+    mistakes: {
+      findingId: string;
+      referenceNoteId?: string;
+      detectedNoteId?: string;
+    }[];
   };
 };
 ```
 
 Validate every ID against the selected passage, findings, and an allowlisted pose library. Validate cue length. Proposed cue target: one sentence, at most 120 characters, shortened further if the hardware layout requires it. The model must not return executable drawing code, invented measurements, or arbitrary remote image URLs. Coaching does not define a separate retry exercise or change navigation; Play again is an application action that returns to Library.
+
+The proposed `visual.mistakes` entries reference measured evidence; the renderer resolves expected/played pitches, onset and duration from the versioned passage and analysis. Ordinary code chooses key geometry, labels, highlights and animation timing. Show expected versus played keys and expected versus measured hold duration, including quarter/half-note labels when supported by the reference. Missing notes have no played-note event; extra notes may have no reference-note event. Reject mismatched references and unsupported duration claims. The coach selects supported mistakes, not layout or musical measurements. Save the validated data so History can render the same result without another model call. Slow finger poses, if retained, use authored suggestions and never imply observed finger tracking.
 
 ### Recording counts and saved results
 
@@ -217,7 +253,7 @@ type AttemptRecord = {
   analysis: AnalysisResult | null;
   coaching: CoachingResult | null;
   error: {
-    stage: 'capture' | 'upload' | 'analysis' | 'coaching';
+    stage: 'capture' | 'normalization' | 'upload' | 'analysis' | 'coaching';
     message: string;
   } | null;
 };
@@ -244,9 +280,9 @@ Basic Pitch produces candidate note events. Ordinary code aligns these to the re
 - Suppress firm judgments if audio is clipped, missing, too noisy, or ambiguously aligned
 - No observation of fingering, posture, hand tension, or technique can be claimed from pitch data alone
 
-Gemini receives the passage, validated findings, attempt history needed for comparison, and the permitted output schema. It chooses one priority cue and a bounded practice suggestion. If coaching fails, show the deterministic finding with a plain fallback instruction. If analysis is uncertain, show “I couldn't hear that clearly. Try again” rather than a grade.
+Gemini receives the same normalized WAV used by Basic Pitch, detected notes and confidence scores, the passage, validated findings, attempt history needed for comparison, and the permitted output schema. The coaching service must actually retrieve/attach the audio in the selected Gemini API's supported form; a URL string in a prompt alone does not establish audio delivery. Exact model audio support and request encoding remain OPEN to verify. It summarizes performance, chooses one priority cue and a bounded practice suggestion, and returns evidence-linked mistake data for the deterministic renderer. Audio context does not authorize invented measurements or overriding uncertain alignment with confident claims. If coaching fails, show the deterministic finding with a plain fallback instruction. If analysis is uncertain, show “I couldn't hear that clearly. Try again” rather than a grade.
 
-Use one Strands coaching workflow initially. Additional models or agents require a separate justified responsibility and measured benefit. Lyria is excluded from note detection because its role is music generation.
+Use one Strands coaching workflow. V1 has only Basic Pitch and Gemini Coach as model responsibilities; a separate Gemini visualizer or other model/agent is out of scope. Strands is orchestration, not a third model. Lyria is excluded from note detection because its role is music generation.
 
 ## 7. Approved six-entry seed library
 
@@ -267,15 +303,18 @@ Generate reference MIDI and clean piano audio from the same versioned passage da
 
 Proposed endpoints:
 
-- Laptop `POST /v1/analyze`: multipart audio + attempt metadata; returns AnalysisResult
-- Hosted service `POST /v1/coach`: validated AnalysisResult + passage ID/version; returns CoachingResult
+- Upload service `POST /v1/recordings`: normalized WAV + attempt metadata; returns an attempt-bound audio artifact and its server URL
+- Laptop `POST /v1/analyze`: WAV + attempt/passage metadata; returns AnalysisResult
+- Hosted service `POST /v1/coach`: the same WAV + validated AnalysisResult + passage ID/version; returns CoachingResult
 - `GET /health`: readiness and model-loaded state, without secrets
+
+The meeting explicitly requires WAV delivery to both endpoints. **PROPOSED transport:** upload once, then pass the artifact URL to each service for authorized server-side retrieval; alternatively send multipart WAV bytes to both. Choose and document one contract before integration. With URL delivery, both services must fetch the actual file, enforce size/format limits and restrict retrieval to the approved audio store. Coaching waits for matching analysis even if audio delivery overlaps. A missing, expired or mismatched artifact is a transport/input error, not a musical finding. Exact URLs, upload host, access control, expiry and retry behavior remain OPEN.
 
 For v1, bounded request/response is sufficient if measured inference fits the host time limit. Otherwise introduce a job ID and status polling. Enforce maximum clip duration, payload size, request timeout, and rate limits. Exact limits are OPEN pending tests.
 
 Use attempt IDs for idempotency and correlation. Retry transient transport errors with bounded backoff against the same attempt record; never create duplicate history entries or unlimited model charges. If capture is interrupted by a disconnect, stop the microphone, preserve an explicit interrupted state, and offer a return to Library to start again. A disconnect after capture completed does not remove its recording count; preserve the completed attempt's processing/error status. Backend errors must not look like musical errors.
 
-Demo-first is agreed: no real accounts in v1. Use a demo session; proposed history implementation is browser-local attempt records and structured results, with counts derived from those records and no cross-device persistence promise. Exact storage and retention details remain OPEN. No-login demo mode still needs protected provider credentials and abuse controls. Raw audio retention is OPEN; recommended default is delete after analysis, save only structured session results, and require explicit opt-in for audio playback storage. Do not log audio or full personal content to Sentry.
+Demo-first is agreed: no real accounts in v1. Use a demo session; proposed history implementation is browser-local attempt records and structured results, with counts derived from those records and no cross-device persistence promise. Exact storage and retention details remain OPEN. No-login demo mode still needs protected provider credentials and abuse controls. Raw audio retention is OPEN; proposed default is retain temporary WAV through both analysis and coaching plus a bounded retry window, then delete it and save only structured session results. Do not delete immediately after Basic Pitch while coaching still needs the file. Require explicit opt-in for longer audio playback storage. Do not log audio or full personal content to Sentry.
 
 ## 9. Ownership and coding-agent boundaries
 
@@ -312,10 +351,18 @@ Devin and other coding agents work within assigned modules and branches. Their h
 ### Phase 2: Complete one real loop
 
 - [ ] Phone selects a passage; G2 preview matches its version
-- [ ] Tap starts capture; only the recording icon remains
+- [ ] Tap starts capture; the recording icon remains, with reference sheet music only when enabled in Settings; no coaching appears during capture
+- [ ] Library gear button → Settings → Library works without starting capture or changing recording counts
+- [ ] Sheet music toggle controls G2 notation; Standard/Large changes notation size, and Note names controls pitch labels without changing passage data or analysis
+- [ ] Verify both sheet-music visibility states, both sizes, note names on/off, and disconnected yellow status on the phone; validate notation legibility and passage advancement on physical G2
 - [ ] Tap stops capture and sends exactly one attempt
+- [ ] Stop/save produces a valid WAV with actual sample-rate normalization; source and normalized metadata match decoded audio
+- [ ] Upload returns a usable server URL; both analysis and coaching receive the same attempt's WAV bytes, and coaching receives its matching Basic Pitch output
 - [ ] Analysis finds a deliberate mistake and cites the correct note
 - [ ] Strands/Gemini returns one evidence-grounded cue
+- [ ] Coach returns validated mistake data; deterministic phone rendering highlights the expected/played key and supported duration difference without a visual-model call
+- [ ] Quarter-note versus half-note and wrong-key fixtures render correctly; missing/extra notes and uncertain duration data do not create invented events
+- [ ] History reproduces saved visuals without model calls or retained raw audio
 - [ ] Renderer shows the correct key/pose; swipes and back work on hardware
 - [ ] Results → Play again returns to Library; selecting the same or another passage and explicitly starting capture creates a new attempt
 - [ ] Library and Results show total and per-passage recording counts derived from the saved attempt records
@@ -325,6 +372,8 @@ Devin and other coding agents work within assigned modules and branches. Their h
 
 - [ ] Noisy input produces uncertainty, not false confidence
 - [ ] Network loss, duplicate taps, stale responses and Gemini failure recover cleanly
+- [ ] Normalization failure, expired WAV URL and failure at either audio consumer preserve the attempt and show the correct stage; retries do not double-count
+- [ ] Temporary WAV cleanup waits for both consumers or the agreed expiry; provider credentials and audio URLs are absent from client logs
 - [ ] Phone history matches G2 results, retains each attempt's processing/result/error status, and does not duplicate attempts
 - [ ] Under the proposed count default, completed captures count once even if upload/analysis/coaching fails; canceled and interrupted captures do not count
 - [ ] Duplicate stop events, processing retries, late responses, and reopening past results leave counts unchanged and update only the matching attempt
@@ -356,11 +405,14 @@ Track selection is not proof of eligibility. Confirm final submission requiremen
 5. Demo history storage and raw-audio retention/playback; review proposed completed/canceled/interrupted recording-count defaults; no real accounts for v1
 6. Partner name; there is no third teammate
 7. Final passage selection, timing tolerances and acceptable measured demo latency
+8. WAV normalization target, upload/storage host, actual endpoint URLs, byte-upload versus authorized URL retrieval, audio expiry and bounded retry/cleanup window
+9. Gemini audio-input encoding, validated mistake schema, and deterministic key/duration animation details; no separate visual model is planned
 
-These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision updates the confirmed selection, recording-count, and result-history flow only; broader review recommendations remain unresolved unless separately approved.
+These choices and unresolved review issues must be resolved before treating this draft as build-ready; they must not silently become claims that implementation is complete. This revision incorporates the October 17 recording-page, two-model audio pipeline and deterministic visualization decisions while preserving the selection, Settings, recording-count, History and workstream boundaries. Proposed contract details remain subject to integration review.
 
 ## References
 
+- [Granola: Recording page audio pipeline and visualization architecture — October 17, 2026](https://notes.granola.ai/d/32613d5d-34e4-4c80-bbf1-be861adc3f34)
 - [Spotify Basic Pitch](https://github.com/spotify/basic-pitch)
 - [Strands model providers](https://strandsagents.com/docs/user-guide/sdk/model-providers/)
 - [Even Hub device APIs](https://hub.evenrealities.com/docs/build/device-apis)
