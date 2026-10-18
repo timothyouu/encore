@@ -210,4 +210,3 @@ def score_notes(
         "medianAbsTimingErrorMs": round(median(errors_ms), 1) if errors_ms else None,
     }
     return result
-

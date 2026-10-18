@@ -421,12 +421,3 @@ export function mountPaperVisualization(card: VisualCard, options: PaperMountOpt
     },
   }
 }
-
-
-
-
-
-
-
-
-

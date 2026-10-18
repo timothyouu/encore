@@ -243,4 +243,3 @@ async def analyze(request: Request) -> dict[str, Any]:
     return score_notes(
         passage, metadata.attemptId, metadata.attemptTempoBpm, detected, quality, DETECTOR_VERSION, audible
     )
-

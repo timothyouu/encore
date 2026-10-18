@@ -68,4 +68,3 @@ export type CoachRequest = {
   passageVersion: string;
   analysis: AnalysisResult;
 };
-

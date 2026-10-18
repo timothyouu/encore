@@ -26,4 +26,3 @@ server.keepAliveTimeout = 5_000;
 server.listen(port, host, () => {
   process.stdout.write('Encore coaching listening on ' + host + ':' + String(port) + '; Gemini configured: ' + String(Boolean(provider)) + '\n');
 });
-

@@ -74,4 +74,3 @@
 @media (prefers-reduced-motion: reduce) {
   .paper-visualization *, .paper-gallery * { animation: none !important; transition: none !important; }
 }
-

@@ -213,4 +213,3 @@ test('reduced motion replay remains static without timers', () => {
     Object.assign(globalThis, prior)
   }
 })
-

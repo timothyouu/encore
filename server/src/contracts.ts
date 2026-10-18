@@ -19,4 +19,3 @@ export type RecordingReceipt = RecordingMetadata & {
   sha256: string;
   mimeType: 'audio/wav';
 };
-

@@ -147,4 +147,3 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
   };
   return { request: { artifactId: id(root.artifactId, 'artifactId'), passageId, passageVersion, analysis }, passage };
 }
-

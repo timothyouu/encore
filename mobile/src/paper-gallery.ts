@@ -143,4 +143,3 @@ export function mountPaperGallery(host: HTMLElement): () => void {
 
 const host = document.getElementById('paper-gallery')
 if (host) mountPaperGallery(host)
-

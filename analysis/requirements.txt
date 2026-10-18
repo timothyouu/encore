@@ -4,4 +4,3 @@ uvicorn==0.34.2
 python-multipart==0.0.20
 # Basic Pitch's TFLite runtime 2.14 is incompatible with NumPy 2.
 numpy==1.26.4
-

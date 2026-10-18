@@ -41,4 +41,3 @@ analysis/.venv/bin/python -m analysis.smoke P02
 ```
 
 The smoke test synthesizes simple harmonic tones from P01 in memory. It is test playback, not G2 audio or a measured live piano performance.
-
