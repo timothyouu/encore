@@ -1,0 +1,25 @@
+{
+  "file": {
+    "id": "01M56HHCC29GHEHZ2V9FPV5FTR",
+    "name": "G2 Mobile App"
+  },
+  "contentHash": {
+    "tokens": "201c032a"
+  }
+}
+(
+    <div style={{ backgroundColor: 'var(--color-paper)', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', fontSynthesis: 'none', gap: '24px', height: '460px', MozOsxFontSmoothing: 'grayscale', overflow: 'clip', overflowWrap: 'anywhere', padding: '32px', WebkitFontSmoothing: 'antialiased', width: '780px' }}>
+      <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: '"Georgia", system-ui, sans-serif', fontSize: '32px', lineHeight: '40px' }}>
+        Browse every finding
+      </div>
+      <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: 'system-ui, sans-serif', fontSize: '16px', lineHeight: '28px' }}>
+        Swipe left/right on the finding section or tap the arrows. Show “Mistake i of N” for all validated findings, ordered by beat. Three is sample data, not a limit. Disable previous at the first finding and next at the last; do not wrap.
+      </div>
+      <div style={{ boxSizing: 'border-box', color: '#000000', fontFamily: 'system-ui, sans-serif', fontSize: '16px', lineHeight: '28px' }}>
+        “View correction” opens the selected finding’s Guide. “Back to review” preserves selection. “View in sheet music” opens the matching outlined note; closing returns to the originating Review or Guide and same finding. No new recording action.
+      </div>
+      <div style={{ boxSizing: 'border-box', color: 'var(--color-muted)', fontFamily: 'system-ui, sans-serif', fontSize: '14px', lineHeight: '24px' }}>
+        Rhythm duration comes from the selected passage. In these 4/4 examples: quarter note = 1 beat; half note = 2 beats. Do not prescribe a half note for a quarter-note passage. These artboards specify visual states; swipe gestures are not wired in Paper.
+      </div>
+    </div>
+  )

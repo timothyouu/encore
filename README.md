@@ -34,3 +34,17 @@ npm run pack       # build + pack into .ehpk
 
 - [Even Hub templates](https://github.com/even-realities/evenhub-templates): the `asr`, `image`, and `text-heavy` starters are useful references.
 - SDK: [`@evenrealities/even_hub_sdk`](https://www.npmjs.com/package/@evenrealities/even_hub_sdk)
+
+## Phone companion (`mobile/`)
+
+The phone UI is separate from the glasses application in `g2/`. The mobile app owns its source, tests, package configuration and documentation; it does not import from or modify the glasses app. Its optional display adapter is a mobile-side integration seam, not the teammate's G2 microphone implementation.
+
+```sh
+cd mobile
+npm ci
+npm run dev       # phone UI on :5174; glasses scaffold uses :5173
+npm test
+npm run build
+```
+
+See [mobile setup and limitations](mobile/README.md) and [verification handoff](mobile/docs/mobile-verification.md).
