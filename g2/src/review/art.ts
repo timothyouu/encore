@@ -4,8 +4,9 @@ import { beatFraction, flaggedNotes, noteName } from './model.ts'
 
 // Static art for one mistake card: a 288×144 greyscale image (the largest a
 // G2 image container takes), drawn in the shared visual language of the Paper
-// "Mistake animations" page: solid = expected, hollow/dashed = detected, a
-// shaded band marks the beat in question, and shape carries meaning, not colour.
+// "Mistake animations" page: solid = expected, × = what the mic heard (a
+// hollow notehead would read as a half note), a shaded band marks the beat in
+// question, and shape carries meaning, not colour.
 export const ART_W = 288
 export const ART_H = 144
 
@@ -86,14 +87,12 @@ function drawKeyboard(ctx: CanvasRenderingContext2D, expected: number, detected:
     ctx.setLineDash([])
     keyLabel(ctx, pressed, noteName(detected), INK)
 
-    // ○ → ● above the keys: from what was played to what to play.
+    // × → ● above the keys: from what was played to what to play.
     const from = pressed.x + pressed.w / 2
     const to = target.x + target.w / 2
+    cross(ctx, from, 22)
     ctx.strokeStyle = INK
     ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(from, 22, 6, 0, Math.PI * 2)
-    ctx.stroke()
     ctx.fillStyle = INK
     ctx.beginPath()
     ctx.arc(to, 22, 6, 0, Math.PI * 2)
@@ -157,18 +156,36 @@ function ledgers(ctx: CanvasRenderingContext2D, x: number, midi: number) {
   for (let ledger = 12; ledger <= step; ledger += 2) ctx.fillRect(x - 11, STAFF_BOTTOM - (ledger - 2) * HALF_SPACE, 22, 1.5)
 }
 
-function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard) {
-  const x = windowX(card)
+// Which notes a picture shows: 'played' = only what was heard (×), 'written'
+// = only the music (a staff card's resting view and its replay's end), 'both'
+// = the two overlaid (the wrong-note fix frame).
+export type Layer = 'both' | 'played' | 'written'
+
+const byOnset = (a: VisualNote, b: VisualNote) => a.onsetBeat - b.onsetBeat
+
+// `reveal` limits a played/written layer to its first notes in time order, so
+// replays can bring them in one at a time.
+function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both', reveal = Infinity) {
+  const beatX = windowX(card)
   const flaggedSides = flaggedNotes(card)
   const refIds = new Set(flaggedSides.expected.map(note => note.id))
   const detIds = new Set(flaggedSides.detected.map(note => note.id))
   const flagged: VisualNote[] = [...flaggedSides.expected, ...flaggedSides.detected]
 
+  // A wrong note played on the right beat would sit on top of the written one,
+  // a step away: spread them so the × (played) and solid note (written) read apart.
+  const played = flaggedSides.detected[0]
+  const written = flaggedSides.expected[0]
+  const sameBeat =
+    card.kind === 'wrong_note' && played && written && layer === 'both' && Math.abs(played.onsetBeat - written.onsetBeat) < 0.3
+  const shift = new Map<string, number>(sameBeat ? [[played.id, -16], [written.id, 16]] : [])
+  const x = (beat: number, id?: string) => beatX(beat) + (id ? shift.get(id) ?? 0 : 0)
+
   // Focus band behind the beat(s) in question.
   ctx.fillStyle = BAND
   const bandBeats = flagged.length ? flagged.map(note => note.onsetBeat) : [card.focus.startBeat]
-  const left = Math.min(...bandBeats.map(x)) - 16
-  const right = Math.max(...bandBeats.map(x)) + 16
+  const left = Math.min(...bandBeats.map(beatX)) - 16 - (sameBeat ? 16 : 0)
+  const right = Math.max(...bandBeats.map(beatX)) + 16 + (sameBeat ? 16 : 0)
   ctx.fillRect(left, 20, right - left, 100)
 
   ctx.fillStyle = LINE
@@ -183,11 +200,34 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard) {
     label(ctx, segment.label, (from + to) / 2, 9, DIM, 10)
   }
 
-  // Expected: solid notes, with names underneath; a missing one sits in a dashed slot.
-  for (const note of card.expected.notes) {
-    const nx = x(note.onsetBeat)
+  if (layer === 'played') {
+    // What was heard, as ×, in the order it sounded. A missed note leaves an
+    // empty dashed slot once the reveal has passed its beat.
+    const heard = [...card.detected.notes].sort(byOnset).slice(0, reveal)
+    for (const note of heard) {
+      const nx = x(note.onsetBeat)
+      ledgers(ctx, nx, note.midiPitch)
+      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
+    }
+    if (card.kind === 'missing_note' && card.variant === 'missing') {
+      const reached = reveal >= card.detected.notes.length ? Infinity : heard.at(-1)?.onsetBeat ?? -Infinity
+      for (const note of flaggedSides.expected) if (note.onsetBeat <= reached) dashedSlot(ctx, x(note.onsetBeat))
+    }
+    return
+  }
+
+  // Expected: solid notes, with names underneath; a missing one sits in a dashed
+  // slot (shown before its note drops in, while the written notes are revealed).
+  const writtenInOrder = [...card.expected.notes].sort(byOnset)
+  for (const [order, note] of writtenInOrder.entries()) {
+    const missingSlot = card.kind === 'missing_note' && refIds.has(note.id)
+    if (order >= reveal) {
+      if (missingSlot) dashedSlot(ctx, x(note.onsetBeat, note.id))
+      continue
+    }
+    const nx = x(note.onsetBeat, note.id)
     const ny = staffY(note.midiPitch)
-    const missing = card.kind === 'missing_note' && refIds.has(note.id)
+    const missing = missingSlot
     ledgers(ctx, nx, note.midiPitch)
     notehead(ctx, nx, ny, note.durationBeats >= 2)
     if (note.durationBeats < 4) {
@@ -195,25 +235,50 @@ function drawStaffWindow(ctx: CanvasRenderingContext2D, card: VisualCard) {
       if (stepOf(note.midiPitch) < 6) ctx.fillRect(nx + 5.2, ny - 30, 2, 30)
       else ctx.fillRect(nx - 7.2, ny + 1, 2, 30)
     }
-    if (missing) {
-      ctx.strokeStyle = INK
-      ctx.setLineDash([3, 3])
-      ctx.lineWidth = 1.5
-      ctx.strokeRect(nx - 13, 26, 26, 86)
-      ctx.setLineDash([])
-    }
+    if (missing) dashedSlot(ctx, nx)
     const name = noteName(note.midiPitch)
     label(ctx, missing ? `[${name}]` : name, nx, 134, missing ? INK : DIM, 11)
   }
+  if (layer === 'written') return
 
-  // Detected (only the unpaired notes): hollow.
+  // Detected (only the unpaired notes): ×.
   if (!(card.kind === 'missing_note' && card.variant === 'missing')) {
     for (const note of card.detected.notes.filter(n => detIds.has(n.id))) {
-      const nx = x(note.onsetBeat)
+      const nx = x(note.onsetBeat, note.id)
       ledgers(ctx, nx, note.midiPitch)
-      notehead(ctx, nx, staffY(note.midiPitch), true, INK)
+      cross(ctx, nx, staffY(note.midiPitch) + 0.75)
     }
   }
+
+  // A wrong note: arrow from the × played to the solid note written.
+  if (sameBeat && played.midiPitch !== written.midiPitch) {
+    arrow(ctx, x(played.onsetBeat, played.id) + 7, staffY(played.midiPitch), x(written.onsetBeat, written.id) - 9, staffY(written.midiPitch))
+  }
+}
+
+function dashedSlot(ctx: CanvasRenderingContext2D, nx: number) {
+  ctx.strokeStyle = INK
+  ctx.setLineDash([3, 3])
+  ctx.lineWidth = 1.5
+  ctx.strokeRect(nx - 13, 26, 26, 86)
+  ctx.setLineDash([])
+}
+
+function arrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number) {
+  const angle = Math.atan2(y2 - y1, x2 - x1)
+  ctx.strokeStyle = INK
+  ctx.fillStyle = INK
+  ctx.lineWidth = 1.5
+  ctx.beginPath()
+  ctx.moveTo(x1, y1)
+  ctx.lineTo(x2 - 4 * Math.cos(angle), y2 - 4 * Math.sin(angle))
+  ctx.stroke()
+  ctx.beginPath()
+  ctx.moveTo(x2, y2)
+  ctx.lineTo(x2 - 6 * Math.cos(angle - 0.5), y2 - 6 * Math.sin(angle - 0.5))
+  ctx.lineTo(x2 - 6 * Math.cos(angle + 0.5), y2 - 6 * Math.sin(angle + 0.5))
+  ctx.closePath()
+  ctx.fill()
 }
 
 // ── Beat ruler (timing) ───────────────────────────────────────────────
@@ -227,7 +292,7 @@ export function rulerX(card: VisualCard) {
   return { start, end, x: (beat: number) => 24 + ((beat - start) / span) * (ART_W - 48) }
 }
 
-function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard) {
+function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both') {
   const { start, end, x } = rulerX(card)
   const flagged = flaggedNotes(card)
   const expected = flagged.expected[0] ?? card.expected.notes[0]
@@ -240,20 +305,42 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard) {
     label(ctx, `${beat + 1}`, x(beat), RULER_Y + 30, beat === expected?.onsetBeat ? INK : DIM, 13)
   }
   if (!expected) return
+  const ex = x(expected.onsetBeat)
+
+  if (layer === 'played') {
+    // Only when the note was heard.
+    if (detected) cross(ctx, x(detected.onsetBeat), RULER_Y + 1)
+    return
+  }
 
   // Tall solid tick = where the beat falls.
-  const ex = x(expected.onsetBeat)
   ctx.fillStyle = INK
   ctx.fillRect(ex - 2, RULER_Y - 30, 4, 46)
+
+  if (layer === 'written') {
+    // The fix: the note lands on the tick; where it was heard stays dashed.
+    if (detected) {
+      const dx = x(detected.onsetBeat)
+      cross(ctx, dx, RULER_Y + 1, DIM)
+      ctx.beginPath()
+      ctx.arc(ex, RULER_Y + 1, 7, 0, Math.PI * 2)
+      ctx.fill()
+      const dir = Math.sign(ex - dx)
+      ctx.fillRect(Math.min(dx, ex) + 9, RULER_Y - 14, Math.abs(ex - dx) - 18 > 0 ? Math.abs(ex - dx) - 18 : 0, 1.5)
+      ctx.beginPath()
+      ctx.moveTo(ex - dir * 9, RULER_Y - 13)
+      ctx.lineTo(ex - dir * 15, RULER_Y - 17)
+      ctx.lineTo(ex - dir * 15, RULER_Y - 9)
+      ctx.closePath()
+      ctx.fill()
+    }
+    return
+  }
 
   if (detected) {
     // Hollow circle = when the note was heard; bracket labels the gap.
     const dx = x(detected.onsetBeat)
-    ctx.strokeStyle = INK
-    ctx.lineWidth = 2
-    ctx.beginPath()
-    ctx.arc(dx, RULER_Y + 1, 7, 0, Math.PI * 2)
-    ctx.stroke()
+    cross(ctx, dx, RULER_Y + 1)
     const delta = card.metrics.timingDeltaBeats ?? detected.onsetBeat - expected.onsetBeat
     const [a, b] = [Math.min(dx, ex), Math.max(dx, ex)]
     ctx.fillStyle = INK
@@ -262,6 +349,22 @@ function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard) {
     ctx.fillRect(b, RULER_Y - 48, 1.5, 9)
     label(ctx, `${beatFraction(delta)} ${delta < 0 ? 'early' : 'late'}`, (a + b) / 2, RULER_Y - 52, INK, 12)
   }
+}
+
+// × = what the mic heard, drawn where the note sounded.
+export const CROSS_HALF = 6
+
+function cross(ctx: CanvasRenderingContext2D, cx: number, cy: number, color = INK) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2.5
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(cx - CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx + CROSS_HALF, cy + CROSS_HALF)
+  ctx.moveTo(cx + CROSS_HALF, cy - CROSS_HALF)
+  ctx.lineTo(cx - CROSS_HALF, cy + CROSS_HALF)
+  ctx.stroke()
+  ctx.lineCap = 'butt'
 }
 
 // ── Duration bars ─────────────────────────────────────────────────────
@@ -273,8 +376,25 @@ export function durationBars(card: VisualCard) {
   return { expected, detected, unit, left: 56 }
 }
 
-function drawDuration(ctx: CanvasRenderingContext2D, card: VisualCard) {
+function drawDuration(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both') {
   const { expected, detected, unit, left } = durationBars(card)
+  const beatNumbers = (count: number) => {
+    for (let beat = 0; beat < count; beat++) label(ctx, `${beat + 1}`, left + (beat + 0.5) * unit, 128, DIM, 12)
+  }
+  if (layer === 'played') {
+    // Only how long the note was held.
+    label(ctx, 'DETECTED', left, 78, DIM, 10, 'left')
+    ctx.fillStyle = INK
+    ctx.fillRect(left, 84, detected * unit, 18)
+    return beatNumbers(Math.max(expected, detected))
+  }
+  if (layer === 'written') {
+    // The fix: the written length, held all the way.
+    label(ctx, 'EXPECTED', left, 30, DIM, 10, 'left')
+    ctx.fillStyle = INK
+    ctx.fillRect(left, 36, expected * unit, 18)
+    return beatNumbers(Math.max(expected, detected))
+  }
   label(ctx, 'EXPECTED', left, 30, DIM, 10, 'left')
   ctx.strokeStyle = INK
   ctx.lineWidth = 2
@@ -343,10 +463,83 @@ export function artKind(card: VisualCard): ArtKind {
 }
 
 export async function renderCardArt(card: VisualCard): Promise<Uint8Array> {
+  return paint(ctx => drawStatic(ctx, card))
+}
+
+async function paint(draw: (ctx: CanvasRenderingContext2D) => void): Promise<Uint8Array> {
   const { element, ctx } = canvas(ART_W, ART_H)
   ctx.fillStyle = '#000000'
   ctx.fillRect(0, 0, ART_W, ART_H)
+  draw(ctx)
+  return toPng(element)
+}
 
+export type ReplayStep = {
+  caption: string
+  layer: Layer
+  art: 'staff' | 'ruler' | 'duration' | 'keys'
+  // Staff frames: how many notes of the layer are shown so far.
+  reveal?: number
+  // 'step' frames are part of a reveal; 'end' frames close a phase and stay longer.
+  hold: 'step' | 'end'
+}
+
+// At most this many reveal frames per phase, so long phrases stay short.
+export const MAX_REVEAL_STEPS = 4
+
+export function revealCounts(total: number) {
+  if (total <= 0) return [0]
+  const steps = Math.min(total, MAX_REVEAL_STEPS)
+  return Array.from({ length: steps }, (_, k) => Math.ceil(((k + 1) * total) / steps))
+}
+
+function revealPhase(caption: string, layer: Layer, total: number): ReplayStep[] {
+  const counts = revealCounts(total)
+  return counts.map((reveal, k) => ({ caption, layer, art: 'staff', reveal, hold: k === counts.length - 1 ? 'end' : 'step' }))
+}
+
+// Replay keyframes (the Paper "replay" frames): what was played, then the fix,
+// ending on the fix. Staff cards reveal notes one at a time in the order they
+// sounded, then the written notes the same way. Unclear audio has nothing
+// measured to replay.
+export function replaySteps(card: VisualCard): ReplayStep[] {
+  switch (artKind(card)) {
+    case 'keyboard':
+      return [
+        { caption: 'what you played', layer: 'played', art: 'staff', hold: 'end' },
+        { caption: 'the fix', layer: 'both', art: 'staff', hold: 'end' },
+        { caption: 'on the keys', layer: 'both', art: 'keys', hold: 'end' },
+      ]
+    case 'ruler':
+      return [
+        { caption: 'when you played', layer: 'played', art: 'ruler', hold: 'end' },
+        { caption: 'onto the beat', layer: 'written', art: 'ruler', hold: 'end' },
+      ]
+    case 'duration':
+      return [
+        { caption: 'how long you held', layer: 'played', art: 'duration', hold: 'end' },
+        { caption: 'full length', layer: 'written', art: 'duration', hold: 'end' },
+      ]
+    case 'staff':
+      return [
+        ...revealPhase('what you played', 'played', card.detected.notes.length),
+        ...revealPhase("what's written", 'written', card.expected.notes.length),
+      ]
+    case 'mic':
+      return []
+  }
+}
+
+export function renderReplayFrame(card: VisualCard, step: ReplayStep): Promise<Uint8Array> {
+  return paint(ctx => {
+    if (step.art === 'ruler') drawRuler(ctx, card, step.layer)
+    else if (step.art === 'duration') drawDuration(ctx, card, step.layer)
+    else if (step.art === 'keys') drawStatic(ctx, card)
+    else drawStaffWindow(ctx, card, step.layer, step.reveal)
+  })
+}
+
+function drawStatic(ctx: CanvasRenderingContext2D, card: VisualCard) {
   switch (artKind(card)) {
     case 'keyboard': {
       const flagged = flaggedNotes(card)
@@ -364,8 +557,10 @@ export async function renderCardArt(card: VisualCard): Promise<Uint8Array> {
       drawMic(ctx)
       break
     case 'staff':
-      drawStaffWindow(ctx, card)
+      // At rest a staff card shows the written passage with the mistake's beat
+      // shaded (and a dashed slot for a missed note); the × marks for what was
+      // heard appear only in its replay.
+      drawStaffWindow(ctx, card, 'written')
       break
   }
-  return toPng(element)
 }
