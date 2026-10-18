@@ -1,10 +1,16 @@
+import './paper-renderer.css';
+import { mountPaperVisualization } from './paper-renderer.ts';
+import { resolveVisualPlan, visibleFindings } from './paper-evidence.ts';
 import './phone.css';
 import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
+import { markTelemetryErrorReported, measureTelemetry, recordTelemetryFailure } from './telemetry.ts';
+import { keyboardRange, resolveDurationEvidence, resolveMistakeVisualization, type MistakeVisualization } from './visualization.ts';
+
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 
 type Scenario = 'mistakes' | 'clean' | 'uncertain' | 'error';
-type Actions = { start: () => void; stop: () => void; cancel: () => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
+type Actions = { start: () => void; stop: () => void; cancel: () => void; retry?: () => void; canRetry?: (attemptId: string) => boolean; importWav?: (blob: Blob) => void; getMode?: () => 'demo' | 'phone'; isBusy?: () => boolean };
 type NodeContent = Node | string | null | undefined;
 
 function node<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', content?: string): HTMLElementTagNameMap[K] {
@@ -42,9 +48,20 @@ function dateLabel(value: string): string {
   return Number.isNaN(timestamp.getTime()) ? 'Unknown date' : timestamp.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function sourceLabel(record: AttemptRecord): string {
+  return record.captureSource === 'test' ? 'Test WAV' : record.captureSource === 'g2' ? 'G2' : record.captureSource === 'phone' ? 'Phone mic' : 'Demo';
+}
+
+function coachingLabel(record: AttemptRecord): string | null {
+  if (!record.coaching) return null;
+  if (record.captureSource === 'demo') return 'Demo cue · prepared local result';
+  if (record.coaching.coachingSource === 'gemini') return 'Gemini coaching';
+  return 'Local fallback cue · Gemini coaching unavailable';
+}
+
 function recordLabel(record: AttemptRecord, records: AttemptRecord[]): string {
   const number = records.filter((item) => item.passageId === record.passageId && item.captureStatus === 'completed' && item.startedAt <= record.startedAt).length;
-  return `Recording ${String(number).padStart(2, '0')} · ${(record.captureSource ?? 'demo') === 'demo' ? 'Demo' : record.captureSource === 'g2' ? 'G2' : 'Phone'}`;
+  return `Recording ${String(number).padStart(2, '0')} · ${sourceLabel(record)}`;
 }
 
 function statusLabel(record: AttemptRecord): string {
@@ -67,7 +84,7 @@ function findingBeat(finding: Finding, passage: Passage, record: AttemptRecord):
 }
 
 function orderedFindings(record: AttemptRecord, passage: Passage): Finding[] {
-  return [...(record.analysis?.findings ?? [])].sort((a, b) => findingBeat(a, passage, record) - findingBeat(b, passage, record));
+  return record.analysis ? visibleFindings(record.analysis, passage, record.coaching) : [];
 }
 
 function referenceFor(finding: Finding | undefined, passage: Passage): ReferenceNote | undefined {
@@ -75,7 +92,7 @@ function referenceFor(finding: Finding | undefined, passage: Passage): Reference
 }
 
 function findingTitle(finding: Finding): string {
-  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing' }[finding.kind];
+  return { wrong_note: 'Note mismatch', missing_note: 'Missing note', extra_note: 'Extra note', timing: 'Timing', duration: 'Hold duration' }[finding.kind];
 }
 
 function detailFor(finding: Finding, passage: Passage, record: AttemptRecord): string {
@@ -84,6 +101,7 @@ function detailFor(finding: Finding, passage: Passage, record: AttemptRecord): s
   if (finding.kind === 'wrong_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Heard ${detected ? noteName(detected.midiPitch) : 'another note'}`;
   if (finding.kind === 'missing_note') return `Expected ${reference ? noteName(reference.midiPitch) : 'a note'} · Not detected`;
   if (finding.kind === 'extra_note') return `Heard ${detected ? noteName(detected.midiPitch) : 'an extra note'} outside the reference`;
+  if (finding.kind === 'duration') return `${reference ? noteName(reference.midiPitch) : 'Note'} · Hold duration differs from the reference`;
   const delta = finding.timingDeltaMs ?? 0;
   return `${reference ? noteName(reference.midiPitch) : 'Note'} · ${Math.abs(Math.round(delta))} ms ${delta >= 0 ? 'late' : 'early'}`;
 }
@@ -93,6 +111,7 @@ function correctionFor(finding: Finding, passage: Passage): string {
   if (!reference) return 'Listen for the next expected note, then try the passage again.';
   const beat = reference.onsetBeat + 1;
   if (finding.kind === 'timing') return `Place ${noteName(reference.midiPitch)} on beat ${beat}.`;
+  if (finding.kind === 'duration') return `Hold ${noteName(reference.midiPitch)} for ${reference.durationBeats} beat${reference.durationBeats === 1 ? '' : 's'}.`;
   return `Play ${noteName(reference.midiPitch)} on beat ${beat}.`;
 }
 
@@ -159,22 +178,46 @@ function notation(passage: Passage, selected?: ReferenceNote, extraBeat?: number
   return frame;
 }
 
-function keyboard(target?: ReferenceNote): HTMLElement {
-  const wrap = node('div', 'keyboard-wrap');
+function keyboard(visual: MistakeVisualization): HTMLElement {
+  const wrap = node('div', 'keyboard-wrap visual-sequence is-playing');
   const board = node('div', 'keyboard');
-  const octave = target ? Math.floor(target.midiPitch / 12) - 1 : 4;
-  for (const [index, label] of ['C', 'D', 'E', 'F', 'G', 'A', 'B'].entries()) {
-    const pitch = (octave + 1) * 12 + [0, 2, 4, 5, 7, 9, 11][index];
-    const key = node('div', `white-key${pitch === target?.midiPitch ? ' highlighted' : ''}`, label);
-    if (pitch === target?.midiPitch) key.setAttribute('aria-label', `Target key ${noteName(pitch)}`);
-    board.append(key);
+  const whites = keyboardRange(visual);
+  board.setAttribute('role', 'img');
+  board.setAttribute('aria-label', `Piano keys. Expected: ${visual.expected?.label ?? 'no reference event'}. Detected: ${visual.played?.label ?? 'no detected event'}.`);
+  for (const [index, pitch] of whites.entries()) {
+    const expected = pitch === visual.expected?.midiPitch ? ' key-expected' : '';
+    const played = pitch === visual.played?.midiPitch ? ' key-played' : '';
+    const white = node('div', `white-key${expected}${played}`, noteName(pitch).replace(/\d+$/, ''));
+    board.append(white);
+    if ([0, 2, 5, 7, 9].includes(pitch % 12)) {
+      const blackPitch = pitch + 1;
+      const black = node('div', `black-key${blackPitch === visual.expected?.midiPitch ? ' key-expected' : ''}${blackPitch === visual.played?.midiPitch ? ' key-played' : ''}`);
+      black.style.left = `${(index + 1) * 100 / whites.length}%`;
+      black.style.width = `${49 / whites.length}%`;
+      board.append(black);
+    }
   }
-  for (const index of [0, 1, 3, 4, 5]) {
-    const black = node('div', 'black-key');
-    black.style.left = `${(index + 1) * 100 / 7}%`;
-    board.append(black);
+  const legend = add(node('div', 'visual-legend'), node('span', 'legend-expected', `Expected · ${visual.expected?.label ?? 'no note'}`), node('span', 'legend-played', `Detected · ${visual.played?.label ?? 'no note'}`));
+  add(wrap, board, legend);
+  return wrap;
+}
+
+function durationComparison(visual: MistakeVisualization): HTMLElement | null {
+  const duration = visual.duration;
+  if (!duration) return null;
+  const maxBeats = Math.max(duration.expectedBeats, duration.playedBeats);
+  const wrap = node('div', 'duration-comparison');
+  for (const [kind, label, beats] of [['expected', `${duration.referenceValue} · ${duration.expectedBeats} beat${duration.expectedBeats === 1 ? '' : 's'}`, duration.expectedBeats], ['played', `Detected hold · ${duration.playedBeats.toFixed(2)} beats`, duration.playedBeats]] as const) {
+    const row = node('div', `duration-row ${kind}`);
+    const track = node('div', 'duration-track');
+    const bar = node('div', 'duration-bar');
+    bar.style.width = `${beats / maxBeats * 100}%`;
+    bar.style.setProperty('--hold-ms', `${Math.round(beats * 650)}ms`);
+    track.append(bar);
+    add(row, node('span', 'duration-row-label', label), track);
+    wrap.append(row);
   }
-  wrap.append(board);
+  wrap.setAttribute('aria-label', `Reference hold ${duration.expectedBeats} beat${duration.expectedBeats === 1 ? '' : 's'}; detected hold ${duration.playedBeats.toFixed(2)} beats.`);
   return wrap;
 }
 
@@ -404,7 +447,19 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
       selector.append(select);
     }
     const start = control('Start recording →', 'primary-action', actions.start);
-    add(page, top, heading(passage.title, 'Listen, then play the phrase'), preview, source, mode() === 'demo' ? selector : null, node('div', 'grow'), start);
+    const testUpload = node('label', 'test-wav-label', 'Use a test WAV recording');
+    if (actions.importWav && mode() === 'phone') {
+      const file = node('input');
+      file.type = 'file'; file.accept = '.wav,audio/wav';
+      file.setAttribute('aria-label', 'Import test WAV for this passage');
+      file.addEventListener('change', () => {
+        const selected = file.files?.[0];
+        if (selected) actions.importWav?.(selected);
+        file.value = '';
+      });
+      add(testUpload, file, node('span', 'subtle', 'Labeled as test audio in results and History.'));
+    }
+    add(page, top, heading(passage.title, 'Listen, then play the phrase'), preview, source, mode() === 'demo' ? selector : null, actions.importWav && mode() === 'phone' ? testUpload : null, node('div', 'grow'), start);
     return page;
   }
 
@@ -446,9 +501,12 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page status-page');
     const center = node('div', 'status-center');
     const indicator = node('div', 'processing-mark', '···'); indicator.setAttribute('aria-hidden', 'true');
-    add(center, indicator, heading('Listening back', passage?.title), node('p', 'subtle', 'Your recording is saved. Preparing the result…'));
+    const stage = store.processingStage;
+    const title = stage === 'normalization' ? 'Saving WAV' : stage === 'upload' ? 'Uploading recording' : stage === 'analysis' ? 'Analyzing notes' : stage === 'coaching' ? 'Preparing coaching' : 'Listening back';
+    const detail = stage === 'normalization' ? 'Normalizing the saved recording.' : stage === 'upload' ? 'Sending the normalized WAV to the configured server.' : stage === 'analysis' ? 'Checking detected notes against this passage.' : stage === 'coaching' ? 'Preparing a cue from the saved analysis.' : 'Your recording is saved. Preparing the result…';
+    add(center, indicator, heading(title, passage?.title), node('p', 'subtle', detail));
     if (store.state.historyOrigin) page.append(control('‹ Back to history', 'back-link', () => store.showHistory()));
-    add(page, center, node('p', 'fine-print', (currentRecord()?.captureSource ?? mode()) === 'demo' ? 'Demo analysis uses a prepared local result.' : 'Waiting for the configured analysis and coaching services.'));
+    add(page, center, node('p', 'fine-print', (currentRecord()?.captureSource ?? mode()) === 'demo' ? 'Demo analysis uses a prepared local result.' : 'A service error will be shown at the stage where it occurs.'));
     return page;
   }
 
@@ -490,8 +548,14 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page result-page');
     const analysis = record.analysis;
     add(page, control(store.state.historyOrigin ? '‹ Back to history' : '‹ Library', 'back-link', returnFromResult), resultHeader(passage, record));
-    if (!analysis || analysis.status !== 'ok') {
-      const message = analysis?.status === 'uncertain' || analysis?.status === 'insufficient_audio' ? "I couldn't hear that clearly. Try again." : record.error?.message ?? 'This result is unavailable.';
+    const unclearCard = analysis ? resolveVisualPlan(analysis, passage, record.coaching).cards.find(card => card.kind === 'unclear_audio') : undefined;
+    if (!analysis || analysis.status !== 'ok' || unclearCard) {
+      const message = unclearCard || analysis?.status === 'uncertain' || analysis?.status === 'insufficient_audio' ? "I couldn't hear that clearly. Try again." : record.error?.message ?? 'This result is unavailable.';
+      if (unclearCard) {
+        const view = mountPaperVisualization(unclearCard);
+        paperViews.push(view);
+        add(page, view.element);
+      }
       add(page, node('div', 'message-card', message), node('p', 'subtle', 'No musical judgment was made from this recording.'), node('div', 'grow'), resultNav());
       return page;
     }
@@ -508,7 +572,12 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     add(issue, node('h2', '', `${findings.length} thing${findings.length === 1 ? '' : 's'} to revisit`), node('p', 'subtle', `${beatLabel} · ${findingTitle(finding)}`));
     const comparison = node('div', 'comparison-grid');
     const detected = analysis.detectedNotes.find((note) => note.id === finding.detectedNoteId);
-    if (finding.kind === 'timing') {
+    const duration = resolveDurationEvidence(record, passage, finding);
+    if (finding.kind === 'duration') {
+      add(comparison,
+        add(node('div', 'comparison-cell expected'), node('span', 'subtle', 'Reference'), node('strong', '', duration ? `${duration.expectedBeats} beat${duration.expectedBeats === 1 ? '' : 's'}` : '—')),
+        add(node('div', 'comparison-cell heard'), node('span', 'subtle', 'Detected'), node('strong', '', duration ? `${duration.playedBeats.toFixed(2)} beats` : '—')));
+    } else if (finding.kind === 'timing') {
       const delta = finding.timingDeltaMs ?? 0;
       add(comparison,
         add(node('div', 'comparison-cell expected'), node('span', 'subtle', 'Expected'), node('strong', '', reference ? noteName(reference.midiPitch) : 'Note')),
@@ -519,8 +588,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
         add(node('div', 'comparison-cell heard'), node('span', 'subtle', 'Heard'), node('strong', '', detected ? noteName(detected.midiPitch) : '—')));
     }
     const metrics = node('div', 'metrics-card');
-    add(metrics, node('strong', '', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} pitches matched`), node('p', 'subtle', `${findings.filter((item) => item.kind === 'wrong_note').length} wrong · ${findings.filter((item) => item.kind === 'timing').length} timing · ${findings.filter((item) => item.kind === 'missing_note').length} missing · ${findings.filter((item) => item.kind === 'extra_note').length} extra`));
-    add(page, carousel(findings, passage, record), issue, comparison, metrics, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('View correction →', 'primary-action', () => store.showGuide()), resultNav());
+    add(metrics, node('strong', '', `${analysis.metrics.matchedNotes} of ${analysis.metrics.expectedNotes} reference notes matched`), node('p', 'subtle', `${findings.filter((item) => item.kind === 'wrong_note').length} wrong · ${findings.filter((item) => item.kind === 'timing').length} timing · ${findings.filter((item) => item.kind === 'duration').length} hold · ${findings.filter((item) => item.kind === 'missing_note').length} missing · ${findings.filter((item) => item.kind === 'extra_note').length} extra`));
+    add(page, carousel(findings, passage, record), issue, comparison, metrics, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('View correction →', 'primary-action', () => store.showGuide()), resultNav());
     if (reference) issue.dataset.referenceNoteId = reference.id;
     return page;
   }
@@ -533,11 +602,25 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const reference = referenceFor(finding, passage);
     const coaching = record.coaching;
     const cue = coaching?.evidenceFindingIds.includes(finding.id) ? coaching.cue : correctionFor(finding, passage);
+    const visual = resolveMistakeVisualization(record, passage, finding);
     const correction = node('div', 'correction-card', cue);
     const metadata = node('div', 'teaching-card');
     const fingerLabel = suggestedFingerLabel(reference);
     add(metadata, node('span', '', durationLabel(reference)), fingerLabel ? node('span', '', fingerLabel) : null);
-    add(page, control('‹ Back to review', 'back-link', () => store.showReview()), resultHeader(passage, record), carousel(findings, passage, record), heading('Your correction'), correction, keyboard(reference), node('p', 'duration-caption', durationLabel(reference)), metadata, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('‹ Back to review', 'primary-action', () => store.showReview()), resultNav());
+    const paperCard = record.analysis ? resolveVisualPlan(record.analysis, passage, coaching).cards.find(card => card.evidence.findingIds.includes(finding.id)) : undefined;
+    const paperView = paperCard ? mountPaperVisualization(paperCard) : null;
+    if (paperView) paperViews.push(paperView);
+    const sequence = paperView ? paperView.element : visual ? keyboard(visual) : node('p', 'subtle visual-unavailable', 'A supported key comparison is unavailable for this finding.');
+    const replay = paperView ? control('Replay visualization', 'outline-action replay-action', () => paperView.replay()) : visual ? control(visual.duration ? 'Replay key and hold' : 'Replay key comparison', 'outline-action replay-action', () => {
+      sequence.classList.remove('is-playing');
+      void sequence.offsetWidth;
+      sequence.classList.add('is-playing');
+    }) : null;
+    if (!paperView && visual) {
+      const bars = durationComparison(visual);
+      if (bars) sequence.append(bars);
+    }
+    add(page, control('‹ Back to review', 'back-link', () => store.showReview()), resultHeader(passage, record), carousel(findings, passage, record), heading('Your correction'), correction, coachingLabel(record) ? node('p', 'fine-print', coachingLabel(record) ?? '') : null, sequence, replay, metadata, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('‹ Back to review', 'primary-action', () => store.showReview()), resultNav());
     return page;
   }
 
@@ -548,7 +631,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     for (const record of [...store.records].reverse()) {
       const passage = passageOf(record.passageId);
       const row = control('', 'history-row', () => store.openAttempt(record.attemptId));
-      add(row, add(node('span', 'history-main'), node('strong', '', passage?.title ?? record.passageId), node('span', 'subtle', `${dateLabel(record.startedAt)} · ${(record.captureSource ?? 'demo') === 'demo' ? 'Demo' : record.captureSource === 'g2' ? 'G2' : 'Phone mic'}`)), add(node('span', 'history-side'), node('span', 'status-pill', statusLabel(record)), node('span', 'chevron', '›')));
+      add(row, add(node('span', 'history-main'), node('strong', '', passage?.title ?? record.passageId), node('span', 'subtle', `${dateLabel(record.startedAt)} · ${sourceLabel(record)}`)), add(node('span', 'history-side'), node('span', 'status-pill', statusLabel(record)), node('span', 'chevron', '›')));
       page.append(row);
     }
     return page;
@@ -558,7 +641,9 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const page = node('main', 'page status-page');
     const passage = passageOf(record?.passageId ?? store.state.passageId);
     const reason = record?.error?.message ?? 'The result could not be prepared.';
-    add(page, control(store.state.historyOrigin ? '‹ Back to history' : '‹ Library', 'back-link', returnFromResult), node('div', 'grow'), heading(record ? statusLabel(record) : 'Result unavailable', passage?.title), node('div', 'message-card', reason));
+    const stage = record?.error?.stage;
+    const stageLabel = stage === 'normalization' ? 'WAV normalization' : stage === 'upload' ? 'Upload' : stage === 'analysis' ? 'Note analysis' : stage === 'coaching' ? 'Coaching' : 'Capture';
+    add(page, control(store.state.historyOrigin ? '‹ Back to history' : '‹ Library', 'back-link', returnFromResult), node('div', 'grow'), heading(record ? statusLabel(record) : 'Result unavailable', passage?.title), node('p', 'eyebrow', `${stageLabel} issue`), node('div', 'message-card', reason));
     if (record?.analysis?.status === 'ok' && passage) {
       const findings = orderedFindings(record, passage);
       const first = findings[0];
@@ -567,7 +652,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
         add(page, node('p', 'subtle', 'Analysis was saved. Coaching could not finish, so this correction comes directly from the recorded finding.'), node('div', 'finding-card', `${findingTitle(first)} · ${detailFor(first, passage, record)}`), node('div', 'correction-card', correctionFor(first, passage)), score(passage, reference));
       } else add(page, node('p', 'subtle', `${record.analysis.metrics.matchedNotes} of ${record.analysis.metrics.expectedNotes} reference notes matched. Coaching could not finish.`));
     } else page.append(node('p', 'subtle', record?.captureStatus === 'completed' ? 'This completed recording remains in your history. No musical judgment was made.' : 'This attempt did not count as a completed recording.'));
-    add(page, node('div', 'grow'), control('Play again · Choose a passage', 'primary-action', playAgain), control('View past results', 'text-link', () => store.showHistory()));
+    add(page, node('div', 'grow'), record?.captureStatus === 'completed' && actions.retry && actions.canRetry?.(record.attemptId) ? control('Retry saved recording', 'outline-action', actions.retry) : null, control('Play again · Choose a passage', 'primary-action', playAgain), control('View past results', 'text-link', () => store.showHistory()));
     return page;
   }
 
@@ -595,8 +680,11 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   }
 
   let lastScreen = store.state.screen;
-  function render(): void {
+  const paperViews: ReturnType<typeof mountPaperVisualization>[] = [];
+  function clearPaperViews(): void { for (const view of paperViews.splice(0)) view.destroy(); }
+  function renderContent(): void {
     if (settings.isOpen && settingsLayer) return;
+    clearPaperViews();
     const screenChanged = lastScreen !== store.state.screen;
     lastScreen = store.state.screen;
     const record = currentRecord();
@@ -605,7 +693,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const shell = node('div', 'encore-shell');
     shell.append(header());
     const source = record ? record.captureSource ?? 'demo' : mode();
-    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'g2' ? 'G2 microphone · analysis service connection unverified' : 'Phone microphone · service connection unverified');
+    const demo = node('div', 'demo-banner', source === 'demo' ? 'Demo · simulated audio and results' : source === 'test' ? 'Test WAV · recorded playback, not live piano' : source === 'g2' ? 'G2 source · hardware connection unverified' : 'Phone microphone · service connection unverified');
     demo.setAttribute('role', 'status'); shell.append(demo);
     if (store.storageWarning) shell.append(node('div', 'storage-warning', store.storageWarning));
     if (screen === 'library') shell.append(library());
@@ -632,6 +720,15 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     timer = undefined;
     if (screen === 'recording' && record) timer = window.setInterval(() => updateTime(record), 1000);
     if (settings.isOpen) syncSettingsLayer();
+  }
+
+  function render(): void {
+    try { measureTelemetry('app.render', renderContent); }
+    catch (cause) {
+      markTelemetryErrorReported(cause);
+      recordTelemetryFailure('render', 'render_failed', 'app');
+      throw cause;
+    }
   }
 
   function onKeyDown(event: KeyboardEvent): void {
@@ -670,6 +767,7 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
   root.addEventListener('encore:mode-change', render);
   render();
   return () => {
+    clearPaperViews();
     unsubscribe();
     unsubscribeSettings();
     root.removeEventListener('keydown', onKeyDown);

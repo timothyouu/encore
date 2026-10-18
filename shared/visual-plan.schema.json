@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://encore.local/schemas/visual-plan-v1.json",
+  "title": "Encore Paper visual plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "attemptId", "passageId", "passageVersion", "source", "cards"],
+  "properties": {
+    "schemaVersion": { "const": "1" },
+    "attemptId": { "$ref": "#/$defs/id" },
+    "passageId": { "$ref": "#/$defs/id" },
+    "passageVersion": { "$ref": "#/$defs/id" },
+    "source": { "enum": ["analysis", "fixture"] },
+    "cards": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/card" } }
+  },
+  "allOf": [
+    { "if": { "properties": { "cards": { "contains": { "properties": { "kind": { "const": "unclear_audio" } }, "required": ["kind"] } } } },
+      "then": { "properties": { "cards": { "maxItems": 1 } } } },
+    { "if": { "properties": { "source": { "const": "analysis" } } },
+      "then": { "properties": { "cards": { "items": { "properties": {
+        "kind": { "enum": ["wrong_note", "missing_note", "extra_note", "timing", "duration", "unclear_audio"] },
+        "evidence": { "properties": { "source": { "const": "analysis" } } },
+        "variant": { "not": { "enum": ["self_fix", "swapped_order", "noisy", "quiet"] } }
+      } } } } } },
+    { "if": { "properties": { "source": { "const": "fixture" } } },
+      "then": { "properties": { "cards": { "items": { "properties": {
+        "evidence": { "properties": { "source": { "const": "fixture" } } }
+      } } } } } }
+  ],
+  "$defs": {
+    "id": { "type": "string", "maxLength": 80, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "label": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^<>\\u0000-\\u001f]+$" },
+    "beat": { "type": "number", "minimum": 0, "maximum": 256 },
+    "note": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "midiPitch", "onsetBeat", "durationBeats"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "midiPitch": { "type": "integer", "minimum": 21, "maximum": 108 },
+        "onsetBeat": { "$ref": "#/$defs/beat" },
+        "durationBeats": { "type": "number", "minimum": 0.001, "maximum": 64 }
+      }
+    },
+    "sequence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "notes"],
+      "properties": {
+        "label": { "$ref": "#/$defs/label" },
+        "notes": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/note" } },
+        "segmentIds": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "metrics": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "timingDeltaBeats": { "type": "number", "minimum": -128, "maximum": 128 },
+        "expectedDurationBeats": { "type": "number", "minimum": 0.001, "maximum": 64 },
+        "detectedDurationBeats": { "type": "number", "minimum": 0.001, "maximum": 64 },
+        "driftPercent": { "type": "number", "minimum": -100, "maximum": 100 },
+        "gapBeats": { "type": "number", "minimum": 0, "maximum": 128 },
+        "recurrenceCount": { "type": "integer", "minimum": 0, "maximum": 10 },
+        "recurrenceWindow": { "type": "integer", "minimum": 1, "maximum": 10 }
+      }
+    },
+    "evidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source", "measurement", "findingIds", "referenceNoteIds", "detectedNoteIds"],
+      "properties": {
+        "source": { "enum": ["analysis", "fixture"] },
+        "measurement": { "enum": ["note_alignment", "audio_quality", "phrase_pattern", "history"] },
+        "findingIds": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "referenceNoteIds": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "detectedNoteIds": { "type": "array", "maxItems": 16, "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      }
+    },
+    "segment": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "label", "startBeat", "endBeat"],
+      "properties": { "id": { "$ref": "#/$defs/id" }, "label": { "$ref": "#/$defs/label" },
+        "startBeat": { "$ref": "#/$defs/beat" }, "endBeat": { "$ref": "#/$defs/beat" } }
+    },
+    "historyRow": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attemptId", "label", "flaggedBeats"],
+      "properties": { "attemptId": { "$ref": "#/$defs/id" }, "label": { "$ref": "#/$defs/label" },
+        "flaggedBeats": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/beat" } } }
+    },
+    "card": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "variant", "priority", "focus", "expected", "detected", "metrics", "cue", "evidence"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["wrong_note", "missing_note", "extra_note", "timing", "duration", "unclear_audio", "tempo_drift", "uneven_rhythm", "unexpected_pause", "rest_violation", "section_repeat_skip", "recurring_trouble"] },
+        "variant": { "type": "string" },
+        "priority": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "focus": { "type": "object", "additionalProperties": false, "required": ["startBeat", "endBeat"],
+          "properties": { "startBeat": { "$ref": "#/$defs/beat" }, "endBeat": { "$ref": "#/$defs/beat" } } },
+        "expected": { "$ref": "#/$defs/sequence" },
+        "detected": { "$ref": "#/$defs/sequence" },
+        "metrics": { "$ref": "#/$defs/metrics" },
+        "cue": { "$ref": "#/$defs/label" },
+        "evidence": { "$ref": "#/$defs/evidence" },
+        "segments": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/segment" } },
+        "historyRows": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/historyRow" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "wrong_note" } } }, "then": { "properties": { "variant": { "enum": ["pitch", "octave", "accidental", "self_fix"] }, "priority": { "const": 3 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "note_alignment" }, "findingIds": { "minItems": 1 }, "referenceNoteIds": { "minItems": 1 }, "detectedNoteIds": { "minItems": 1 } } }, "expected": { "properties": { "notes": { "minItems": 1 } } }, "detected": { "properties": { "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "missing_note" } } }, "then": { "properties": { "variant": { "enum": ["missing", "swapped_order"] }, "priority": { "const": 2 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "note_alignment" }, "findingIds": { "minItems": 1 }, "referenceNoteIds": { "minItems": 1 } } }, "expected": { "properties": { "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "extra_note" } } }, "then": { "properties": { "variant": { "enum": ["extra", "swapped_order"] }, "priority": { "const": 2 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "note_alignment" }, "findingIds": { "minItems": 1 }, "detectedNoteIds": { "minItems": 1 } } }, "detected": { "properties": { "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "timing" } } }, "then": { "properties": { "variant": { "enum": ["early", "late"] }, "priority": { "const": 4 }, "metrics": { "required": ["timingDeltaBeats"], "maxProperties": 1 }, "evidence": { "properties": { "measurement": { "const": "note_alignment" }, "findingIds": { "minItems": 1 }, "referenceNoteIds": { "minItems": 1 }, "detectedNoteIds": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "duration" } } }, "then": { "properties": { "variant": { "enum": ["short", "long"] }, "priority": { "const": 5 }, "metrics": { "required": ["expectedDurationBeats", "detectedDurationBeats"], "maxProperties": 2 }, "evidence": { "properties": { "measurement": { "const": "note_alignment" }, "findingIds": { "minItems": 1 }, "referenceNoteIds": { "minItems": 1 }, "detectedNoteIds": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "unclear_audio" } } }, "then": { "properties": { "variant": { "enum": ["uncertain", "no_piano", "noisy", "quiet"] }, "priority": { "const": 1 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "audio_quality" }, "findingIds": { "maxItems": 0 }, "referenceNoteIds": { "maxItems": 0 }, "detectedNoteIds": { "maxItems": 0 } } }, "expected": { "properties": { "notes": { "maxItems": 0 } } }, "detected": { "properties": { "notes": { "maxItems": 0 } } } } } },
+        { "if": { "properties": { "kind": { "const": "tempo_drift" } } }, "then": { "properties": { "variant": { "enum": ["rushing", "slowing"] }, "priority": { "const": 4 }, "metrics": { "required": ["driftPercent"], "maxProperties": 1 }, "evidence": { "properties": { "measurement": { "const": "phrase_pattern" } } }, "expected": { "properties": { "notes": { "minItems": 3 } } }, "detected": { "properties": { "notes": { "minItems": 3 } } } } } },
+        { "if": { "properties": { "kind": { "const": "uneven_rhythm" } } }, "then": { "properties": { "variant": { "const": "alternating" }, "priority": { "const": 4 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "phrase_pattern" } } }, "expected": { "properties": { "notes": { "minItems": 3 } } }, "detected": { "properties": { "notes": { "minItems": 3 } } } } } },
+        { "if": { "properties": { "kind": { "const": "unexpected_pause" } } }, "then": { "properties": { "variant": { "const": "pause" }, "priority": { "const": 4 }, "metrics": { "required": ["gapBeats"], "maxProperties": 1 }, "evidence": { "properties": { "measurement": { "const": "phrase_pattern" } } }, "expected": { "properties": { "notes": { "minItems": 2 } } }, "detected": { "properties": { "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "rest_violation" } } }, "then": { "properties": { "variant": { "const": "rest" }, "priority": { "const": 4 }, "metrics": { "maxProperties": 0 }, "evidence": { "properties": { "measurement": { "const": "phrase_pattern" } } }, "detected": { "properties": { "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "section_repeat_skip" } } }, "then": { "required": ["segments"], "properties": { "variant": { "enum": ["repeated", "skipped"] }, "priority": { "const": 2 }, "metrics": { "maxProperties": 0 }, "segments": { "minItems": 2 }, "evidence": { "properties": { "measurement": { "const": "phrase_pattern" } } }, "expected": { "required": ["segmentIds"], "properties": { "segmentIds": { "minItems": 2 }, "notes": { "minItems": 1 } } }, "detected": { "required": ["segmentIds"], "properties": { "segmentIds": { "minItems": 1 }, "notes": { "minItems": 1 } } } } } },
+        { "if": { "properties": { "kind": { "const": "recurring_trouble" } } }, "then": { "required": ["historyRows"], "properties": { "variant": { "enum": ["recurring", "resolved"] }, "priority": { "const": 4 }, "metrics": { "required": ["recurrenceCount", "recurrenceWindow"], "maxProperties": 2 }, "historyRows": { "minItems": 2 }, "evidence": { "properties": { "measurement": { "const": "history" } } } } } },
+        { "if": { "properties": { "evidence": { "properties": { "source": { "const": "analysis" } } } } },
+          "then": { "not": { "anyOf": [ { "required": ["segments"] }, { "required": ["historyRows"] } ] } } }
+      ]
+    }
+  }
+}

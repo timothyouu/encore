@@ -389,13 +389,13 @@ test('restored active recording is marked interrupted and excluded', () => {
   assert.equal(restored.count(), 0);
   assert.equal(restored.records[0].error.stage, 'capture');
 });
-test('restored processing becomes recoverable error and stays counted', () => {
+test('restored processing becomes upload recovery error and stays counted', () => {
   const storage = memory();
   const store = new SessionStore(storage);
   completed(store);
   const restored = new SessionStore(storage);
   assert.equal(restored.records[0].processingStatus, 'error');
-  assert.equal(restored.records[0].error.stage, 'analysis');
+  assert.equal(restored.records[0].error.stage, 'upload');
   assert.equal(restored.count(), 1);
 });
 test('restored analysis waiting for coaching retains analysis on recovery', () => {
@@ -453,6 +453,56 @@ test('nonempty findings require evidence in coaching', () => {
   const coaching = fixtureCoaching(record);
   coaching.evidenceFindingIds = [];
   assert.equal(store.applyCoaching(record.attemptId, coaching), false);
+});
+test('duration finding requires a measured note and delta', () => {
+  const store = new SessionStore(memory()); const record = completed(store);
+  const analysis = fixtureAnalysis(record, 'clean');
+  analysis.findings = [{ id: 'hold', kind: 'duration', referenceNoteId: passages[0].notes[0].id,
+    detectedNoteId: analysis.detectedNotes[0].id, durationDeltaMs: -250 }];
+  assert.equal(store.applyAnalysis(record.attemptId, analysis), true);
+  assert.equal(record.analysis.findings[0].durationDeltaMs, -250);
+  const other = new SessionStore(memory()); const otherRecord = completed(other);
+  const invalid = fixtureAnalysis(otherRecord, 'clean');
+  invalid.findings = [{ id: 'hold', kind: 'duration', referenceNoteId: passages[0].notes[0].id }];
+  assert.equal(other.applyAnalysis(otherRecord.attemptId, invalid), false);
+});
+test('visual mistakes must match the exact finding note pair', () => {
+  const store = new SessionStore(memory()); const record = analyzed(store);
+  const coach = fixtureCoaching(record);
+  coach.visual.mistakes[0].detectedNoteId = 'detected-2';
+  assert.equal(store.applyCoaching(record.attemptId, coach), false);
+  coach.visual.mistakes[0].detectedNoteId = 'detected-3';
+  assert.equal(store.applyCoaching(record.attemptId, coach), true);
+});
+test('retry preserves one completed attempt and its prior analysis', () => {
+  const store = new SessionStore(memory()); const record = analyzed(store);
+  store.fail(record.attemptId, 'coaching', 'Temporary failure');
+  assert.equal(store.beginRetry(record.attemptId), true);
+  assert.equal(store.processingStage, 'coaching');
+  assert.equal(store.records.length, 1); assert.equal(store.count(), 1);
+  assert.equal(record.analysis.status, 'ok');
+  assert.equal(store.applyCoaching(record.attemptId, fixtureCoaching(record)), true);
+});
+test('retry of analysis error clears terminal error analysis for a fresh response', () => {
+  const store = new SessionStore(memory()); const record = completed(store);
+  assert.equal(store.applyAnalysis(record.attemptId, fixtureAnalysis(record, 'error')), true);
+  assert.equal(record.processingStatus, 'error');
+  assert.equal(store.beginRetry(record.attemptId), true);
+  assert.equal(record.analysis, null);
+  assert.equal(store.applyAnalysis(record.attemptId, fixtureAnalysis(record, 'uncertain')), true);
+  assert.equal(record.processingStatus, 'result'); assert.equal(store.count(), 1);
+});
+test('fresh artifact analysis replaces prior analysis during the same attempt retry', () => {
+  const store = new SessionStore(memory()); const record = analyzed(store);
+  const prior = record.analysis;
+  store.fail(record.attemptId, 'coaching', 'Artifact expired');
+  assert.equal(store.beginRetry(record.attemptId), true);
+  const replacement = fixtureAnalysis(record, 'clean');
+  assert.equal(store.applyAnalysis(record.attemptId, replacement), false);
+  assert.equal(store.applyAnalysis(record.attemptId, replacement, true), true);
+  assert.notEqual(record.analysis, prior);
+  assert.equal(record.analysis.findings.length, 0);
+  assert.equal(store.count(), 1);
 });
 test('saved completed capture before processing recovers as error', () => {
   const storage = memory();

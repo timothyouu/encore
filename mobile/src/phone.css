@@ -64,6 +64,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .source-card p{margin:7px 0 0;color:var(--muted)}
 .scenario-label{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:14px 0;font-size:13px;color:var(--muted)}
 .scenario-label select{min-height:44px;border:1px solid var(--line);border-radius:8px;padding:6px 10px;background:#FAF7F0;color:var(--ink);max-width:60%}
+.test-wav-label{display:flex;flex-direction:column;gap:5px;margin:14px 0;font-size:13px;color:var(--ink)}
+.test-wav-label input{max-width:100%;font-size:12px;color:var(--muted)}
+.test-wav-label input::file-selector-button{min-height:38px;border:1px solid var(--line);border-radius:20px;background:#FAF7F0;color:var(--ink);padding:7px 13px;margin-right:10px}
 .grow{flex:1;min-height:14px}
 .primary-action,.secondary-action,.outline-action{width:100%;min-height:50px;border-radius:28px;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px 18px;font:19px/1.3 Georgia,serif}
 .primary-action{border:1px solid var(--ink);background:var(--ink);color:var(--paper)}
@@ -130,6 +133,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 .white-key{flex:1;min-width:0;border:1px solid #8B877E;border-radius:0 0 5px 5px;background:#FAF7F0;display:flex;align-items:flex-end;justify-content:center;padding-bottom:12px;font:15px Georgia,serif}
 .white-key.highlighted{border:3px solid #AD8C50;background:#FFF9EA}
 .black-key{position:absolute;top:0;transform:translateX(-50%);height:54%;width:7%;background:#242421;border-radius:0 0 4px 4px;pointer-events:none}
+.keyboard .white-key.key-expected{outline:3px solid #9A7944;outline-offset:-4px;background:#FFF8E9}
+.keyboard .white-key.key-played{box-shadow:inset 0 -11px 0 #74716B}
+.keyboard .white-key.key-expected.key-played{box-shadow:inset 0 -11px 0 #74716B}
+.keyboard .black-key.key-expected{outline:3px solid #AD8C50;outline-offset:1px}
+.keyboard .black-key.key-played{box-shadow:inset 0 -10px 0 #B7B4AE}
+.visual-legend{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-top:12px;font-size:12px;color:var(--ink)}
+.visual-legend span{border:1px solid var(--line);border-radius:14px;padding:4px 8px}
+.legend-expected{background:#FFF8E9}
+.legend-played{box-shadow:inset 0 -4px 0 #74716B}
+.duration-comparison{margin:18px auto 0;width:min(100%,336px);display:flex;flex-direction:column;gap:12px}
+.duration-row-label{display:block;font-size:12px;color:var(--muted);margin-bottom:5px}
+.duration-track{height:13px;background:#E2DCD1;border-radius:7px;overflow:hidden}
+.duration-bar{height:100%;transform-origin:left center;background:#AD8C50;border-radius:7px}
+.duration-row.played .duration-bar{background:#74716B}
+.replay-action{font-size:13px;min-height:40px;margin-top:14px}
+.visual-unavailable{text-align:center;margin:24px 0}
 .duration-caption{text-align:center;font:13px/1.4 Georgia,serif;color:var(--muted);margin:17px 0}
 .teaching-card{font-size:13px;display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;line-height:1.4}
 .guide-page .outline-action{margin-top:15px}
@@ -174,3 +193,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 @media(max-width:360px){.app-header,.page{padding-left:18px;padding-right:18px}.demo-banner,.storage-warning{margin-left:18px;margin-right:18px}.passage-name{font-size:19px}.passage-meta{font-size:12px}.result-top .page-heading h1{font-size:29px}.correction-card{font-size:19px}.finding-card h2{font-size:21px}.comparison-cell strong{font-size:34px}}
 @media(max-height:710px){.page{padding-top:8px}.page-heading{margin-bottom:12px}.preview-card{padding:13px}.source-card{margin-top:10px}.recording-core{min-height:180px}.guide-page .keyboard-wrap{margin-top:18px}.finding-card{margin:8px 0}.safe-bottom{height:env(safe-area-inset-bottom)}}
 @media(prefers-reduced-motion:no-preference){button{transition:background-color .16s ease,transform .16s ease}button:not(:disabled):active{transform:scale(.985)}}
+@media(prefers-reduced-motion:no-preference){.visual-sequence.is-playing .key-expected{animation:expected-key 1.15s ease-out both}.visual-sequence.is-playing .key-played{animation:played-key 1.15s ease-out .9s both}.visual-sequence.is-playing .duration-bar{animation:hold-grow var(--hold-ms) ease-out both}}
+@media(prefers-reduced-motion:reduce){.replay-action{display:none}}
+@keyframes expected-key{0%,100%{filter:none}35%{filter:brightness(.76)}}
+@keyframes played-key{0%,100%{filter:none}35%{filter:brightness(1.65)}}
+@keyframes hold-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}

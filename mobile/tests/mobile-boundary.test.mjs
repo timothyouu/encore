@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { stripTypeScriptTypes } from 'node:module';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -17,24 +18,48 @@ function sourceFiles(directory) {
   });
 }
 
+const sharedTypes = new Set(['contracts.ts', 'visual-contract.ts'].map(name => resolve(mobile, '../shared', name)));
+const sharedRuntime = resolve(mobile, '../shared/visual-plan.ts');
 function assertPhoneOnlySource(content, path, visited = new Set()) {
+  if (visited.has(path)) return;
+  visited.add(path);
   assert.doesNotMatch(content, forbiddenApi, relative(mobile, path));
   for (const match of content.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*)['"]([^'"]+)['"]/g)) {
     const specifier = match[1];
     assert.notEqual(path, sharedPassages, 'shared passage data must have no imports');
     assert.doesNotMatch(specifier, /(?:^|\/)g2(?:\/|$)|(?:^|\/)display(?:\.[jt]s)?$/i, `${relative(mobile, path)} imports ${specifier}`);
     if (!specifier.startsWith('.')) {
-      assert.equal(path, join(mobile, 'vite.config.ts'), `${relative(mobile, path)} imports external package ${specifier}`);
-      assert.equal(specifier, 'vite');
+      const allowed = (path === join(mobile, 'vite.config.ts') && specifier === 'vite') ||
+        (path === join(sourceRoot, 'telemetry.ts') && specifier === '@sentry/browser');
+      assert.ok(allowed, `${relative(mobile, path)} imports external package ${specifier}`);
       continue;
     }
     const target = resolve(dirname(path), specifier);
+    if (sharedTypes.has(target)) {
+      const declaration = content.slice(content.lastIndexOf('\n', match.index) + 1, match.index);
+      assert.match(declaration, /^\s*(?:import|export)\s+type\s*\{[^}]+\}\s*$/,
+        'shared contracts may only be imported or exported as types');
+      const emitted = stripTypeScriptTypes(readFileSync(target, 'utf8'));
+      assert.equal(emitted.replace(/export\s*\{\s*\}\s*;?/g, '').trim(), '', 'shared contracts must contain no executable code');
+      continue;
+    }
+    if (target === sharedRuntime) {
+      const source = readFileSync(target, 'utf8');
+      assert.doesNotMatch(source, /\b(?:window|document|fetch|WebSocket|eval|Function)\b|\bimport\s*\(/,
+        'shared visual planner must remain pure and device-independent');
+      assertPhoneOnlySource(source, target, visited);
+      continue;
+    }
+    if (target === resolve(mobile, '../shared/visual-examples.json')) {
+      assert.ok(path === join(sourceRoot, 'paper-gallery.ts'), 'only fixture gallery imports example data');
+      assert.doesNotThrow(() => JSON.parse(readFileSync(target, 'utf8')));
+      continue;
+    }
     const withinSource = relative(sourceRoot, target);
     const isInSource = withinSource && withinSource !== '..' && !withinSource.startsWith(`..${sep}`);
     assert.ok(isInSource || target === sharedPassages, `${relative(mobile, path)} escapes src: ${specifier}`);
     assert.ok(existsSync(target), `${relative(mobile, path)} imports a missing file: ${specifier}`);
     if (target === sharedPassages && !visited.has(target)) {
-      visited.add(target);
       assertPhoneOnlySource(readFileSync(target, 'utf8'), target, visited);
     }
   }
@@ -63,6 +88,12 @@ test('phone entrypoint and build config cannot load a glasses bridge', () => {
   }
 });
 
+test('only the telemetry module may import Sentry', () => {
+  assert.throws(() => assertPhoneOnlySource("import * as Sentry from '@sentry/browser';", join(sourceRoot, 'capture.ts')), { name: 'AssertionError' });
+  assert.doesNotThrow(() => assertPhoneOnlySource("import * as Sentry from '@sentry/browser';", join(sourceRoot, 'telemetry.ts')));
+  assert.throws(() => assertPhoneOnlySource("import * as Other from '@sentry/core';", join(sourceRoot, 'telemetry.ts')), { name: 'AssertionError' });
+});
+
 test('boundary rejects an SDK display adapter and native bridge routes', () => {
   const path = join(sourceRoot, 'fixture.ts');
   for (const source of [
@@ -72,6 +103,7 @@ test('boundary rejects an SDK display adapter and native bridge routes', () => {
     "window.webkit.messageHandlers.glasses.postMessage(content);",
     'window.ReactNativeWebView.postMessage(content);',
     "import { display } from '../../g2/bridge.ts';",
+    "import { AnalysisResult } from '../../shared/contracts.ts';",
   ]) {
     assert.throws(() => assertPhoneOnlySource(source, path), { name: 'AssertionError' }, source);
   }
