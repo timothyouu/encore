@@ -425,3 +425,37 @@ test('API completed attempt tombstone blocks chargeable replay but allows a fres
     assert.equal(upstreamCalls, 1);
   } finally { await close(server); }
 });
+
+test('dense detector output reaches analysis and coaching instead of a 502 at 128 notes', async () => {
+  for (const count of [132, 500]) {
+    const dense = analysis({ detectedNotes: Array.from({ length: count }, (_, i) => ({
+      id: `d${i + 1}`, midiPitch: 61, onsetSec: i / 100, durationSec: 0.1, detectorScore: 0.2,
+    })) });
+    const server = createCoachServer({ library, chooser: null, token: 'test-token',
+      fetchImpl: (async () => new Response(JSON.stringify(dense), { status: 200 })) as typeof fetch });
+    const base = await serve(server);
+    try {
+      const uploaded = await post(base, '/api/recordings', { metadata, wavBase64: wav().toString('base64') });
+      assert.equal(uploaded.status, 200);
+      const artifact = await uploaded.json() as { artifactId: string };
+      const response = await post(base, '/api/analyze', { artifactId: artifact.artifactId,
+        attemptId: 'attempt-1', passageId: 'P01', passageVersion: '1' });
+      assert.equal(response.status, 200);
+      const measured = await response.json() as AnalysisResult;
+      assert.equal(measured.detectedNotes.length, count);
+      const coaching = await post(base, '/api/coach', { artifactId: artifact.artifactId,
+        passageId: 'P01', passageVersion: '1', analysis: measured });
+      assert.equal(coaching.status, 200);
+    } finally { await close(server); }
+  }
+});
+
+test('analysis rejects more than the shared phone capacity of 500 events or findings', () => {
+  const notes = Array.from({ length: 501 }, (_, i) => ({ id: `d${i + 1}`, midiPitch: 61,
+    onsetSec: i / 100, durationSec: 0.1 }));
+  const body = { artifactId: 'artifact-1', passageId: 'P01', passageVersion: '1', analysis: analysis({ detectedNotes: notes }) };
+  assert.throws(() => parseCoachRequest(body, library), /detectedNotes invalid/);
+  body.analysis = analysis({ findings: Array.from({ length: 501 }, (_, i) => ({ id: `f${i}`,
+    kind: 'wrong_note', referenceNoteId: 'P01-N01', detectedNoteId: 'd1' })) });
+  assert.throws(() => parseCoachRequest(body, library), /findings invalid/);
+});

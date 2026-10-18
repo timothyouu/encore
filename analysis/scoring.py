@@ -11,6 +11,7 @@ from statistics import median
 from typing import Any
 
 SCORING_VERSION = "1.4.0-demo"
+MAX_ANALYSIS_ITEMS = 500
 MIN_PITCH_ANCHOR_FRACTION = 0.35
 MIN_PAIR_COVERAGE = 0.60
 MIN_EXTRA_NOTE_SCORE = 0.35
@@ -196,6 +197,10 @@ def score_notes(
     audible: bool = True,
 ) -> dict[str, Any]:
     """Return the shared AnalysisResult contract without guessing when alignment is weak."""
+    if len(detected_notes) > MAX_ANALYSIS_ITEMS:
+        result = _base_result(passage, attempt_id, tempo_bpm, [], audio_quality, detector_version)
+        result["audioQuality"]["warnings"].append("too_many_note_events")
+        return result
     out_of_range = any(not 21 <= note["midiPitch"] <= 108 for note in detected_notes)
     detected = sorted(
         (note for note in detected_notes if 21 <= note["midiPitch"] <= 108),
@@ -356,6 +361,11 @@ def score_notes(
 
     # Keep every supported finding for phone review and saved History. Glasses
     # apply their own presentation limit without discarding this evidence.
+    if len(findings) > MAX_ANALYSIS_ITEMS:
+        result["status"] = "uncertain"
+        result["alignment"] = {"offsetSec": None, "reliable": False}
+        result["audioQuality"]["warnings"].append("too_many_findings")
+        return result
     selected = sorted(findings, key=importance)
     result["findings"] = [{"id": f"f{index}", **finding} for index, finding in enumerate(selected, 1)]
     result["metrics"] = {

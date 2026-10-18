@@ -99,7 +99,7 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
   const quality = record(a.audioQuality, 'audioQuality');
   const alignment = record(a.alignment, 'alignment');
   const metrics = record(a.metrics, 'metrics');
-  const detectedNotes = array(a.detectedNotes, 'detectedNotes', 128).map((item): DetectedNote => {
+  const detectedNotes = array(a.detectedNotes, 'detectedNotes', 500).map((item): DetectedNote => {
     const n = record(item, 'detected note');
     return {
       id: id(n.id, 'detected note ID'),
@@ -112,7 +112,7 @@ export function parseCoachRequest(value: unknown, library: Passage[]): { request
   unique(detectedNotes, 'detected notes');
   const referenceIds = new Set(passage.notes.map(note => note.id));
   const detectedIds = new Set(detectedNotes.map(note => note.id));
-  const findings = array(a.findings, 'findings', 128).map((item): Finding => {
+  const findings = array(a.findings, 'findings', 500).map((item): Finding => {
     const f = record(item, 'finding');
     const kind = f.kind;
     if (kind !== 'wrong_note' && kind !== 'missing_note' && kind !== 'extra_note' && kind !== 'timing' && kind !== 'duration') fail('finding kind invalid');

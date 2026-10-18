@@ -107,6 +107,15 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(all(f["kind"] in ("wrong_note", "missing_note") for f in result["findings"]))
         self.assertIsNone(result["metrics"]["medianAbsTimingErrorMs"])
 
+    def test_excessive_detector_output_returns_bounded_uncertainty_before_alignment(self) -> None:
+        notes = [{"id": f"d{i}", "midiPitch": 60, "onsetSec": i / 100,
+                  "durationSec": .1, "detectorScore": .2} for i in range(501)]
+        result = scored(PASSAGES["P01"], notes)
+        self.assertEqual(result["status"], "uncertain")
+        self.assertEqual(result["detectedNotes"], [])
+        self.assertEqual(result["findings"], [])
+        self.assertIn("too_many_note_events", result["audioQuality"]["warnings"])
+
     def test_same_note_pairing_at_two_offsets_is_not_ambiguous_audio(self) -> None:
         passage = PASSAGES["P01"]
         notes = performed(passage)

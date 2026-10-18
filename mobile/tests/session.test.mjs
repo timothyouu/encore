@@ -546,3 +546,17 @@ test('general library navigation cannot abandon active capture silently', () => 
   store.cancel();
   assert.equal(store.state.screen, 'library');
 });
+
+
+test('phone accepts dense analysis through 500 detections and rejects 501', () => {
+  for (const count of [132, 500, 501]) {
+    const session = new SessionStore({ getItem() { return null; }, setItem() {} });
+    session.selectPassage('P01');
+    const record = session.start('g2'); session.stop();
+    const value = fixtureAnalysis(record, 'clean');
+    value.detectedNotes = Array.from({ length: count }, (_, i) => ({
+      id: `dense-${i}`, midiPitch: 60, onsetSec: i / 100, durationSec: 0.1, detectorScore: 0.2,
+    }));
+    assert.equal(session.applyAnalysis(record.attemptId, value), count <= 500);
+  }
+});
