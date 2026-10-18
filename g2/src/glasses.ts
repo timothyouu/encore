@@ -1,5 +1,7 @@
 import {
   CreateStartUpPageContainer,
+  ImageRawDataUpdate,
+  ImageRawDataUpdateResult,
   RebuildPageContainer,
   TextContainerProperty,
   type EvenAppBridge,
@@ -99,6 +101,21 @@ export class Glasses {
       if (!ok) {
         status('glasses: rebuild page failed', 'error')
         throw new Error('rebuildPageContainer failed')
+      }
+    })
+  }
+
+  // Image sends take ~0.5–2s over BLE and must never overlap; the queue
+  // guarantees that. `stillWanted` is checked right before sending so a frame
+  // queued for a screen the player already left is dropped.
+  updateImage(container: { id: number; name: string }, imageData: Uint8Array, stillWanted: () => boolean) {
+    return this.enqueue(`image ${container.name}`, async () => {
+      if (!stillWanted()) return
+      const result = await this.bridge.updateImageRawData(
+        new ImageRawDataUpdate({ containerID: container.id, containerName: container.name, imageData }),
+      )
+      if (result !== ImageRawDataUpdateResult.success) {
+        status(`image ${container.name}: ${result}`, 'error')
       }
     })
   }

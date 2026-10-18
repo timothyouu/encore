@@ -21,13 +21,22 @@ async function main() {
     status(`screen → ${screen.name}`)
     // Failures are already reported by the glasses queue.
     glasses.showPage(screen.page()).catch(() => {})
+    screen.enter?.({ glasses, isActive: () => current === screen })
   }
 
   function showSelection() {
     show(
       selectionScreen({
         passages: PASSAGES,
-        onOpen: passage => show(readyScreen({ passage, onBack: showSelection })),
+        onOpen: passage =>
+          show(
+            readyScreen({
+              passage,
+              // Recording (03) is the next screen to build.
+              onRecord: () => status('record: not built yet (next PR)'),
+              onBack: showSelection,
+            }),
+          ),
         onExit: () => glasses.requestExit(),
       }),
     )
