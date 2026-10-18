@@ -23,7 +23,8 @@ try {
   run(binary, ['pack', 'app.network.json', 'dist'], env)
   const packageBytes = await readFile(new URL('out.ehpk', root))
   const sha256 = createHash('sha256').update(packageBytes).digest('hex')
-  const sidecar = { buildId, sourceRevision: revision.stdout.trim(), serviceOrigin: origin,
+  const manifest = JSON.parse(await readFile(new URL('app.network.json', root), 'utf8'))
+  const sidecar = { packageVersion: manifest.version, buildId, sourceRevision: revision.stdout.trim(), serviceOrigin: origin,
     packageFile: 'out.ehpk', bytes: packageBytes.length, sha256 }
   await writeFile(new URL('package-build.json', root), JSON.stringify(sidecar, null, 2) + '\n')
   console.log(`G2 package ${buildId}: ${packageBytes.length} bytes SHA-256 ${sha256}`)
