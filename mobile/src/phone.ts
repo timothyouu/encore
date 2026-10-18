@@ -1,5 +1,5 @@
 import './phone.css';
-import { noteName, passages, type Passage, type ReferenceNote } from './passages.ts';
+import { noteName, passages, suggestedFingerLabel, type Passage, type ReferenceNote } from './passages.ts';
 import type { AttemptRecord, Finding, SessionStore } from './session.ts';
 import { DisplaySettingsStore, type DisplaySettings } from './settings.ts';
 
@@ -535,7 +535,8 @@ export function mountPhone(root: HTMLElement, store: SessionStore, actions: Acti
     const cue = coaching?.evidenceFindingIds.includes(finding.id) ? coaching.cue : correctionFor(finding, passage);
     const correction = node('div', 'correction-card', cue);
     const metadata = node('div', 'teaching-card');
-    add(metadata, node('span', '', durationLabel(reference)), reference?.suggestedFinger ? node('span', '', `Suggested finger ${reference.suggestedFinger} · Authored for this passage`) : null);
+    const fingerLabel = suggestedFingerLabel(reference);
+    add(metadata, node('span', '', durationLabel(reference)), fingerLabel ? node('span', '', fingerLabel) : null);
     add(page, control('‹ Back to review', 'back-link', () => store.showReview()), resultHeader(passage, record), carousel(findings, passage, record), heading('Your correction'), correction, keyboard(reference), node('p', 'duration-caption', durationLabel(reference)), metadata, control('View in sheet music', 'outline-action', openSheet), node('div', 'grow'), control('‹ Back to review', 'primary-action', () => store.showReview()), resultNav());
     return page;
   }

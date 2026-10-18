@@ -30,7 +30,8 @@ Produces an `.ehpk` file.
 | `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `longPress`; drops duplicates and any tap that belongs to a long press. |
 | `src/settings.ts` | Display settings (spec §5), saved in Even app storage. |
 | `src/layout.ts` | Shared geometry from the Paper mockups; right-aligned text via `@evenrealities/pretext`. |
-| `src/passages.ts` | The six approved seed passages (spec §7). |
+| `../shared/passages.ts` | The six approved seed passages and authored fingerings (spec §7), shared with the phone Guide. |
+| `src/passages.ts` | Re-exports the shared passages for G2 screens. |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
 | `public/fonts/` | One-glyph Noto Music subset for the treble clef (SIL OFL, see `OFL.txt`). |
 | `src/screens/` | One file per glasses state (spec §4). |
