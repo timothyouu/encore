@@ -27,7 +27,8 @@ Produces an `.ehpk` file.
 |---|---|
 | `src/main.ts` | Boots the bridge, routes normalized input to the current screen. |
 | `src/glasses.ts` | Serialized, time-limited bridge calls; startup page vs. rebuild. |
-| `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect`; drops duplicate events. |
+| `src/input.ts` | Maps SDK events to `tap` / `doubleTap` / `swipeUp` / `swipeDown` / `listSelect` / `longPress`; drops duplicates and any tap that belongs to a long press. |
+| `src/settings.ts` | Display settings (spec §5), saved in Even app storage. |
 | `src/layout.ts` | Shared geometry from the Paper mockups; right-aligned text via `@evenrealities/pretext`. |
 | `src/passages.ts` | The six approved seed passages (spec §7). |
 | `src/staff.ts` | Draws a passage on a treble staff and splits it into two 288×112 PNG tiles. |
@@ -40,3 +41,4 @@ Produces an `.ehpk` file.
 |---|---|---|
 | 01 | Selection | Native list, tap to open, double tap to exit |
 | 02 | Ready | Staff (2 image tiles), focus line, `tap ● record` (recording not wired yet), double tap back |
+| 09 | Settings | Long press from any screen except Recording/Analyzing; tap toggles sheet music, double tap returns |

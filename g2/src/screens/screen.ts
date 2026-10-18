@@ -15,4 +15,6 @@ export type Screen = {
   page(): Page
   enter?(context: ScreenContext): void
   onInput(input: Input): void
+  // Long press opens Settings unless this is false (Recording, Analyzing, Settings).
+  allowsSettings?: boolean
 }
