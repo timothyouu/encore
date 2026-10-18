@@ -14,6 +14,12 @@
 - Keep disconnected/unavailable integration status honest. A phone demo, a saved G2 capture-source label, or a proposed setting is not evidence of a connected device.
 - Future integration must be reviewed with the glasses owner before implementation. Keep transport and device rendering in the glasses workstream; do not relocate offending mobile code into `g2/` during a mobile-only fix.
 
+## Feedback integration
+- WSL is the source of truth. Preserve the shared WAV artifact pipeline, temporary-audio retries, history persistence and telemetry when integrating phone or G2 feedback.
+- New server results carry validated v2 bar segments; retain explicit legacy v1 History support without inventing saved locations. Use shared segment calculation and feedback ordering for phone and G2.
+- Show priority mistakes first while keeping every finding/bar pair accessible. Review and Guide share one finding/bar selection; forward navigation is Review → Guide → next Review, with the reverse path on back navigation.
+- Gemini selects only allowed finding/action/component IDs. Code constructs cue text, visual evidence and segment selection; do not move musical measurements or range calculation into model output.
+
 ## Build and verification
 From `mobile/`, using existing dependencies and Node 22.14+: `npm test` and `npm run build`.
 Run the mobile boundary regression with the full session/capture suite. Verify the phone Library → preview → recording → results → History flow after changing boot or navigation. Check that `git diff -- g2` is empty for mobile-only changes.

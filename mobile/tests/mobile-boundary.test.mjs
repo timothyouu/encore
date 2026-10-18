@@ -19,7 +19,7 @@ function sourceFiles(directory) {
 }
 
 const sharedTypes = new Set(['contracts.ts', 'visual-contract.ts'].map(name => resolve(mobile, '../shared', name)));
-const sharedRuntime = resolve(mobile, '../shared/visual-plan.ts');
+const sharedRuntime = new Set(['visual-plan.ts', 'segments.ts', 'feedback.ts'].map(name => resolve(mobile, '../shared', name)));
 function assertPhoneOnlySource(content, path, visited = new Set()) {
   if (visited.has(path)) return;
   visited.add(path);
@@ -43,10 +43,10 @@ function assertPhoneOnlySource(content, path, visited = new Set()) {
       assert.equal(emitted.replace(/export\s*\{\s*\}\s*;?/g, '').trim(), '', 'shared contracts must contain no executable code');
       continue;
     }
-    if (target === sharedRuntime) {
+    if (sharedRuntime.has(target)) {
       const source = readFileSync(target, 'utf8');
       assert.doesNotMatch(source, /\b(?:window|document|fetch|WebSocket|eval|Function)\b|\bimport\s*\(/,
-        'shared visual planner must remain pure and device-independent');
+        'shared review helpers must remain pure and device-independent');
       assertPhoneOnlySource(source, target, visited);
       continue;
     }
@@ -109,9 +109,11 @@ test('boundary rejects an SDK display adapter and native bridge routes', () => {
   }
 });
 
-test('only the import-free authored passage module can cross the phone source boundary', () => {
+test('only reviewed pure helpers and import-free authored passage data can cross the phone source boundary', () => {
   const path = join(sourceRoot, 'fixture.ts');
   assert.doesNotThrow(() => assertPhoneOnlySource("import { PASSAGES } from '../../shared/passages.ts';", path));
+  assert.doesNotThrow(() => assertPhoneOnlySource("import { feedbackEntries } from '../../shared/feedback.ts';", path));
+  assert.doesNotThrow(() => assertPhoneOnlySource("import { analysisSegmentsValid } from '../../shared/segments.ts';", path));
   assert.throws(() => assertPhoneOnlySource("import { helper } from '../../shared/other.ts';", path), { name: 'AssertionError' });
   assert.throws(() => assertPhoneOnlySource("import { helper } from '../../g2/src/passages.ts';", path), { name: 'AssertionError' });
   assert.throws(() => assertPhoneOnlySource("import { helper } from '../mobile-peer.ts';", path), { name: 'AssertionError' });

@@ -294,11 +294,16 @@ export function rulerX(card: VisualCard) {
   return { start, end, x: (beat: number) => 24 + ((beat - start) / span) * (ART_W - 48) }
 }
 
+export function rulerNotes(card: VisualCard): { expected: VisualNote | undefined; detected: VisualNote | undefined } {
+  const flagged = flaggedNotes(card)
+  const expected = flagged.expected[0] ?? (card.evidence.source === 'analysis' ? undefined : card.expected.notes[0])
+  const detected = flagged.detected[0] ?? (card.evidence.source === 'analysis' ? undefined : card.detected.notes[0])
+  return { expected, detected }
+}
+
 function drawRuler(ctx: CanvasRenderingContext2D, card: VisualCard, layer: Layer = 'both') {
   const { start, end, x } = rulerX(card)
-  const flagged = flaggedNotes(card)
-  const expected = flagged.expected[0] ?? card.expected.notes[0]
-  const detected = flagged.detected[0] ?? card.detected.notes[0]
+  const { expected, detected } = rulerNotes(card)
 
   ctx.fillStyle = LINE
   ctx.fillRect(x(start) - 8, RULER_Y, x(end) - x(start) + 16, 2)
@@ -468,6 +473,27 @@ export async function renderCardArt(card: VisualCard): Promise<Uint8Array> {
   return paint(ctx => drawStatic(ctx, card))
 }
 
+// Paired pages keep the exact same validated one-bar window. Guide starts on
+// the written correction; its optional replay may then show keys or timing.
+export async function renderBarArt(card: VisualCard, guide: boolean): Promise<Uint8Array> {
+  return paint(ctx => {
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(8, 0, ART_W - 16, ART_H)
+    ctx.clip()
+    const continuation = (note: VisualNote): VisualNote => ({
+      ...note,
+      onsetBeat: Math.max(card.focus.startBeat, note.onsetBeat),
+    })
+    drawStaffWindow(ctx, {
+      ...card,
+      expected: { ...card.expected, notes: card.expected.notes.map(continuation) },
+      detected: { ...card.detected, notes: card.detected.notes.map(continuation) },
+    }, guide ? 'written' : 'both')
+    ctx.restore()
+  })
+}
+
 async function paint(draw: (ctx: CanvasRenderingContext2D) => void): Promise<Uint8Array> {
   const { element, ctx } = canvas(ART_W, ART_H)
   ctx.fillStyle = '#000000'
@@ -504,7 +530,16 @@ function revealPhase(caption: string, layer: Layer, total: number): ReplayStep[]
 // ending on the fix. Staff cards reveal notes one at a time in the order they
 // sounded, then the written notes the same way. Unclear audio has nothing
 // measured to replay.
-export function replaySteps(card: VisualCard, hasKeyboardContext = false): ReplayStep[] {
+export function replaySteps(card: VisualCard, hasKeyboardContext = false, withinBar = false): ReplayStep[] {
+  if (withinBar && card.evidence.source === 'analysis') {
+    const flagged = flaggedNotes(card)
+    // A late note may fall outside this bar. Its contextual neighbour is not
+    // that measurement, and a keyboard frame cannot place it back in the bar.
+    if ((card.evidence.detectedNoteIds.length > 0 && flagged.detected.length === 0) ||
+        (card.evidence.referenceNoteIds.length > 0 && flagged.expected.length === 0)) {
+      return [{ caption: "this bar's written notes", layer: 'written', art: 'staff', hold: 'end' }]
+    }
+  }
   let steps: ReplayStep[]
   switch (artKind(card)) {
     case 'keyboard':
@@ -560,8 +595,9 @@ function drawStatic(ctx: CanvasRenderingContext2D, card: VisualCard) {
   switch (artKind(card)) {
     case 'keyboard': {
       const flagged = flaggedNotes(card)
-      const expected = flagged.expected[0] ?? card.expected.notes[0]
-      drawKeyboard(ctx, expected.midiPitch, flagged.detected[0]?.midiPitch ?? null)
+      const expected = flagged.expected[0] ?? (card.evidence.source === 'analysis' ? undefined : card.expected.notes[0])
+      if (expected) drawKeyboard(ctx, expected.midiPitch, flagged.detected[0]?.midiPitch ?? null)
+      else drawStaffWindow(ctx, card, 'written')
       break
     }
     case 'ruler':

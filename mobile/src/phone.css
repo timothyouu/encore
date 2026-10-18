@@ -201,3 +201,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid 
 @keyframes expected-key{0%,100%{filter:none}35%{filter:brightness(.76)}}
 @keyframes played-key{0%,100%{filter:none}35%{filter:brightness(1.65)}}
 @keyframes hold-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+.segment-nav{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.segment-button{border:1px solid var(--line);border-radius:16px;min-height:36px;padding:6px 13px;background:transparent;color:var(--ink);font:inherit;font-size:13px}
+.segment-button.is-selected{background:var(--ink);color:var(--paper)}
+.result-page .score-frame,.guide-page .score-frame{margin:14px 0}
