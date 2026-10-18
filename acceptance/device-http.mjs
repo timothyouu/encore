@@ -6,8 +6,17 @@ import { performance } from 'node:perf_hooks';
 import { normalizeChannels } from '../mobile/src/audio-normalization.ts';
 
 const base = process.argv[2] ?? 'http://127.0.0.1:8800';
-const tokenPath = process.argv[3] ?? '/home/tim/projects/encore-verify/.run/g2-tunnel-session-token';
+const configuredOrigin = JSON.parse(readFileSync(new URL('../g2/service-origin.json', import.meta.url), 'utf8')).origin;
+const target = new URL(base);
+assert.ok(target.origin === base && (base === configuredOrigin ||
+  (target.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(target.hostname))),
+  'Use the configured HTTPS service or an isolated loopback backend');
+const health = await fetch(base + '/health', { redirect: 'error' });
+assert.equal(health.status, 200, 'backend health');
+assert.equal((await health.json()).modelConfigured, false, 'fixture runner requires offline coaching');
+const tokenPath = process.argv[3] ?? process.env.ENCORE_DEVICE_TOKEN_FILE ?? new URL('../.run/device-session-token', import.meta.url);
 const token = readFileSync(tokenPath, 'utf8').trim();
+const clientOrigin = process.env.ENCORE_DEVICE_ORIGIN ?? 'http://localhost:5196';
 assert.ok(token.length >= 32, 'local session token must be available');
 const passage = JSON.parse(readFileSync(new URL('../shared/passages.json', import.meta.url), 'utf8'))[0];
 const sampleRate = 16000;
@@ -38,7 +47,7 @@ const metadata = { ...identity, attemptTempoBpm: passage.tempoBpm,
 async function post(route, body) {
   const started = performance.now();
   const response = await fetch(base + '/api/' + route, { method: 'POST', redirect: 'error',
-    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, origin: 'http://localhost:5196' },
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token, origin: clientOrigin },
     body: JSON.stringify(body) });
   const payload = await response.json();
   assert.equal(response.status, 200, route + ' HTTP ' + response.status + ' ' + JSON.stringify(payload));

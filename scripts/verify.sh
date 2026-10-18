@@ -15,6 +15,7 @@ node --experimental-strip-types scripts/sync-passages.mjs --check
 if [[ "$scope" == "--include-g2" ]]; then
   # Explicit glasses work verifies that runtime as well; phone boundary tests above remain mandatory.
   (cd g2 && npm test && npm run build)
+  (cd server && node --import tsx --test ../acceptance/shipping-*.test.mjs)
 elif ! git diff --quiet "${ENCORE_BOUNDARY_BASE:-origin/main}" -- g2; then
   echo 'Glasses ownership boundary changed; review required.' >&2
   exit 1

@@ -12,15 +12,15 @@ if (parsed.origin !== origin || parsed.username || parsed.password ||
     !(parsed.protocol === 'https:' || (parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname)))) {
   throw new Error('One exact approved client origin is required.');
 }
-const tokenPath = '/home/tim/projects/encore-verify/.run/g2-tunnel-session-token';
+const tokenPath = process.env.ENCORE_DEVICE_TOKEN_FILE ?? `${run}/device-session-token`;
 const token = readFileSync(tokenPath, 'utf8').trim();
 if (token.length < 32) throw new Error('Existing session token is unavailable.');
 const port = Number(process.env.ENCORE_DEVICE_PORT ?? '8799');
 if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
 const server = createCoachServer({
   library: await loadLibrary(), chooser: null, token, allowedOrigin: origin,
-  analysisUrl: 'http://127.0.0.1:8012/v1/analyze',
-  publicBaseUrl: 'https://timothylggram.tail51e140.ts.net',
+  analysisUrl: process.env.ENCORE_ANALYSIS_URL ?? 'http://127.0.0.1:8012/v1/analyze',
+  publicBaseUrl: JSON.parse(readFileSync(new URL('../g2/service-origin.json', import.meta.url), 'utf8')).origin,
   observeRequest(event) {
     // Restrict diagnostics to the explicitly redacted server observation schema.
     appendFileSync(`${run}/device-requests.jsonl`, JSON.stringify({ at: new Date().toISOString(), ...event }) + '\n', { mode: 0o600 });
